@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { postForm } from "@/lib/api";
-import { toast } from "sonner";
+
 import { motion } from "framer-motion";
 import {
   Card,
@@ -24,14 +24,10 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import {
-  Eye,
-  EyeOff,
-  ImagePlus,
-  UploadCloud,
-  ShieldCheck,
-  UserPlus2,
-} from "lucide-react";
+import { EyeOff, Eye, ImagePlus, UploadCloud, ShieldCheck, UserPlus2 } from "lucide-react";
+import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
+
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
@@ -42,7 +38,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-
+  const router = useRouter();
 
 
   const pwScore = useMemo(() => {
@@ -80,6 +76,10 @@ export default function RegisterPage() {
       toast.error("Username is required");
       return;
     }
+    if (!password || password.length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
 
     setSubmitting(true);
     setMsg("");
@@ -91,27 +91,26 @@ export default function RegisterPage() {
       form.append("role", role);
       if (image) form.append("image", image);
 
+      // ✅ IMPORTANT: Use rewrite path + auth=false
       const data = await postForm<{
         access_token: string;
         username: string;
         role: string;
-        avatarPath?: string;
-      }>("/api/auth/register", form);
+        avatarPath?: string | null;
+      }>("/backend/api/auth/register", form, false);
 
       localStorage.setItem("token", data.access_token);
+
       const text = `Registered as ${data.username} (${data.role})`;
       setMsg(text);
       toast.success(text);
+      router.push("/dashboard");
+
     } catch (err) {
-      console.error("❌ Register error (caught in component):", err);
+      console.error("❌ Register error:", err);
 
-      let text = "Registration failed";
-
-      if (err instanceof Error) {
-        text = err.message || text;
-      } else if (typeof err === "string") {
-        text = err;
-      }
+      const text =
+        err instanceof Error ? err.message : typeof err === "string" ? err : "Registration failed";
 
       setMsg(text);
       toast.error(text);
@@ -119,6 +118,7 @@ export default function RegisterPage() {
       setSubmitting(false);
     }
   };
+
 
   return (
     <div className="min-h-[100dvh] grid place-items-center bg-gradient-to-br from-white to-slate-50 dark:from-[#0B0F1A] dark:to-[#0b0f1a] px-4 py-10">
@@ -147,7 +147,6 @@ export default function RegisterPage() {
 
           <CardContent className="space-y-5">
             <form onSubmit={onSubmit} className="space-y-4" noValidate>
-              {/* Username */}
               <div className="grid gap-1.5">
                 <Label htmlFor="username">Username</Label>
                 <Input
@@ -160,16 +159,14 @@ export default function RegisterPage() {
                 />
               </div>
 
-              {/* Password */}
               <div className="grid gap-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password">Password</Label>
                   <div className="flex items-center gap-2 text-xs">
-                    <Badge variant={pwScore >= 70 ? "default" : "secondary"}>
-                      {pwLabel}
-                    </Badge>
+                    <Badge variant={pwScore >= 70 ? "default" : "secondary"}>{pwLabel}</Badge>
                   </div>
                 </div>
+
                 <div className="relative">
                   <Input
                     id="password"
@@ -187,31 +184,21 @@ export default function RegisterPage() {
                     variant="ghost"
                     className="absolute right-1 top-1/2 -translate-y-1/2"
                     onClick={() => setShowPassword((v) => !v)}
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
+
                 <Progress value={pwScore} className="h-1" />
                 <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                  <ShieldCheck className="h-3.5 w-3.5" /> Use letters, numbers
-                  and symbols.
+                  <ShieldCheck className="h-3.5 w-3.5" /> Use letters, numbers and symbols.
                 </p>
               </div>
 
-              {/* Role */}
               <div className="grid gap-1.5">
                 <Label>Role</Label>
-                <Select
-                  value={role}
-                  onValueChange={(v) => setRole(v as "CASHIER" | "ADMIN")}
-                >
+                <Select value={role} onValueChange={(v) => setRole(v as "CASHIER" | "ADMIN")}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>
@@ -222,7 +209,6 @@ export default function RegisterPage() {
                 </Select>
               </div>
 
-              {/* Avatar upload */}
               <div className="grid gap-2">
                 <Label>Avatar (optional)</Label>
                 <div
@@ -237,11 +223,7 @@ export default function RegisterPage() {
                     <div className="flex flex-col items-center gap-2">
                       <UploadCloud className="h-6 w-6" />
                       <span>Drag & drop image here, or</span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => fileRef.current?.click()}
-                      >
+                      <Button type="button" size="sm" onClick={() => fileRef.current?.click()}>
                         <ImagePlus className="mr-2 h-4 w-4" /> Choose file
                       </Button>
                       <input
@@ -255,7 +237,6 @@ export default function RegisterPage() {
                   ) : (
                     <div className="flex w-full items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        {/* preview */}
                         <img
                           src={URL.createObjectURL(image)}
                           alt="avatar preview"
@@ -270,11 +251,7 @@ export default function RegisterPage() {
                           </div>
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => setImage(null)}
-                      >
+                      <Button type="button" variant="secondary" onClick={() => setImage(null)}>
                         Remove
                       </Button>
                     </div>
@@ -292,11 +269,7 @@ export default function RegisterPage() {
                 {submitting ? "Creating..." : "Create account"}
               </Button>
 
-              {msg && (
-                <p className="text-center text-sm text-slate-600 dark:text-slate-300">
-                  {msg}
-                </p>
-              )}
+            
             </form>
           </CardContent>
         </Card>

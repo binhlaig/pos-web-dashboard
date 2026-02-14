@@ -313,7 +313,7 @@ export default function Header() {
   const userImage = resolveAvatarUrl(user?.image || user?.avatarUrl);
 
   // stable logout callback
-  const onLogout = useMemo(() => () => signOut({ callbackUrl: "/login" }), []);
+  const onLogout = useMemo(() => () => signOut({ callbackUrl: "/Sign_in" }), []);
 
   return (
     <header className="w-full sticky top-0 z-40 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
@@ -348,7 +348,7 @@ export default function Header() {
             )
           ) : (
             <Button asChild size="sm">
-              <Link href="/login">Sign in</Link>
+              <Link href="/Sign_in">Sign in</Link>
             </Button>
           )}
         </div>

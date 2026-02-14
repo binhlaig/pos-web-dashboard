@@ -1,4 +1,4 @@
-// app/page.tsx (Home)
+
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,10 +7,17 @@ import { CalendarClock, Plus, Settings } from "lucide-react";
 import Header from "@/components/header/header";
 import TimeCard from "@/components/header/TimeCard";
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
-export default function Home() {
-  const now = new Date();
+export default async function Home() {
+  const session = await getServerSession( authOptions);
+    if(!session){
+        return redirect("/Sign_in")
+    }
 
+  const now = new Date()
   const time = now.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",

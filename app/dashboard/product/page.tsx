@@ -1,9 +1,9 @@
 
-
 // "use client";
 
 // import React, { useEffect, useMemo, useState } from "react";
 // import { useRouter } from "next/navigation";
+// import { useSession } from "next-auth/react";
 
 // import {
 //   Card,
@@ -61,22 +61,55 @@
 // type Product = {
 //   id: string;
 //   sku: string;
-//   product_name: string;
-//   product_price: number;
+//   productName: string;
+//   productPrice: number;
 //   barcode?: string | null;
 //   category?: string | null;
-//   product_quantity_amount: number;
-//   product_image?: string | null;
-//   product_discount?: number | null;
+//   productQuantityAmount: number;
+//   imagePath?: string | null;
+//   productDiscount?: number | null;
 //   note?: string | null;
-//   product_type?: string | null;
+//   productType?: string | null;
 // };
 
 // function cn(...classes: (string | false | null | undefined)[]) {
 //   return classes.filter(Boolean).join(" ");
 // }
 
+// // normalize backend response (camelCase / snake_case)
+// // so UI is always consistent
+// function normalizeProduct(p: any): Product {
+//   return {
+//     id: String(p?.id ?? ""),
+//     sku: String(p?.sku ?? ""),
+//     productName: String(p?.productName ?? p?.product_name ?? p?.name ?? ""),
+//     productPrice: Number(p?.productPrice ?? p?.product_price ?? p?.price ?? 0),
+//     productQuantityAmount: Number(
+//       p?.productQuantityAmount ?? p?.product_quantity_amount ?? p?.stock ?? 0
+//     ),
+//     barcode: p?.barcode ?? null,
+//     category: p?.category ?? null,
+//     productType: p?.productType ?? p?.product_type ?? null,
+//     productDiscount: Number(
+//       p?.productDiscount ?? p?.product_discount ?? p?.discount ?? 0
+//     ),
+//     note: p?.note ?? null,
+//     imagePath: p?.imagePath ?? p?.image_path ?? p?.product_image ?? null,
+//   };
+// }
+
 // export default function ProductsPage() {
+//   const router = useRouter();
+//   const { data: session, status } = useSession();
+
+//   const accessToken = (session as any)?.accessToken as string | undefined;
+//   const tokenType = ((session as any)?.tokenType as string | undefined) ?? "Bearer";
+
+//   const apiBase = useMemo(
+//     () => (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, ""),
+//     []
+//   );
+
 //   const [products, setProducts] = useState<Product[]>([]);
 //   const [q, setQ] = useState("");
 //   const [loading, setLoading] = useState(false);
@@ -86,35 +119,65 @@
 //   const [page, setPage] = useState(1);
 //   const [pageSize, setPageSize] = useState(10);
 
-//   // delete dialog state
+//   // delete
 //   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
 //   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-//   const apiBase = process.env.NEXT_PUBLIC_API_URL;
-//   const router = useRouter();
+//   async function loadProducts(search?: string, resetPage: boolean = false) {
+//     if (!apiBase) {
+//       toast.error("NEXT_PUBLIC_API_URL မထည့်ရသေးပါ (.env.local)");
+//       return;
+//     }
 
-//   async function loadProducts(search?: string) {
+//     // Wait session
+//     if (status === "loading") return;
+
+//     // Must login
+//     if (!accessToken) {
+//       toast.error("Login မဝင်ရသေးပါ");
+//       router.push("/login");
+//       return;
+//     }
+
 //     try {
 //       setLoading(true);
+
 //       const query = search ? `?q=${encodeURIComponent(search)}` : "";
 //       const res = await fetch(`${apiBase}/api/products${query}`, {
-//         credentials: "include",
+//         method: "GET",
+//         headers: {
+//           Authorization: `${tokenType} ${accessToken}`,
+//           Accept: "application/json",
+//         },
+//         cache: "no-store",
 //       });
 
+//       const text = await res.text().catch(() => "");
+
 //       if (!res.ok) {
-//         const data = await res.json().catch(() => null);
-//         const msg =
-//           typeof data?.message === "string"
-//             ? data.message
-//             : `Products load မရပါ (status ${res.status})`;
+//         let msg = `Products load မရပါ (status ${res.status})`;
+//         try {
+//           const j = JSON.parse(text || "{}");
+//           msg = j?.message || j?.error || msg;
+//         } catch {
+//           if (text) msg = text;
+//         }
 //         toast.error(msg);
+//         setFirstLoaded(true);
 //         return;
 //       }
 
-//       const data = (await res.json()) as Product[];
-//       setProducts(data);
+//       const raw = text ? JSON.parse(text) : [];
+//       const arr = Array.isArray(raw) ? raw : raw?.content ?? raw?.data ?? [];
+//       const normalized = (Array.isArray(arr) ? arr : []).map(normalizeProduct);
+
+//       setProducts(normalized);
 //       setFirstLoaded(true);
-//       setPage(1);
+
+//       // keep page if not reset, clamp to total pages
+//       const newTotalPages = Math.max(1, Math.ceil(normalized.length / pageSize));
+//       if (resetPage) setPage(1);
+//       else setPage((prev) => Math.min(prev, newTotalPages));
 //     } catch (e) {
 //       console.error(e);
 //       toast.error("Server error ဖြစ်နေတယ်");
@@ -126,22 +189,42 @@
 //   async function confirmDelete() {
 //     if (!deleteTarget) return;
 
+//     if (!apiBase) {
+//       toast.error("NEXT_PUBLIC_API_URL မထည့်ရသေးပါ");
+//       return;
+//     }
+//     if (!accessToken) {
+//       toast.error("Login မဝင်ရသေးပါ");
+//       router.push("/login");
+//       return;
+//     }
+
 //     try {
 //       setDeletingId(deleteTarget.id);
 
 //       const res = await fetch(`${apiBase}/api/products/${deleteTarget.id}`, {
 //         method: "DELETE",
-//         credentials: "include",
+//         headers: {
+//           Authorization: `${tokenType} ${accessToken}`,
+//         },
 //       });
 
+//       const text = await res.text().catch(() => "");
+
 //       if (!res.ok) {
-//         const data = await res.json().catch(() => null);
-//         toast.error(data?.message || "Delete မအောင်မြင်ပါ");
+//         let msg = "Delete မအောင်မြင်ပါ";
+//         try {
+//           const j = JSON.parse(text || "{}");
+//           msg = j?.message || j?.error || msg;
+//         } catch {
+//           if (text) msg = text;
+//         }
+//         toast.error(msg);
 //         return;
 //       }
 
 //       toast.success("Product ဖျက်ပြီးပါပြီ");
-//       await loadProducts(q.trim() || undefined);
+//       await loadProducts(q.trim() || undefined, false); // keep current page
 //     } catch (e) {
 //       console.error(e);
 //       toast.error("Server error (delete)");
@@ -152,13 +235,14 @@
 //   }
 
 //   useEffect(() => {
-//     loadProducts();
+//     // load once when session ready
+//     if (status !== "loading") loadProducts(undefined, true);
 //     // eslint-disable-next-line react-hooks/exhaustive-deps
-//   }, []);
+//   }, [status, accessToken]);
 
 //   const handleSearch = (e: React.FormEvent) => {
 //     e.preventDefault();
-//     loadProducts(q.trim() || undefined);
+//     loadProducts(q.trim() || undefined, true);
 //   };
 
 //   // pagination math
@@ -190,7 +274,6 @@
 //   return (
 //     <div className="flex w-full justify-center py-8 px-3 overflow-x-hidden">
 //       <Card className="w-full max-w-6xl overflow-hidden border-muted/60 shadow-sm min-w-0">
-//         {/* Header */}
 //         <CardHeader className="bg-gradient-to-r from-muted/40 to-background flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 //           <div className="space-y-1 min-w-0">
 //             <CardTitle className="flex items-center gap-2">
@@ -209,7 +292,7 @@
 //               variant="outline"
 //               size="sm"
 //               type="button"
-//               onClick={() => loadProducts()}
+//               onClick={() => loadProducts(q.trim() || undefined, true)}
 //               disabled={loading}
 //               className="gap-2"
 //             >
@@ -220,7 +303,7 @@
 //             <Button
 //               size="sm"
 //               type="button"
-//               onClick={() => router.push("/products/new")}
+//               onClick={() => router.push("/dashboard/product/add")}
 //               className="gap-2"
 //             >
 //               <Plus className="h-4 w-4" />
@@ -230,7 +313,6 @@
 //         </CardHeader>
 
 //         <CardContent className="space-y-4 p-5 min-w-0">
-//           {/* Search + Page Size */}
 //           <form
 //             onSubmit={handleSearch}
 //             className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between min-w-0"
@@ -281,7 +363,6 @@
 
 //           <Separator />
 
-//           {/* Table (overflow safe) */}
 //           <div className="w-full min-w-0 overflow-x-auto rounded-xl border">
 //             <ScrollArea className="w-full max-h-[560px]">
 //               <Table className="min-w-[980px]">
@@ -317,19 +398,16 @@
 //                   )}
 
 //                   {pagedProducts.map((p) => {
-//                     const discount = p.product_discount ?? 0;
+//                     const discount = p.productDiscount ?? 0;
+//                     const stock = p.productQuantityAmount ?? 0;
 
-//                     const hasImage =
-//                       p.product_image && p.product_image.trim() !== "";
-
+//                     const hasImage = p.imagePath && p.imagePath.trim() !== "";
 //                     const imageUrl =
-//                       hasImage && p.product_image!.startsWith("http")
-//                         ? p.product_image!
+//                       hasImage && p.imagePath!.startsWith("http")
+//                         ? p.imagePath!
 //                         : hasImage
-//                         ? `${apiBase}${p.product_image}`
+//                         ? `${apiBase}${p.imagePath}`
 //                         : null;
-
-//                     const stock = p.product_quantity_amount ?? 0;
 
 //                     const stockBadge =
 //                       stock <= 0 ? (
@@ -355,7 +433,7 @@
 //                           {imageUrl ? (
 //                             <img
 //                               src={imageUrl}
-//                               alt={p.product_name}
+//                               alt={p.productName}
 //                               className="h-12 w-12 rounded-xl object-cover border bg-muted shadow-sm"
 //                             />
 //                           ) : (
@@ -374,9 +452,7 @@
 //                         <TableCell>
 //                           <div className="flex flex-col gap-0.5">
 //                             <div className="flex items-center gap-2">
-//                               <span className="font-medium">
-//                                 {p.product_name}
-//                               </span>
+//                               <span className="font-medium">{p.productName}</span>
 
 //                               {discount > 0 && (
 //                                 <Badge className="bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 gap-1">
@@ -402,7 +478,7 @@
 
 //                         <TableCell className="text-right">
 //                           <span className="font-mono font-semibold">
-//                             {p.product_price.toLocaleString()}
+//                             {p.productPrice.toLocaleString()}
 //                           </span>
 //                         </TableCell>
 
@@ -436,17 +512,15 @@
 //                         </TableCell>
 
 //                         <TableCell>
-//                           {p.product_type ? (
+//                           {p.productType ? (
 //                             <Badge
 //                               variant="secondary"
 //                               className="text-[11px] uppercase"
 //                             >
-//                               {p.product_type}
+//                               {p.productType}
 //                             </Badge>
 //                           ) : (
-//                             <span className="text-xs text-muted-foreground">
-//                               -
-//                             </span>
+//                             <span className="text-xs text-muted-foreground">-</span>
 //                           )}
 //                         </TableCell>
 
@@ -456,9 +530,7 @@
 //                               -{discount.toLocaleString()}
 //                             </span>
 //                           ) : (
-//                             <span className="text-xs text-muted-foreground">
-//                               0
-//                             </span>
+//                             <span className="text-xs text-muted-foreground">0</span>
 //                           )}
 //                         </TableCell>
 
@@ -468,7 +540,9 @@
 //                               size="sm"
 //                               variant="outline"
 //                               type="button"
-//                               onClick={() => router.push(`/products/${p.id}`)}
+//                               onClick={() =>
+//                                 router.push(`/dashboard/product/${p.id}`)
+//                               }
 //                               className="gap-2 hover:bg-primary/5"
 //                             >
 //                               <Eye className="h-4 w-4" />
@@ -480,7 +554,7 @@
 //                               variant="secondary"
 //                               type="button"
 //                               onClick={() =>
-//                                 router.push(`/products/${p.id}/edit`)
+//                                 router.push(`/dashboard/product/${p.id}/edit`)
 //                               }
 //                               className="gap-2"
 //                             >
@@ -488,7 +562,6 @@
 //                               Edit
 //                             </Button>
 
-//                             {/* ✅ Delete with AlertDialog */}
 //                             <AlertDialog>
 //                               <AlertDialogTrigger asChild>
 //                                 <Button
@@ -509,17 +582,19 @@
 //                                   <AlertDialogTitle>
 //                                     Product ဖျက်မလား?
 //                                   </AlertDialogTitle>
-//                                   <AlertDialogDescription className="space-y-2">
-//                                     <div>
+
+//                                   <AlertDialogDescription>
+//                                     <span>
 //                                       ဒီ product ကို ဖျက်လိုက်ရင်{" "}
 //                                       <b>ပြန်လည်မရနိုင်ပါ</b>။
-//                                     </div>
-//                                     <div className="text-sm text-muted-foreground">
-//                                       • Name:{" "}
-//                                       <b>{deleteTarget?.product_name}</b>
+//                                     </span>
+//                                     <br />
+//                                     <br />
+//                                     <span className="text-sm text-muted-foreground">
+//                                       • Name: <b>{deleteTarget?.productName}</b>
 //                                       <br />
 //                                       • SKU: {deleteTarget?.sku}
-//                                     </div>
+//                                     </span>
 //                                   </AlertDialogDescription>
 //                                 </AlertDialogHeader>
 
@@ -548,7 +623,7 @@
 //             </ScrollArea>
 //           </div>
 
-//           {/* Pagination Bar (overflow safe) */}
+//           {/* Pagination */}
 //           <div className="w-full min-w-0 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 //             <div className="text-xs text-muted-foreground whitespace-nowrap">
 //               Page <span className="font-medium">{safePage}</span> /{" "}
@@ -604,12 +679,11 @@
 
 
 
-
-
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession, signIn } from "next-auth/react";
 
 import {
   Card,
@@ -667,22 +741,94 @@ import { toast } from "sonner";
 type Product = {
   id: string;
   sku: string;
-  product_name: string;
-  product_price: number;
+  productName: string;
+  productPrice: number;
   barcode?: string | null;
   category?: string | null;
-  product_quantity_amount: number;
+  productQuantityAmount: number;
+
+  // image fields can vary
+  imagePath?: string | null;
+  image_path?: string | null;
   product_image?: string | null;
-  product_discount?: number | null;
+
+  productDiscount?: number | null;
   note?: string | null;
-  product_type?: string | null;
+  productType?: string | null;
 };
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+// normalize backend response (camelCase / snake_case)
+function normalizeProduct(p: any): Product {
+  return {
+    id: String(p?.id ?? ""),
+    sku: String(p?.sku ?? ""),
+    productName: String(p?.productName ?? p?.product_name ?? p?.name ?? ""),
+    productPrice: Number(p?.productPrice ?? p?.product_price ?? p?.price ?? 0),
+    productQuantityAmount: Number(
+      p?.productQuantityAmount ?? p?.product_quantity_amount ?? p?.stock ?? 0
+    ),
+    barcode: p?.barcode ?? null,
+    category: p?.category ?? null,
+    productType: p?.productType ?? p?.product_type ?? null,
+    productDiscount: Number(
+      p?.productDiscount ?? p?.product_discount ?? p?.discount ?? 0
+    ),
+    note: p?.note ?? null,
+
+    imagePath: p?.imagePath ?? null,
+    image_path: p?.image_path ?? null,
+    product_image: p?.product_image ?? null,
+  };
+}
+
+function pickImagePath(p: Product) {
+  return p.imagePath ?? p.image_path ?? p.product_image ?? null;
+}
+
+function buildImageUrl(path?: string | null) {
+  if (!path) return null;
+  const raw = String(path).trim();
+  if (!raw) return null;
+
+  // full url
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+
+  // allow: "uploads/x", "/uploads/x", "x"
+  const cleaned = raw.replace(/^\/?uploads\/?/, "").replace(/^\/+/, "");
+  return `/uploads/${cleaned}`;
+}
+
+async function readErrorText(res: Response) {
+  const ct = res.headers.get("content-type") || "";
+  try {
+    if (ct.includes("application/json")) {
+      const j = await res.json();
+      return j?.message || j?.error || JSON.stringify(j);
+    }
+    return (await res.text()) || "";
+  } catch {
+    return "";
+  }
+}
+
 export default function ProductsPage() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
+
+  const token =
+    (session as any)?.accessToken ||
+    (session as any)?.access_token ||
+    (session as any)?.token ||
+    null;
+
+  function authHeaders(): Record<string, string> {
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
   const [products, setProducts] = useState<Product[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
@@ -696,40 +842,76 @@ export default function ProductsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const apiBase = process.env.NEXT_PUBLIC_API_URL;
-  const router = useRouter();
+  // ✅ If not logged in, go sign in
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      toast.error("Login လုပ်ပါ");
+      signIn();
+    }
+  }, [status]);
 
   async function loadProducts(search?: string, resetPage: boolean = false) {
+    // Wait session
+    if (status === "loading") return;
+
+    // Must login
+    if (!token) {
+      toast.error("Session token မရပါ — Login ပြန်လုပ်ပါ");
+      signIn();
+      return;
+    }
+
+    const t = toast.loading("Loading products...");
+
     try {
       setLoading(true);
+
       const query = search ? `?q=${encodeURIComponent(search)}` : "";
-      const res = await fetch(`${apiBase}/api/products${query}`, {
-        credentials: "include",
+
+      // ✅ Use rewrite base: /backend -> http://localhost:8080
+      const res = await fetch(`/backend/api/products${query}`, {
+        method: "GET",
+        headers: {
+          ...authHeaders(),
+          Accept: "application/json",
+        },
+        cache: "no-store",
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const msg =
-          typeof data?.message === "string"
-            ? data.message
-            : `Products load မရပါ (status ${res.status})`;
-        toast.error(msg);
+        const detail = await readErrorText(res);
+
+        if (res.status === 401) {
+          toast.error("Unauthorized — Login ပြန်လုပ်ပါ", { id: t });
+          signIn();
+        } else if (res.status === 403) {
+          toast.error("Forbidden — ADMIN လိုနိုင်တယ်", { id: t });
+        } else {
+          toast.error(detail || `Products load မရပါ (status ${res.status})`, {
+            id: t,
+          });
+        }
+
+        setFirstLoaded(true);
         return;
       }
 
-      const data = (await res.json()) as Product[];
-      setProducts(data);
+      const raw = await res.json().catch(() => []);
+      const arr = Array.isArray(raw) ? raw : raw?.content ?? raw?.data ?? [];
+      const normalized = (Array.isArray(arr) ? arr : []).map(normalizeProduct);
+
+      setProducts(normalized);
       setFirstLoaded(true);
 
-      // ✅ keep page if not reset, but clamp to new totalPages
-      const newTotal = data.length;
-      const newTotalPages = Math.max(1, Math.ceil(newTotal / pageSize));
-
+      // keep page if not reset, clamp to total pages
+      const newTotalPages = Math.max(1, Math.ceil(normalized.length / pageSize));
       if (resetPage) setPage(1);
       else setPage((prev) => Math.min(prev, newTotalPages));
+
+      toast.success("Loaded ✅", { id: t });
     } catch (e) {
       console.error(e);
-      toast.error("Server error ဖြစ်နေတယ်");
+      toast.error("Server error ဖြစ်နေတယ်", { id: t });
     } finally {
       setLoading(false);
     }
@@ -738,25 +920,41 @@ export default function ProductsPage() {
   async function confirmDelete() {
     if (!deleteTarget) return;
 
+    if (status === "loading") return;
+    if (!token) {
+      toast.error("Session token မရပါ — Login ပြန်လုပ်ပါ");
+      signIn();
+      return;
+    }
+
+    const t = toast.loading("Deleting...");
+
     try {
       setDeletingId(deleteTarget.id);
 
-      const res = await fetch(`${apiBase}/api/products/${deleteTarget.id}`, {
+      const res = await fetch(`/backend/api/products/${deleteTarget.id}`, {
         method: "DELETE",
-        credentials: "include",
+        headers: { ...authHeaders() },
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        toast.error(data?.message || "Delete မအောင်မြင်ပါ");
+        const detail = await readErrorText(res);
+        if (res.status === 401) {
+          toast.error("Unauthorized — Login ပြန်လုပ်ပါ", { id: t });
+          signIn();
+        } else if (res.status === 403) {
+          toast.error("Forbidden — ADMIN လိုနိုင်တယ်", { id: t });
+        } else {
+          toast.error(detail || "Delete မအောင်မြင်ပါ", { id: t });
+        }
         return;
       }
 
-      toast.success("Product ဖျက်ပြီးပါပြီ");
-      await loadProducts(q.trim() || undefined, false); // ✅ keep current page
+      toast.success("Product ဖျက်ပြီးပါပြီ ✅", { id: t });
+      await loadProducts(q.trim() || undefined, false);
     } catch (e) {
       console.error(e);
-      toast.error("Server error (delete)");
+      toast.error("Server error (delete)", { id: t });
     } finally {
       setDeletingId(null);
       setDeleteTarget(null);
@@ -764,9 +962,10 @@ export default function ProductsPage() {
   }
 
   useEffect(() => {
-    loadProducts(undefined, true);
+    // load once when session ready
+    if (status === "authenticated") loadProducts(undefined, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status, token]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -799,18 +998,19 @@ export default function ProductsPage() {
     return buttons;
   }, [safePage, totalPages]);
 
+  // ✅ 1920+ container
   return (
-    <div className="flex w-full justify-center py-8 px-3 overflow-x-hidden">
-      <Card className="w-full max-w-6xl overflow-hidden border-muted/60 shadow-sm min-w-0">
-        <CardHeader className="bg-gradient-to-r from-muted/40 to-background flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <div className="flex w-full justify-center py-10 px-3 md:px-6 2xl:px-10 overflow-x-hidden">
+      <Card className="w-full max-w-6xl 2xl:max-w-[1400px] overflow-hidden border-muted/60 shadow-sm min-w-0">
+        <CardHeader className="bg-gradient-to-r from-muted/40 to-background flex flex-col gap-2 md:flex-row md:items-center md:justify-between px-5 md:px-6 2xl:px-8 py-5 2xl:py-6">
           <div className="space-y-1 min-w-0">
-            <CardTitle className="flex items-center gap-2">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <CardTitle className="flex items-center gap-2 2xl:text-2xl">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <Package className="h-5 w-5" />
               </span>
-              <span className="text-xl">Products</span>
+              <span>Products</span>
             </CardTitle>
-            <CardDescription className="text-[13px]">
+            <CardDescription className="text-[13px] 2xl:text-base">
               စူပါမားကက်ထဲရှိ product စာရင်းကို ကြည့်ရှုနိုင်သော စာမျက်နှာ ဖြစ်သည်။
             </CardDescription>
           </div>
@@ -831,7 +1031,7 @@ export default function ProductsPage() {
             <Button
               size="sm"
               type="button"
-              onClick={() => router.push("/products/new")}
+              onClick={() => router.push("/dashboard/product/add")}
               className="gap-2"
             >
               <Plus className="h-4 w-4" />
@@ -840,7 +1040,7 @@ export default function ProductsPage() {
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-4 p-5 min-w-0">
+        <CardContent className="space-y-4 px-5 md:px-6 2xl:px-8 py-5 2xl:py-6 min-w-0">
           <form
             onSubmit={handleSearch}
             className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between min-w-0"
@@ -861,7 +1061,7 @@ export default function ProductsPage() {
             </div>
 
             <div className="flex items-center justify-between gap-2 w-full md:w-auto min-w-0">
-              <div className="text-xs text-muted-foreground whitespace-nowrap">
+              <div className="text-xs 2xl:text-sm text-muted-foreground whitespace-nowrap">
                 {loading
                   ? "Loading..."
                   : `Showing ${showingFrom}-${showingTo} of ${total}`}
@@ -891,9 +1091,9 @@ export default function ProductsPage() {
 
           <Separator />
 
-          <div className="w-full min-w-0 overflow-x-auto rounded-xl border">
-            <ScrollArea className="w-full max-h-[560px]">
-              <Table className="min-w-[980px]">
+          <div className="w-full min-w-0 overflow-x-auto rounded-2xl border">
+            <ScrollArea className="w-full max-h-[560px] 2xl:max-h-[720px]">
+              <Table className="min-w-[980px] 2xl:min-w-[1200px]">
                 <TableCaption>
                   {total === 0 && firstLoaded
                     ? "Product မရှိသေးပါ။ New Product ခလုတ်နှိပ်၍ အသစ်ထည့်နိုင်ပါတယ်။"
@@ -902,7 +1102,7 @@ export default function ProductsPage() {
 
                 <TableHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
                   <TableRow>
-                    <TableHead className="w-[86px]">Image</TableHead>
+                    <TableHead className="w-[96px]">Image</TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead className="text-right">Price</TableHead>
@@ -926,19 +1126,11 @@ export default function ProductsPage() {
                   )}
 
                   {pagedProducts.map((p) => {
-                    const discount = p.product_discount ?? 0;
+                    const discount = p.productDiscount ?? 0;
+                    const stock = p.productQuantityAmount ?? 0;
 
-                    const hasImage =
-                      p.product_image && p.product_image.trim() !== "";
-
-                    const imageUrl =
-                      hasImage && p.product_image!.startsWith("http")
-                        ? p.product_image!
-                        : hasImage
-                        ? `${apiBase}${p.product_image}`
-                        : null;
-
-                    const stock = p.product_quantity_amount ?? 0;
+                    // ✅ FIX: always build image url from /uploads rewrite
+                    const imageUrl = buildImageUrl(pickImagePath(p));
 
                     const stockBadge =
                       stock <= 0 ? (
@@ -964,14 +1156,28 @@ export default function ProductsPage() {
                           {imageUrl ? (
                             <img
                               src={imageUrl}
-                              alt={p.product_name}
-                              className="h-12 w-12 rounded-xl object-cover border bg-muted shadow-sm"
+                              alt={p.productName}
+                              className="h-12 w-12 2xl:h-14 2xl:w-14 rounded-2xl object-cover border bg-muted shadow-sm"
+                              onError={(e) => {
+                                // if backend path wrong, show placeholder
+                                (e.currentTarget as HTMLImageElement).style.display =
+                                  "none";
+                              }}
                             />
-                          ) : (
-                            <div className="h-12 w-12 rounded-xl border flex items-center justify-center bg-muted text-muted-foreground">
+                          ) : null}
+
+                          {!imageUrl ? (
+                            <div className="h-12 w-12 2xl:h-14 2xl:w-14 rounded-2xl border flex items-center justify-center bg-muted text-muted-foreground">
                               <ImageIcon className="h-4 w-4" />
                             </div>
-                          )}
+                          ) : null}
+
+                          {/* fallback placeholder if img failed */}
+                          {imageUrl ? (
+                            <div className="hidden h-12 w-12 2xl:h-14 2xl:w-14 rounded-2xl border items-center justify-center bg-muted text-muted-foreground">
+                              <ImageIcon className="h-4 w-4" />
+                            </div>
+                          ) : null}
                         </TableCell>
 
                         <TableCell className="font-mono text-xs">
@@ -983,9 +1189,7 @@ export default function ProductsPage() {
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">
-                                {p.product_name}
-                              </span>
+                              <span className="font-medium">{p.productName}</span>
 
                               {discount > 0 && (
                                 <Badge className="bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 gap-1">
@@ -1011,7 +1215,7 @@ export default function ProductsPage() {
 
                         <TableCell className="text-right">
                           <span className="font-mono font-semibold">
-                            {p.product_price.toLocaleString()}
+                            {p.productPrice.toLocaleString()}
                           </span>
                         </TableCell>
 
@@ -1045,17 +1249,15 @@ export default function ProductsPage() {
                         </TableCell>
 
                         <TableCell>
-                          {p.product_type ? (
+                          {p.productType ? (
                             <Badge
                               variant="secondary"
                               className="text-[11px] uppercase"
                             >
-                              {p.product_type}
+                              {p.productType}
                             </Badge>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              -
-                            </span>
+                            <span className="text-xs text-muted-foreground">-</span>
                           )}
                         </TableCell>
 
@@ -1065,9 +1267,7 @@ export default function ProductsPage() {
                               -{discount.toLocaleString()}
                             </span>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              0
-                            </span>
+                            <span className="text-xs text-muted-foreground">0</span>
                           )}
                         </TableCell>
 
@@ -1077,7 +1277,9 @@ export default function ProductsPage() {
                               size="sm"
                               variant="outline"
                               type="button"
-                              onClick={() => router.push(`/dashboard/product/${p.id}`)}
+                              onClick={() =>
+                                router.push(`/dashboard/product/${p.id}`)
+                              }
                               className="gap-2 hover:bg-primary/5"
                             >
                               <Eye className="h-4 w-4" />
@@ -1097,7 +1299,6 @@ export default function ProductsPage() {
                               Edit
                             </Button>
 
-                            {/* ✅ Delete + AlertDialog (NO <div> inside <p>!) */}
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button
@@ -1119,7 +1320,6 @@ export default function ProductsPage() {
                                     Product ဖျက်မလား?
                                   </AlertDialogTitle>
 
-                                  {/* ✅ Description is <p> internally → use only inline elements */}
                                   <AlertDialogDescription>
                                     <span>
                                       ဒီ product ကို ဖျက်လိုက်ရင်{" "}
@@ -1128,7 +1328,7 @@ export default function ProductsPage() {
                                     <br />
                                     <br />
                                     <span className="text-sm text-muted-foreground">
-                                      • Name: <b>{deleteTarget?.product_name}</b>
+                                      • Name: <b>{deleteTarget?.productName}</b>
                                       <br />
                                       • SKU: {deleteTarget?.sku}
                                     </span>
@@ -1162,7 +1362,7 @@ export default function ProductsPage() {
 
           {/* Pagination */}
           <div className="w-full min-w-0 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="text-xs text-muted-foreground whitespace-nowrap">
+            <div className="text-xs 2xl:text-sm text-muted-foreground whitespace-nowrap">
               Page <span className="font-medium">{safePage}</span> /{" "}
               <span className="font-medium">{totalPages}</span>
             </div>
