@@ -168,23 +168,23 @@ export default function SchedulePage() {
 
   // try decode own id
   React.useEffect(() => {
-    try {
-      const t = getAccessToken();
-      if (!t) return;
-      const p = decodeJwt(t) as { sub?: string } | undefined;
-      if (p?.sub) setMyId(p.sub);
-    } catch {}
+    (async () => {
+      try {
+        const t = await getAccessToken();
+        if (!t) return;
+        const p = decodeJwt(t) as { sub?: string } | undefined;
+        if (p?.sub) setMyId(p.sub);
+      } catch {}
+    })();
   }, []);
 
   // load week schedule
   async function loadWeek() {
     try {
       setLoading(true);
-      const data = await get<ScheduleShift[]>("/schedule", {
-        start: toYmd(from),
-        end: toYmd(to),
-        ...(filterEmp !== "ALL" ? { employeeId: filterEmp } : {}),
-      });
+      const params = new URLSearchParams({ start: toYmd(from), end: toYmd(to) });
+      if (filterEmp !== "ALL") params.set("employeeId", filterEmp);
+      const data = await get<ScheduleShift[]>(`/schedule?${params}`);
       setShifts(data || []);
     } catch (e: any) {
       toast.error(e?.message || "Failed to load schedule");

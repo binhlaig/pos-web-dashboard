@@ -2,7 +2,13 @@
 
 // "use client";
 
-// import React, { useEffect, useMemo, useRef, useState } from "react";
+// import React, {
+//   useEffect,
+//   useMemo,
+//   useRef,
+//   useState,
+//   useCallback,
+// } from "react";
 // import {
 //   AreaChart,
 //   Area,
@@ -10,43 +16,49 @@
 //   ResponsiveContainer,
 //   XAxis,
 //   YAxis,
+//   Tooltip,
 // } from "recharts";
-
-// import {
-//   ChartContainer,
-//   ChartTooltip,
-//   ChartTooltipContent,
-// } from "@/components/ui/chart";
-
-// import {
-//   Card,
-//   CardHeader,
-//   CardTitle,
-//   CardDescription,
-//   CardContent,
-// } from "@/components/ui/card";
-// import { Button } from "@/components/ui/button";
-// import { Badge } from "@/components/ui/badge";
 // import { ScrollArea } from "@/components/ui/scroll-area";
-// import { Separator } from "@/components/ui/separator";
 // import { Input } from "@/components/ui/input";
-// import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
 // import {
-//   Package,
 //   RefreshCw,
 //   Wand2,
-//   TrendingUp,
-//   ShoppingCart,
-//   Coins,
-//   Clock,
 //   Search,
-//   Star,
+//   ChevronLeft,
 //   ChevronRight,
+//   GripVertical,
+//   LayoutGrid,
+//   BarChart2,
+//   ImageIcon,
+//   Coins,
+//   PackageSearch,
+//   TrendingUp,
+//   Zap,
 // } from "lucide-react";
-// import { toast } from "sonner";
 
-// /* ----------------------------- Types ----------------------------- */
+// // dnd-kit
+// import {
+//   DndContext,
+//   closestCenter,
+//   PointerSensor,
+//   KeyboardSensor,
+//   useSensor,
+//   useSensors,
+//   DragEndEvent,
+//   DragStartEvent,
+//   DragOverlay,
+//   UniqueIdentifier,
+// } from "@dnd-kit/core";
+// import {
+//   SortableContext,
+//   useSortable,
+//   arrayMove,
+//   rectSortingStrategy,
+//   sortableKeyboardCoordinates,
+// } from "@dnd-kit/sortable";
+// import { CSS } from "@dnd-kit/utilities";
+
+// /* ─── Types ───────────────────────────────────────────────────────── */
 // type SaleItem = {
 //   product_id: string;
 //   sku: string;
@@ -54,48 +66,42 @@
 //   qty: number;
 //   price: number;
 // };
-
 // type Sale = {
 //   id: string;
-//   created_at: string; // ISO
+//   created_at: string;
 //   total: number;
 //   items: SaleItem[];
 // };
-
 // type Granularity = "hour" | "day" | "month" | "year";
 // type Metric = "revenue" | "qty" | "orders";
+// type CardView = "info" | "chart" | "image";
 
-// /* ----------------------------- Storage ----------------------------- */
-// const LS_KEY = "TEMP_SALES_PRODUCT_ANALYTICS_FULL_V1";
+// /* ─── Storage ─────────────────────────────────────────────────────── */
+// const LS_KEY = "TEMP_SALES_ANALYTICS_LUX_V1";
 
-// /* ----------------------------- Utils ----------------------------- */
-// function cn(...classes: (string | false | null | undefined)[]) {
-//   return classes.filter(Boolean).join(" ");
+// /* ─── Utils ───────────────────────────────────────────────────────── */
+// function cn(...c: (string | false | null | undefined)[]) {
+//   return c.filter(Boolean).join(" ");
 // }
-
 // function money(n: number) {
-//   return Number(n || 0).toLocaleString();
+//   return Number(n || 0).toLocaleString("en-US");
 // }
-
 // function uuid() {
 //   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 // }
-
 // function readSales(): Sale[] {
 //   try {
 //     const raw = localStorage.getItem(LS_KEY);
 //     if (!raw) return [];
-//     const parsed = JSON.parse(raw);
-//     return Array.isArray(parsed) ? (parsed as Sale[]) : [];
+//     const p = JSON.parse(raw);
+//     return Array.isArray(p) ? p : [];
 //   } catch {
 //     return [];
 //   }
 // }
-
-// function writeSales(sales: Sale[]) {
-//   localStorage.setItem(LS_KEY, JSON.stringify(sales));
+// function writeSales(s: Sale[]) {
+//   localStorage.setItem(LS_KEY, JSON.stringify(s));
 // }
-
 // function groupKey(d: Date, g: Granularity) {
 //   const y = d.getFullYear();
 //   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -104,598 +110,777 @@
 //   if (g === "year") return `${y}`;
 //   if (g === "month") return `${y}-${m}`;
 //   if (g === "day") return `${y}-${m}-${day}`;
-//   return `${y}-${m}-${day} ${h}:00`;
+//   return `${y}-${m}-${day} ${h}h`;
 // }
 
-// function sortKey(a: string, b: string) {
-//   return a < b ? -1 : a > b ? 1 : 0;
+// /* ─── Demo Seed ───────────────────────────────────────────────────── */
+// const PRODUCTS = [
+//   { sku: "SKU-COKE", name: "Coca Cola" },
+//   { sku: "SKU-BREAD", name: "Bread" },
+//   { sku: "SKU-MILK", name: "Milk" },
+//   { sku: "SKU-EGG", name: "Egg" },
+//   { sku: "SKU-WATER", name: "Mineral Water" },
+//   { sku: "SKU-COFFEE", name: "Coffee" },
+//   { sku: "SKU-TEA", name: "Green Tea" },
+//   { sku: "SKU-RICE", name: "Jasmine Rice" },
+//   { sku: "SKU-CHIPS", name: "Potato Chips" },
+//   { sku: "SKU-RAMEN", name: "Instant Ramen" },
+//   { sku: "SKU-SOAP", name: "Hand Soap" },
+//   { sku: "SKU-OIL", name: "Cooking Oil" },
+//   { sku: "SKU-BANANA", name: "Banana" },
+//   { sku: "SKU-CHICKEN", name: "Chicken" },
+//   { sku: "SKU-YOGURT", name: "Yogurt" },
+// ];
+
+// function seedDemo() {
+//   const now = Date.now();
+//   const sales: Sale[] = Array.from({ length: 300 }).map(() => {
+//     const d = new Date(now - Math.floor(Math.random() * 90) * 86400000);
+//     d.setHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60));
+//     const items: SaleItem[] = Array.from({
+//       length: 1 + Math.floor(Math.random() * 4),
+//     }).map(() => {
+//       const p = PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)];
+//       const qty = 1 + Math.floor(Math.random() * 6);
+//       const price = 300 + Math.floor(Math.random() * 3000);
+//       return { product_id: p.sku, sku: p.sku, product_name: p.name, qty, price };
+//     });
+//     return {
+//       id: uuid(),
+//       created_at: d.toISOString(),
+//       total: items.reduce((s, i) => s + i.qty * i.price, 0),
+//       items,
+//     };
+//   });
+//   writeSales(sales);
 // }
 
-// function metricLabel(m: Metric) {
-//   if (m === "revenue") return "Revenue";
-//   if (m === "qty") return "Quantity";
-//   return "Orders";
-// }
-
-// function metricFormat(m: Metric, v: number) {
-//   if (m === "revenue") return money(v);
-//   return Number(v || 0).toLocaleString();
-// }
-
-// // inline highlight without dangerouslySetInnerHTML
-// function HighlightText({ text, q }: { text: string; q: string }) {
-//   const kw = q.trim();
-//   if (!kw) return <>{text}</>;
-
-//   const lower = text.toLowerCase();
-//   const idx = lower.indexOf(kw.toLowerCase());
-//   if (idx < 0) return <>{text}</>;
-
-//   const before = text.slice(0, idx);
-//   const hit = text.slice(idx, idx + kw.length);
-//   const after = text.slice(idx + kw.length);
-
+// /* ─── Highlight ───────────────────────────────────────────────────── */
+// function Highlight({ text, q }: { text: string; q: string }) {
+//   if (!q.trim()) return <>{text}</>;
+//   const i = text.toLowerCase().indexOf(q.toLowerCase());
+//   if (i < 0) return <>{text}</>;
 //   return (
 //     <>
-//       {before}
-//       <mark className="rounded px-1 bg-primary/15 text-foreground">{hit}</mark>
-//       {after}
+//       {text.slice(0, i)}
+//       <span className="bg-amber-400/30 text-amber-200 rounded px-0.5">
+//         {text.slice(i, i + q.length)}
+//       </span>
+//       {text.slice(i + q.length)}
 //     </>
 //   );
 // }
 
-// /* ----------------------------- Demo Seed ----------------------------- */
-// function seedDemo() {
-//   const products = [
-//     { sku: "SKU-COKE", name: "Coke" },
-//     { sku: "SKU-BREAD", name: "Bread" },
-//     { sku: "SKU-MILK", name: "Milk" },
-//     { sku: "SKU-EGG", name: "Egg" },
-//     { sku: "SKU-WATER", name: "Water" },
-//     { sku: "SKU-COFFEE", name: "Coffee" },
-//     { sku: "SKU-TEA", name: "Tea" },
-//     { sku: "SKU-RICE", name: "Rice" },
-//     { sku: "SKU-NOODLE", name: "Noodle" },
-//     { sku: "SKU-SNACK", name: "Snack" },
-//   ];
-
-//   const now = Date.now();
-
-//   const sales: Sale[] = Array.from({ length: 220 }).map(() => {
-//     const dayOffset = Math.floor(Math.random() * 90);
-//     const hour = Math.floor(Math.random() * 24);
-//     const minute = Math.floor(Math.random() * 60);
-
-//     const d = new Date(now - dayOffset * 86400000);
-//     d.setHours(hour, minute, 0, 0);
-
-//     const itemsCount = 1 + Math.floor(Math.random() * 4);
-//     const items: SaleItem[] = Array.from({ length: itemsCount }).map(() => {
-//       const p = products[Math.floor(Math.random() * products.length)];
-//       const qty = 1 + Math.floor(Math.random() * 5);
-//       const price = 200 + Math.floor(Math.random() * 2500);
-
-//       return {
-//         product_id: p.sku,
-//         sku: p.sku,
-//         product_name: p.name,
-//         qty,
-//         price,
-//       };
-//     });
-
-//     const total = items.reduce((sum, it) => sum + it.qty * it.price, 0);
-
-//     return {
-//       id: uuid(),
-//       created_at: d.toISOString(),
-//       total,
-//       items,
-//     };
-//   });
-
-//   writeSales(sales);
+// /* ─── MiniBarChart inline ─────────────────────────────────────────── */
+// function SparkBars({ data }: { data: number[] }) {
+//   const max = Math.max(...data, 1);
+//   return (
+//     <div className="flex items-end gap-[2px] h-8">
+//       {data.map((v, i) => (
+//         <div
+//           key={i}
+//           className="flex-1 rounded-sm bg-amber-400/70"
+//           style={{ height: `${Math.round((v / max) * 100)}%`, minHeight: 2 }}
+//         />
+//       ))}
+//     </div>
+//   );
 // }
 
-// /* ----------------------------- Page ----------------------------- */
-// export default function SalesByProductPage() {
-//   const [sales, setSales] = useState<Sale[]>([]);
-//   const [loading, setLoading] = useState(false);
+// /* ─── VIEW CYCLE TYPES ────────────────────────────────────────────── */
+// const VIEW_CYCLE: CardView[] = ["info", "chart", "image"];
+// const VIEW_META: Record<CardView, { icon: React.ReactNode; label: string }> = {
+//   info: { icon: <LayoutGrid className="w-3 h-3" />, label: "INFO" },
+//   chart: { icon: <BarChart2 className="w-3 h-3" />, label: "CHART" },
+//   image: { icon: <ImageIcon className="w-3 h-3" />, label: "IMAGE" },
+// };
 
-//   // Left table search
-//   const [q, setQ] = useState("");
+// /* ─── Stat Card Types ─────────────────────────────────────────────── */
+// type StatCardDef = {
+//   id: string;
+//   label: string;
+//   view: CardView;
+// };
 
-//   // selected product
-//   const [selectedSku, setSelectedSku] = useState<string>("");
+// /* ─── StatCard Content ────────────────────────────────────────────── */
+// type StatContentProps = {
+//   id: string;
+//   view: CardView;
+//   allRows: ReturnType<typeof useAggregation>["allRows"];
+//   totalRevenue: number;
+//   totalQty: number;
+//   totalOrders: number;
+// };
 
-//   // right chart config
-//   const [granularity, setGranularity] = useState<Granularity>("day");
-//   const [metric, setMetric] = useState<Metric>("revenue");
-
-//   // smooth scroll target + pulse animation
-//   const rightRef = useRef<HTMLDivElement | null>(null);
-//   const [pulse, setPulse] = useState(false);
-
-//   function reload() {
-//     setLoading(true);
-//     try {
-//       const data = readSales();
-//       if (!data || data.length === 0) seedDemo();
-//       setSales(readSales());
-//     } finally {
-//       setLoading(false);
-//     }
-//   }
-
-//   useEffect(() => {
-//     reload();
-//   }, []);
-
-//   /* ----------------------------- Aggregation for table ----------------------------- */
-//   const productRows = useMemo(() => {
-//     const map = new Map<
-//       string,
-//       { sku: string; name: string; revenue: number; qty: number; orders: number }
-//     >();
-
-//     for (const s of sales) {
-//       const seen = new Set<string>();
-//       for (const it of s.items) {
-//         const key = it.sku || it.product_id || "NA";
-//         const cur = map.get(key) || {
-//           sku: key,
-//           name: it.product_name || key,
-//           revenue: 0,
-//           qty: 0,
-//           orders: 0,
-//         };
-
-//         cur.qty += Number(it.qty || 0);
-//         cur.revenue += Number(it.qty || 0) * Number(it.price || 0);
-
-//         if (!seen.has(key)) {
-//           cur.orders += 1;
-//           seen.add(key);
-//         }
-//         map.set(key, cur);
-//       }
-//     }
-
-//     let rows = Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
-
-//     const kw = q.trim().toLowerCase();
-//     if (kw) {
-//       rows = rows.filter(
-//         (r) =>
-//           r.sku.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw),
+// function StatContent({ id, view, allRows, totalRevenue, totalQty, totalOrders }: StatContentProps) {
+//   if (view === "info") {
+//     if (id === "revenue")
+//       return (
+//         <>
+//           <div className="text-3xl font-black tracking-tight text-amber-400 font-mono">
+//             {money(totalRevenue)}
+//           </div>
+//           <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">MMK / Total</div>
+//         </>
 //       );
-//     }
-
-//     return rows;
-//   }, [sales, q]);
-
-//   // default selection
-//   useEffect(() => {
-//     if (!selectedSku && productRows.length > 0) setSelectedSku(productRows[0].sku);
-//   }, [productRows, selectedSku]);
-
-//   const selectedProduct = useMemo(() => {
-//     return productRows.find((p) => p.sku === selectedSku) || null;
-//   }, [productRows, selectedSku]);
-
-//   /* ----------------------------- Series for selected product ----------------------------- */
-//   const series = useMemo(() => {
-//     if (!selectedSku) return [];
-
-//     const bucket = new Map<
-//       string,
-//       { bucket: string; revenue: number; qty: number; orders: number }
-//     >();
-
-//     for (const s of sales) {
-//       const items = s.items.filter((it) => (it.sku || it.product_id) === selectedSku);
-//       if (items.length === 0) continue;
-
-//       const k = groupKey(new Date(s.created_at), granularity);
-
-//       const cur = bucket.get(k) || { bucket: k, revenue: 0, qty: 0, orders: 0 };
-//       for (const it of items) {
-//         cur.qty += Number(it.qty || 0);
-//         cur.revenue += Number(it.qty || 0) * Number(it.price || 0);
-//       }
-//       cur.orders += 1;
-
-//       bucket.set(k, cur);
-//     }
-
-//     return Array.from(bucket.values()).sort((a, b) => sortKey(a.bucket, b.bucket));
-//   }, [sales, selectedSku, granularity]);
-
-//   const chartConfig = {
-//     revenue: { label: "Revenue" },
-//     qty: { label: "Quantity" },
-//     orders: { label: "Orders" },
-//   } as const;
-
-//   const metricColorVar =
-//     metric === "revenue"
-//       ? "var(--chart-1)"
-//       : metric === "qty"
-//       ? "var(--chart-2)"
-//       : "var(--chart-3)";
-
-//   function selectProduct(sku: string) {
-//     setSelectedSku(sku);
-//     rightRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-//     setPulse(true);
-//     window.setTimeout(() => setPulse(false), 450);
+//     if (id === "qty")
+//       return (
+//         <>
+//           <div className="text-3xl font-black tracking-tight text-sky-400 font-mono">{totalQty}</div>
+//           <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">Units Sold</div>
+//         </>
+//       );
+//     if (id === "products")
+//       return (
+//         <>
+//           <div className="text-3xl font-black tracking-tight text-emerald-400 font-mono">
+//             {allRows.length}
+//           </div>
+//           <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">Unique SKUs</div>
+//         </>
+//       );
 //   }
+
+//   if (view === "chart") {
+//     const top = allRows.slice(0, 8);
+//     const data =
+//       id === "revenue"
+//         ? top.map((r) => r.revenue)
+//         : id === "qty"
+//         ? top.map((r) => r.qty)
+//         : top.map((r) => r.orders);
+//     return (
+//       <div className="mt-1">
+//         <SparkBars data={data} />
+//         <div className="text-[10px] text-zinc-600 mt-1 uppercase tracking-widest">Top 8 products</div>
+//       </div>
+//     );
+//   }
+
+//   if (view === "image") {
+//     return (
+//       <div className="grid grid-cols-3 gap-1 mt-1">
+//         {allRows.slice(0, 6).map((r, i) => (
+//           <div
+//             key={r.sku}
+//             className="aspect-square rounded-md flex flex-col items-center justify-center text-center p-1"
+//             style={{
+//               background: `hsl(${(i * 47) % 360} 30% 18%)`,
+//               border: "1px solid hsl(" + ((i * 47) % 360) + " 30% 28%)",
+//             }}
+//           >
+//             <PackageSearch className="w-3 h-3 mb-0.5 opacity-60" style={{ color: `hsl(${(i * 47) % 360} 70% 65%)` }} />
+//             <div className="text-[8px] leading-tight opacity-70 truncate w-full text-center px-0.5">
+//               {r.name.slice(0, 8)}
+//             </div>
+//           </div>
+//         ))}
+//       </div>
+//     );
+//   }
+
+//   return null;
+// }
+
+// /* ─── useSortableCard ─────────────────────────────────────────────── */
+// function SortableStatCard({
+//   card,
+//   allRows,
+//   totalRevenue,
+//   totalQty,
+//   totalOrders,
+//   onCycle,
+//   isGhost,
+// }: {
+//   card: StatCardDef;
+//   allRows: ReturnType<typeof useAggregation>["allRows"];
+//   totalRevenue: number;
+//   totalQty: number;
+//   totalOrders: number;
+//   onCycle: (id: string) => void;
+//   isGhost?: boolean;
+// }) {
+//   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+//     id: card.id,
+//   });
+
+//   const style: React.CSSProperties = {
+//     transform: CSS.Transform.toString(transform),
+//     transition,
+//     opacity: isGhost ? 0.3 : 1,
+//   };
 
 //   return (
-//     <div className="w-full flex justify-center py-8 px-3">
-//       <div className="w-full max-w-6xl space-y-4">
-//         {/* Header */}
-//         <Card className="overflow-hidden">
-//           <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-//             <div className="space-y-1">
-//               <CardTitle className="flex items-center gap-2">
-//                 <Package className="h-5 w-5" />
-//                 Sales by Product
-//               </CardTitle>
-//               <CardDescription>
-//                 Frontend-only test (localStorage) — Table selector + One Chart + Tabs
-//               </CardDescription>
+//     <div ref={setNodeRef} style={style} className="relative group">
+//       <div className="lux-card rounded-2xl p-4 h-full flex flex-col">
+//         {/* Header row */}
+//         <div className="flex items-center justify-between mb-3">
+//           <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">
+//             {card.label}
+//           </div>
+//           <div className="flex items-center gap-1">
+//             {/* View cycle button */}
+//             <button
+//               onClick={() => onCycle(card.id)}
+//               className="flex items-center gap-1 text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-full border border-zinc-700 text-zinc-500 hover:border-amber-500/60 hover:text-amber-400 transition-all"
+//             >
+//               {VIEW_META[card.view].icon}
+//               {VIEW_META[card.view].label}
+//             </button>
+//             {/* Drag handle */}
+//             <div
+//               {...attributes}
+//               {...listeners}
+//               className="opacity-0 group-hover:opacity-40 hover:!opacity-80 cursor-grab active:cursor-grabbing p-1 transition-opacity"
+//             >
+//               <GripVertical className="w-3.5 h-3.5 text-zinc-400" />
 //             </div>
-
-//             <div className="flex flex-wrap items-center gap-2">
-//               <Button
-//                 variant="outline"
-//                 size="sm"
-//                 onClick={reload}
-//                 disabled={loading}
-//                 className="gap-2"
-//               >
-//                 <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-//                 Reload
-//               </Button>
-
-//               <Button
-//                 variant="outline"
-//                 size="sm"
-//                 onClick={() => {
-//                   seedDemo();
-//                   setSales(readSales());
-//                   toast.success("Seeded demo ✅");
-//                 }}
-//                 className="gap-2"
-//               >
-//                 <Wand2 className="h-4 w-4" />
-//                 Seed
-//               </Button>
-//             </div>
-//           </CardHeader>
-//         </Card>
-
-//         {/* Layout */}
-//         <div className="grid gap-4 lg:grid-cols-5">
-//           {/* LEFT: Nice table */}
-//           <Card className="lg:col-span-2 overflow-hidden">
-//             <CardHeader className="space-y-2">
-//               <CardTitle className="flex items-center gap-2">
-//                 <ShoppingCart className="h-5 w-5" />
-//                 Products
-//               </CardTitle>
-//               <CardDescription>
-//                 Click product → right side chart update
-//               </CardDescription>
-
-//               <div className="relative">
-//                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-//                 <Input
-//                   className="pl-8"
-//                   placeholder="Search SKU / Name..."
-//                   value={q}
-//                   onChange={(e) => setQ(e.target.value)}
-//                 />
-//               </div>
-//             </CardHeader>
-
-//             <CardContent className="p-0">
-//               <div className="border-t" />
-
-//               <ScrollArea className="h-[560px]">
-//                 {/* 🏆 Top 5 sticky */}
-//                 <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b">
-//                   <div className="flex items-center justify-between px-3 py-2">
-//                     <div className="flex items-center gap-2 text-sm font-semibold">
-//                       <Star className="h-4 w-4 text-primary" />
-//                       Top 5
-//                     </div>
-//                     <Badge variant="secondary" className="text-xs">
-//                       Quick pick
-//                     </Badge>
-//                   </div>
-
-//                   <div className="px-2 pb-2 grid gap-2">
-//                     {productRows.slice(0, 5).map((p, i) => {
-//                       const active = p.sku === selectedSku;
-//                       return (
-//                         <button
-//                           key={p.sku}
-//                           type="button"
-//                           onClick={() => selectProduct(p.sku)}
-//                           className={cn(
-//                             "w-full text-left rounded-xl border px-3 py-2 transition",
-//                             active
-//                               ? "bg-muted/70 border-primary/30"
-//                               : "hover:bg-muted/40",
-//                           )}
-//                         >
-//                           <div className="flex items-center justify-between gap-2">
-//                             <div className="min-w-0">
-//                               <div className="text-sm font-semibold truncate">
-//                                 <HighlightText text={p.name} q={q} />
-//                               </div>
-//                               <div className="text-xs text-muted-foreground font-mono truncate">
-//                                 <HighlightText text={p.sku} q={q} />
-//                               </div>
-//                             </div>
-
-//                             <div className="flex items-center gap-2 shrink-0">
-//                               <div className="text-sm font-semibold tabular-nums">
-//                                 {money(p.revenue)}
-//                               </div>
-//                               <ChevronRight className="h-4 w-4 text-muted-foreground" />
-//                             </div>
-//                           </div>
-
-//                           <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
-//                             <div
-//                               className={cn(
-//                                 "h-full rounded-full",
-//                                 active ? "bg-primary" : "bg-primary/60",
-//                               )}
-//                               style={{
-//                                 width: `${Math.min(
-//                                   100,
-//                                   productRows[0]?.revenue
-//                                     ? (p.revenue / productRows[0].revenue) * 100
-//                                     : 0,
-//                                 )}%`,
-//                               }}
-//                             />
-//                           </div>
-
-//                           <div className="mt-1 flex gap-2 text-[11px] text-muted-foreground">
-//                             <span>Qty {p.qty}</span>
-//                             <span>•</span>
-//                             <span>Orders {p.orders}</span>
-//                             <span>•</span>
-//                             <span>Rank #{i + 1}</span>
-//                           </div>
-//                         </button>
-//                       );
-//                     })}
-//                   </div>
-
-//                   <Separator />
-//                   <div className="px-3 py-2 text-xs text-muted-foreground">
-//                     All products
-//                   </div>
-//                 </div>
-
-//                 {/* Table */}
-//                 <table className="w-full text-sm">
-//                   <thead className="sticky top-[168px] z-[5] bg-background/95 backdrop-blur border-b">
-//                     <tr className="text-left text-muted-foreground">
-//                       <th className="p-3 w-[44px]">#</th>
-//                       <th className="p-3">Product</th>
-//                       <th className="p-3 text-right">Revenue</th>
-//                       <th className="p-3 w-[120px]">Share</th>
-//                     </tr>
-//                   </thead>
-
-//                   <tbody>
-//                     {productRows.length === 0 ? (
-//                       <tr>
-//                         <td colSpan={4} className="p-4 text-muted-foreground">
-//                           No data. Seed လုပ်ပြီးစမ်းပါ
-//                         </td>
-//                       </tr>
-//                     ) : null}
-
-//                     {productRows.map((p, idx) => {
-//                       const active = p.sku === selectedSku;
-//                       const share = productRows[0]?.revenue
-//                         ? Math.min(100, (p.revenue / productRows[0].revenue) * 100)
-//                         : 0;
-
-//                       return (
-//                         <tr
-//                           key={p.sku}
-//                           onClick={() => selectProduct(p.sku)}
-//                           className={cn(
-//                             "border-b cursor-pointer transition",
-//                             active ? "bg-muted/70" : "hover:bg-muted/40",
-//                           )}
-//                         >
-//                           <td className="p-3 text-muted-foreground font-mono">
-//                             {idx + 1}
-//                           </td>
-
-//                           <td className="p-3">
-//                             <div className="flex flex-col min-w-0">
-//                               <span className="font-medium truncate">
-//                                 <HighlightText text={p.name} q={q} />
-//                               </span>
-//                               <span className="text-xs text-muted-foreground font-mono truncate">
-//                                 <HighlightText text={p.sku} q={q} />
-//                               </span>
-//                             </div>
-//                           </td>
-
-//                           <td className="p-3 text-right font-semibold tabular-nums">
-//                             {money(p.revenue)}
-//                           </td>
-
-//                           <td className="p-3">
-//                             <div className="h-2 rounded-full bg-muted overflow-hidden">
-//                               <div
-//                                 className={cn(
-//                                   "h-full rounded-full transition-all",
-//                                   active ? "bg-primary" : "bg-primary/60",
-//                                 )}
-//                                 style={{ width: `${share}%` }}
-//                               />
-//                             </div>
-//                           </td>
-//                         </tr>
-//                       );
-//                     })}
-//                   </tbody>
-//                 </table>
-//               </ScrollArea>
-//             </CardContent>
-//           </Card>
-
-//           {/* RIGHT: One chart + tabs */}
-//           <div ref={rightRef} className={cn("lg:col-span-3 scroll-mt-6", pulse && "animate-pulse")}>
-//             <Card className="overflow-hidden">
-//               <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-//                 <div className="space-y-1">
-//                   <CardTitle className="flex items-center gap-2">
-//                     <TrendingUp className="h-5 w-5" />
-//                     {selectedProduct ? selectedProduct.name : "Product Analytics"}
-//                   </CardTitle>
-//                   <CardDescription>
-//                     One Chart + Metric Tabs (Revenue / Qty / Orders)
-//                   </CardDescription>
-//                 </div>
-
-//                 <div className="flex flex-wrap items-center gap-2">
-//                   <Badge variant="secondary" className="gap-1">
-//                     <Clock className="h-3.5 w-3.5" />
-//                     {granularity}
-//                   </Badge>
-
-//                   {(["hour", "day", "month", "year"] as Granularity[]).map((g) => (
-//                     <Button
-//                       key={g}
-//                       size="sm"
-//                       variant={granularity === g ? "default" : "outline"}
-//                       onClick={() => setGranularity(g)}
-//                     >
-//                       {g}
-//                     </Button>
-//                   ))}
-//                 </div>
-//               </CardHeader>
-
-//               <CardContent className="space-y-4">
-//                 {/* Summary */}
-//                 {selectedProduct ? (
-//                   <div className="rounded-2xl border p-4 bg-card/40">
-//                     <div className="flex flex-wrap items-start justify-between gap-3">
-//                       <div className="min-w-0">
-//                         <div className="text-lg font-semibold break-words">
-//                           {selectedProduct.name}
-//                         </div>
-//                         <div className="text-xs text-muted-foreground font-mono">
-//                           {selectedProduct.sku}
-//                         </div>
-//                       </div>
-
-//                       <div className="flex flex-wrap gap-2">
-//                         <Badge variant="secondary" className="gap-1">
-//                           <Coins className="h-3.5 w-3.5" />
-//                           {money(selectedProduct.revenue)}
-//                         </Badge>
-//                         <Badge variant="outline">Qty {selectedProduct.qty}</Badge>
-//                         <Badge variant="outline">Orders {selectedProduct.orders}</Badge>
-//                       </div>
-//                     </div>
-//                   </div>
-//                 ) : (
-//                   <div className="text-sm text-muted-foreground">Select a product...</div>
-//                 )}
-
-//                 <Separator />
-
-//                 {/* Metric tabs */}
-//                 <div className="flex items-center justify-between gap-3 flex-wrap">
-//                   <Tabs value={metric} onValueChange={(v) => setMetric(v as Metric)}>
-//                     <TabsList>
-//                       <TabsTrigger value="revenue">Revenue</TabsTrigger>
-//                       <TabsTrigger value="qty">Qty</TabsTrigger>
-//                       <TabsTrigger value="orders">Orders</TabsTrigger>
-//                     </TabsList>
-//                   </Tabs>
-
-//                   <Badge variant="secondary" className="gap-1">
-//                     {metricLabel(metric)}
-//                   </Badge>
-//                 </div>
-
-//                 {/* Empty */}
-//                 {selectedSku && series.length === 0 ? (
-//                   <div className="text-sm text-muted-foreground">
-//                     ဒီ product အတွက် sales record မတွေ့ပါ (Seed ထည့်ပြီးပြန်စမ်းပါ)
-//                   </div>
-//                 ) : null}
-
-//                 {/* Chart */}
-//                 <div className="rounded-2xl border p-3">
-//                   <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-//                     <div className="text-sm font-medium">{metricLabel(metric)}</div>
-//                     <div className="text-xs text-muted-foreground">
-//                       Value: <b>{metric === "revenue" ? "MMK/JPY" : "count"}</b>
-//                     </div>
-//                   </div>
-
-//                   <div className="h-[360px]">
-//                     <ChartContainer config={chartConfig} className="h-full w-full">
-//                       <ResponsiveContainer width="100%" height="100%">
-//                         <AreaChart data={series} margin={{ left: 8, right: 12, top: 12, bottom: 0 }}>
-//                           <CartesianGrid vertical={false} />
-//                           <XAxis dataKey="bucket" tickLine={false} axisLine={false} />
-//                           <YAxis
-//                             tickLine={false}
-//                             axisLine={false}
-//                             allowDecimals={metric === "revenue"}
-//                             tickFormatter={(v) => (metric === "revenue" ? money(v) : String(v))}
-//                           />
-//                           <ChartTooltip
-//                             content={
-//                               <ChartTooltipContent
-//                                 formatter={(value) => metricFormat(metric, Number(value))}
-//                               />
-//                             }
-//                           />
-//                           <Area
-//                             dataKey={metric}
-//                             type="monotone"
-//                             stroke={metricColorVar}
-//                             fill={metricColorVar}
-//                             fillOpacity={0.22}
-//                             strokeWidth={2}
-//                           />
-//                         </AreaChart>
-//                       </ResponsiveContainer>
-//                     </ChartContainer>
-//                   </div>
-//                 </div>
-
-//                 <div className="text-xs text-muted-foreground">
-//                   Frontend-only test (localStorage) — DB မလိုပါ
-//                 </div>
-//               </CardContent>
-//             </Card>
 //           </div>
 //         </div>
+
+//         <StatContent
+//           id={card.id}
+//           view={card.view}
+//           allRows={allRows}
+//           totalRevenue={totalRevenue}
+//           totalQty={totalQty}
+//           totalOrders={totalOrders}
+//         />
 //       </div>
 //     </div>
 //   );
 // }
+
+// /* ─── useAggregation hook ─────────────────────────────────────────── */
+// function useAggregation(sales: Sale[]) {
+//   return useMemo(() => {
+//     const map = new Map<
+//       string,
+//       { sku: string; name: string; revenue: number; qty: number; orders: number }
+//     >();
+//     for (const s of sales) {
+//       const seen = new Set<string>();
+//       for (const it of s.items) {
+//         const key = it.sku || it.product_id || "?";
+//         const cur = map.get(key) || { sku: key, name: it.product_name || key, revenue: 0, qty: 0, orders: 0 };
+//         cur.qty += Number(it.qty || 0);
+//         cur.revenue += Number(it.qty || 0) * Number(it.price || 0);
+//         if (!seen.has(key)) { cur.orders += 1; seen.add(key); }
+//         map.set(key, cur);
+//       }
+//     }
+//     return { allRows: Array.from(map.values()).sort((a, b) => b.revenue - a.revenue) };
+//   }, [sales]);
+// }
+
+// /* ─── Main Page ───────────────────────────────────────────────────── */
+// const PAGE_SIZE = 20;
+
+// export default function SalesByProductPage() {
+//   const [sales, setSales] = useState<Sale[]>([]);
+//   const [loading, setLoading] = useState(false);
+//   const [q, setQ] = useState("");
+//   const [selectedSku, setSelectedSku] = useState("");
+//   const [granularity, setGranularity] = useState<Granularity>("day");
+//   const [metric, setMetric] = useState<Metric>("revenue");
+//   const [page, setPage] = useState(1);
+//   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
+//   const rightRef = useRef<HTMLDivElement>(null);
+
+//   const [statCards, setStatCards] = useState<StatCardDef[]>([
+//     { id: "revenue", label: "Total Revenue", view: "info" },
+//     { id: "qty", label: "Total Units", view: "info" },
+//     { id: "products", label: "Unique Products", view: "info" },
+//   ]);
+
+//   const sensors = useSensors(
+//     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+//     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+//   );
+
+//   function reload() {
+//     setLoading(true);
+//     setTimeout(() => {
+//       const d = readSales();
+//       if (!d.length) seedDemo();
+//       setSales(readSales());
+//       setLoading(false);
+//     }, 50);
+//   }
+
+//   useEffect(() => { reload(); }, []);
+
+//   const { allRows } = useAggregation(sales);
+
+//   const filteredRows = useMemo(() => {
+//     const kw = q.trim().toLowerCase();
+//     if (!kw) return allRows;
+//     return allRows.filter(r => r.sku.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw));
+//   }, [allRows, q]);
+
+//   useEffect(() => { setPage(1); }, [q]);
+//   useEffect(() => {
+//     if (!selectedSku && filteredRows.length) setSelectedSku(filteredRows[0].sku);
+//   }, [filteredRows]);
+
+//   const totalRevenue = useMemo(() => allRows.reduce((s, r) => s + r.revenue, 0), [allRows]);
+//   const totalQty = useMemo(() => allRows.reduce((s, r) => s + r.qty, 0), [allRows]);
+//   const totalOrders = useMemo(() => sales.length, [sales]);
+
+//   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+//   const safePage = Math.min(Math.max(page, 1), totalPages);
+//   const pageRows = useMemo(() => filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredRows, safePage]);
+//   const selectedProduct = filteredRows.find(r => r.sku === selectedSku) || null;
+
+//   const series = useMemo(() => {
+//     if (!selectedSku) return [];
+//     const bucket = new Map<string, { bucket: string; revenue: number; qty: number; orders: number }>();
+//     for (const s of sales) {
+//       const items = s.items.filter(it => (it.sku || it.product_id) === selectedSku);
+//       if (!items.length) continue;
+//       const k = groupKey(new Date(s.created_at), granularity);
+//       const cur = bucket.get(k) || { bucket: k, revenue: 0, qty: 0, orders: 0 };
+//       items.forEach(it => { cur.qty += Number(it.qty || 0); cur.revenue += Number(it.qty || 0) * Number(it.price || 0); });
+//       cur.orders += 1;
+//       bucket.set(k, cur);
+//     }
+//     return Array.from(bucket.values()).sort((a, b) => a.bucket < b.bucket ? -1 : 1);
+//   }, [sales, selectedSku, granularity]);
+
+//   function selectProduct(sku: string) {
+//     setSelectedSku(sku);
+//     rightRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+//   }
+
+//   const handleCycle = useCallback((id: string) => {
+//     setStatCards(prev => prev.map(c => c.id === id ? {
+//       ...c,
+//       view: VIEW_CYCLE[(VIEW_CYCLE.indexOf(c.view) + 1) % VIEW_CYCLE.length]
+//     } : c));
+//   }, []);
+
+//   function handleDragStart(e: DragStartEvent) { setActiveId(e.active.id); }
+//   function handleDragEnd(e: DragEndEvent) {
+//     setActiveId(null);
+//     if (e.over && e.active.id !== e.over.id) {
+//       setStatCards(prev => {
+//         const oi = prev.findIndex(c => c.id === e.active.id);
+//         const ni = prev.findIndex(c => c.id === e.over!.id);
+//         return arrayMove(prev, oi, ni);
+//       });
+//     }
+//   }
+
+//   const activeCard = statCards.find(c => c.id === activeId);
+//   const METRIC_COLOR = { revenue: "#f59e0b", qty: "#38bdf8", orders: "#a78bfa" };
+
+//   return (
+//     <>
+//       <style>{`
+//         .lux-card {
+//           background: linear-gradient(135deg, #18181b 0%, #1c1c1f 100%);
+//           border: 1px solid #27272a;
+//           transition: border-color 0.2s;
+//         }
+//         .lux-card:hover { border-color: #3f3f46; }
+//         .lux-page { background: #0f0f11; min-height: 100vh; color: #e4e4e7; }
+//         .lux-row-active { background: rgba(245,158,11,0.08) !important; border-left: 2px solid #f59e0b; }
+//         .lux-row:hover { background: rgba(255,255,255,0.03); }
+//         .progress-track { background: #27272a; border-radius: 2px; height: 3px; overflow: hidden; }
+//         .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+//         .lux-btn { background: transparent; border: 1px solid #3f3f46; color: #a1a1aa; border-radius: 8px; padding: 4px 12px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; transition: all 0.15s; cursor: pointer; }
+//         .lux-btn:hover { border-color: #f59e0b; color: #f59e0b; }
+//         .lux-btn-active { border-color: #f59e0b !important; color: #f59e0b !important; background: rgba(245,158,11,0.08) !important; }
+//         .lux-metric-btn { background: transparent; border: 1px solid #3f3f46; border-radius: 6px; padding: 6px 14px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: all 0.15s; color: #71717a; }
+//         .lux-metric-btn:hover { border-color: #52525b; color: #a1a1aa; }
+//         .lux-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; border: 1px solid #3f3f46; color: #71717a; }
+//         .divider { height: 1px; background: #27272a; margin: 0; }
+//         input.lux-input { background: #18181b; border: 1px solid #27272a; color: #e4e4e7; border-radius: 10px; padding: 8px 12px 8px 36px; font-size: 13px; width: 100%; outline: none; transition: border-color 0.15s; }
+//         input.lux-input:focus { border-color: #52525b; }
+//         input.lux-input::placeholder { color: #52525b; }
+//         .chart-tooltip { background: #1c1c1f !important; border: 1px solid #3f3f46 !important; border-radius: 8px !important; font-size: 12px !important; }
+//       `}</style>
+
+//       <div className="lux-page p-4 md:p-8">
+//         <div className="max-w-7xl mx-auto space-y-6">
+
+//           {/* ── Header ── */}
+//           <div className="flex items-center justify-between">
+//             <div>
+//               <div className="flex items-center gap-2 mb-1">
+//                 <Zap className="w-4 h-4 text-amber-400" />
+//                 <span className="text-[10px] uppercase tracking-[0.3em] text-amber-400/70 font-medium">
+//                   Analytics Console
+//                 </span>
+//               </div>
+//               <h1 className="text-2xl font-black tracking-tight text-zinc-100">
+//                 Sales by Product
+//               </h1>
+//               <p className="text-xs text-zinc-600 mt-0.5">
+//                 Cards drag လုပ်ပြီး sort · view button နှိပ်ပြီး{" "}
+//                 <span className="text-amber-500/80">info → chart → image</span> ပြောင်း
+//               </p>
+//             </div>
+//             <div className="flex items-center gap-2">
+//               <button
+//                 className="lux-btn flex items-center gap-2"
+//                 onClick={() => { seedDemo(); setSales(readSales()); }}
+//               >
+//                 <Wand2 className="w-3 h-3" /> Seed
+//               </button>
+//               <button
+//                 className="lux-btn flex items-center gap-2"
+//                 onClick={reload}
+//                 disabled={loading}
+//               >
+//                 <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} /> Reload
+//               </button>
+//             </div>
+//           </div>
+
+//           {/* ── DnD Stat Cards ── */}
+//           <DndContext
+//             sensors={sensors}
+//             collisionDetection={closestCenter}
+//             onDragStart={handleDragStart}
+//             onDragEnd={handleDragEnd}
+//           >
+//             <SortableContext items={statCards.map(c => c.id)} strategy={rectSortingStrategy}>
+//               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+//                 {statCards.map(card => (
+//                   <SortableStatCard
+//                     key={card.id}
+//                     card={card}
+//                     allRows={allRows}
+//                     totalRevenue={totalRevenue}
+//                     totalQty={totalQty}
+//                     totalOrders={totalOrders}
+//                     onCycle={handleCycle}
+//                     isGhost={activeId === card.id}
+//                   />
+//                 ))}
+//               </div>
+//             </SortableContext>
+
+//             <DragOverlay>
+//               {activeCard && (
+//                 <div className="lux-card rounded-2xl p-4 rotate-2 scale-105 shadow-2xl opacity-90">
+//                   <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-2">
+//                     {activeCard.label}
+//                   </div>
+//                   <StatContent
+//                     id={activeCard.id}
+//                     view={activeCard.view}
+//                     allRows={allRows}
+//                     totalRevenue={totalRevenue}
+//                     totalQty={totalQty}
+//                     totalOrders={totalOrders}
+//                   />
+//                 </div>
+//               )}
+//             </DragOverlay>
+//           </DndContext>
+
+//           {/* ── Main Layout ── */}
+//           <div className="grid gap-4 lg:grid-cols-5">
+//             {/* LEFT: Product List */}
+//             <div className="lg:col-span-2 lux-card rounded-2xl overflow-hidden flex flex-col">
+//               <div className="p-4 border-b border-zinc-800/60">
+//                 <div className="flex items-center justify-between mb-3">
+//                   <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-500">
+//                     Products
+//                   </div>
+//                   <span className="lux-tag">
+//                     <span>{filteredRows.length} SKUs</span>
+//                   </span>
+//                 </div>
+
+//                 <div className="relative">
+//                   <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-600" />
+//                   <input
+//                     className="lux-input"
+//                     placeholder="Search name or SKU…"
+//                     value={q}
+//                     onChange={e => setQ(e.target.value)}
+//                   />
+//                 </div>
+//               </div>
+
+//               <ScrollArea className="flex-1 h-[580px]">
+//                 {/* Top 3 highlight */}
+//                 <div className="p-3 border-b border-zinc-800/60">
+//                   <div className="text-[9px] uppercase tracking-[0.25em] text-zinc-600 mb-2 px-1">
+//                     Top Performers
+//                   </div>
+//                   {filteredRows.slice(0, 3).map((r, i) => {
+//                     const active = r.sku === selectedSku;
+//                     const pct = filteredRows[0]?.revenue ? (r.revenue / filteredRows[0].revenue) * 100 : 0;
+//                     const rankColor = ["text-amber-400", "text-zinc-300", "text-zinc-500"][i];
+//                     return (
+//                       <button
+//                         key={r.sku}
+//                         onClick={() => selectProduct(r.sku)}
+//                         className={cn(
+//                           "w-full text-left rounded-xl px-3 py-2.5 mb-1.5 transition-all",
+//                           active ? "lux-row-active" : "lux-row hover:bg-zinc-800/40"
+//                         )}
+//                         style={{ border: active ? undefined : "1px solid transparent" }}
+//                       >
+//                         <div className="flex items-center justify-between">
+//                           <div className="flex items-center gap-2 min-w-0">
+//                             <span className={cn("text-xs font-black w-4 shrink-0", rankColor)}>
+//                               {i + 1}
+//                             </span>
+//                             <div className="min-w-0">
+//                               <div className="text-sm font-semibold text-zinc-100 truncate">
+//                                 <Highlight text={r.name} q={q} />
+//                               </div>
+//                               <div className="text-[10px] text-zinc-600 font-mono">
+//                                 <Highlight text={r.sku} q={q} />
+//                               </div>
+//                             </div>
+//                           </div>
+//                           <div className="text-right shrink-0 ml-2">
+//                             <div className="text-xs font-bold text-amber-400 font-mono">
+//                               {money(r.revenue)}
+//                             </div>
+//                             <div className="text-[10px] text-zinc-600">{r.qty} units</div>
+//                           </div>
+//                         </div>
+//                         <div className="progress-track mt-2">
+//                           <div className="progress-fill" style={{ width: `${pct}%` }} />
+//                         </div>
+//                       </button>
+//                     );
+//                   })}
+//                 </div>
+
+//                 {/* Paged table */}
+//                 <div className="divide-y divide-zinc-800/40">
+//                   {pageRows.length === 0 ? (
+//                     <div className="p-6 text-center text-zinc-600 text-sm">
+//                       No data — Seed လုပ်ပြီးစမ်းပါ
+//                     </div>
+//                   ) : pageRows.map((r, idx) => {
+//                     const active = r.sku === selectedSku;
+//                     const globalIdx = (safePage - 1) * PAGE_SIZE + idx + 1;
+//                     const pct = filteredRows[0]?.revenue ? Math.min(100, (r.revenue / filteredRows[0].revenue) * 100) : 0;
+//                     return (
+//                       <button
+//                         key={r.sku}
+//                         onClick={() => selectProduct(r.sku)}
+//                         className={cn(
+//                           "w-full text-left px-4 py-2.5 transition-all lux-row",
+//                           active ? "lux-row-active" : ""
+//                         )}
+//                       >
+//                         <div className="flex items-center gap-3">
+//                           <span className="text-[11px] text-zinc-600 font-mono w-5 shrink-0 text-right">
+//                             {globalIdx}
+//                           </span>
+//                           <div className="flex-1 min-w-0">
+//                             <div className="text-[13px] font-medium text-zinc-200 truncate">
+//                               <Highlight text={r.name} q={q} />
+//                             </div>
+//                             <div className="flex items-center gap-2 mt-0.5">
+//                               <div className="progress-track flex-1">
+//                                 <div className="progress-fill" style={{ width: `${pct}%`, background: active ? "#f59e0b" : "#52525b" }} />
+//                               </div>
+//                               <span className="text-[10px] text-zinc-600 font-mono shrink-0">
+//                                 {money(r.revenue)}
+//                               </span>
+//                             </div>
+//                           </div>
+//                         </div>
+//                       </button>
+//                     );
+//                   })}
+//                 </div>
+
+//                 {/* Pagination */}
+//                 <div className="p-3 flex items-center justify-between border-t border-zinc-800/60">
+//                   <span className="text-[10px] text-zinc-600">
+//                     pg {safePage}/{totalPages}
+//                   </span>
+//                   <div className="flex items-center gap-1">
+//                     <button
+//                       className="lux-btn px-2 py-1"
+//                       disabled={safePage <= 1}
+//                       onClick={() => setPage(p => Math.max(1, p - 1))}
+//                     >
+//                       <ChevronLeft className="w-3 h-3" />
+//                     </button>
+//                     {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+//                       const n = Math.max(1, Math.min(safePage - 2, totalPages - 4)) + i;
+//                       return (
+//                         <button
+//                           key={n}
+//                           className={cn("lux-btn px-2.5 py-1", n === safePage && "lux-btn-active")}
+//                           onClick={() => setPage(n)}
+//                         >
+//                           {n}
+//                         </button>
+//                       );
+//                     })}
+//                     <button
+//                       className="lux-btn px-2 py-1"
+//                       disabled={safePage >= totalPages}
+//                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+//                     >
+//                       <ChevronRight className="w-3 h-3" />
+//                     </button>
+//                   </div>
+//                 </div>
+//               </ScrollArea>
+//             </div>
+
+//             {/* RIGHT: Chart Panel */}
+//             <div ref={rightRef} className="lg:col-span-3 lux-card rounded-2xl overflow-hidden flex flex-col">
+//               {/* Panel header */}
+//               <div className="p-4 border-b border-zinc-800/60">
+//                 <div className="flex items-start justify-between gap-3">
+//                   <div>
+//                     <div className="text-[9px] uppercase tracking-[0.25em] text-zinc-600 mb-1">
+//                       Selected Product
+//                     </div>
+//                     <div className="text-xl font-black text-zinc-100 tracking-tight">
+//                       {selectedProduct?.name || "—"}
+//                     </div>
+//                     <div className="text-[11px] text-zinc-600 font-mono mt-0.5">
+//                       {selectedProduct?.sku || "—"}
+//                     </div>
+//                   </div>
+//                   {selectedProduct && (
+//                     <div className="flex gap-2 flex-wrap justify-end">
+//                       <div className="text-right">
+//                         <div className="text-lg font-black text-amber-400 font-mono">
+//                           {money(selectedProduct.revenue)}
+//                         </div>
+//                         <div className="text-[10px] text-zinc-600 uppercase tracking-widest">Revenue</div>
+//                       </div>
+//                       <div className="text-right">
+//                         <div className="text-lg font-black text-sky-400 font-mono">
+//                           {selectedProduct.qty}
+//                         </div>
+//                         <div className="text-[10px] text-zinc-600 uppercase tracking-widest">Units</div>
+//                       </div>
+//                       <div className="text-right">
+//                         <div className="text-lg font-black text-violet-400 font-mono">
+//                           {selectedProduct.orders}
+//                         </div>
+//                         <div className="text-[10px] text-zinc-600 uppercase tracking-widest">Orders</div>
+//                       </div>
+//                     </div>
+//                   )}
+//                 </div>
+//               </div>
+
+//               {/* Controls */}
+//               <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-zinc-800/60">
+//                 <div className="flex items-center gap-2">
+//                   <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">Metric</span>
+//                   {(["revenue", "qty", "orders"] as Metric[]).map(m => (
+//                     <button
+//                       key={m}
+//                       className={cn("lux-metric-btn", metric === m && "lux-btn-active")}
+//                       onClick={() => setMetric(m)}
+//                       style={metric === m ? { borderColor: METRIC_COLOR[m], color: METRIC_COLOR[m], background: METRIC_COLOR[m] + "14" } : {}}
+//                     >
+//                       {m}
+//                     </button>
+//                   ))}
+//                 </div>
+//                 <div className="flex items-center gap-2">
+//                   <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">Granularity</span>
+//                   {(["hour", "day", "month", "year"] as Granularity[]).map(g => (
+//                     <button
+//                       key={g}
+//                       className={cn("lux-btn", granularity === g && "lux-btn-active")}
+//                       onClick={() => setGranularity(g)}
+//                     >
+//                       {g}
+//                     </button>
+//                   ))}
+//                 </div>
+//               </div>
+
+//               {/* Chart */}
+//               <div className="flex-1 p-4">
+//                 {series.length === 0 ? (
+//                   <div className="h-full flex flex-col items-center justify-center text-zinc-700">
+//                     <TrendingUp className="w-10 h-10 mb-3 opacity-30" />
+//                     <div className="text-sm">Product ရွေးပြီး data ကြည့်ပါ</div>
+//                   </div>
+//                 ) : (
+//                   <div className="h-[340px]">
+//                     <ResponsiveContainer width="100%" height="100%">
+//                       <AreaChart data={series} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+//                         <defs>
+//                           <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+//                             <stop offset="0%" stopColor={METRIC_COLOR[metric]} stopOpacity={0.3} />
+//                             <stop offset="100%" stopColor={METRIC_COLOR[metric]} stopOpacity={0.02} />
+//                           </linearGradient>
+//                         </defs>
+//                         <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+//                         <XAxis
+//                           dataKey="bucket"
+//                           tick={{ fontSize: 10, fill: "#52525b" }}
+//                           tickLine={false}
+//                           axisLine={false}
+//                         />
+//                         <YAxis
+//                           tick={{ fontSize: 10, fill: "#52525b" }}
+//                           tickLine={false}
+//                           axisLine={false}
+//                           width={metric === "revenue" ? 72 : 40}
+//                           tickFormatter={v => metric === "revenue" ? money(v) : String(v)}
+//                         />
+//                         <Tooltip
+//                           contentStyle={{
+//                             background: "#18181b",
+//                             border: "1px solid #3f3f46",
+//                             borderRadius: 10,
+//                             fontSize: 12,
+//                             color: "#e4e4e7",
+//                           }}
+//                           formatter={(v: number) => [
+//                             metric === "revenue" ? money(v) : v,
+//                             metric.charAt(0).toUpperCase() + metric.slice(1),
+//                           ]}
+//                           labelStyle={{ color: "#71717a", fontSize: 11 }}
+//                         />
+//                         <Area
+//                           dataKey={metric}
+//                           type="monotone"
+//                           stroke={METRIC_COLOR[metric]}
+//                           fill="url(#areaGrad)"
+//                           strokeWidth={2}
+//                           dot={false}
+//                           activeDot={{ r: 4, fill: METRIC_COLOR[metric], strokeWidth: 0 }}
+//                         />
+//                       </AreaChart>
+//                     </ResponsiveContainer>
+//                   </div>
+//                 )}
+//               </div>
+
+//               {/* Footer */}
+//               <div className="px-4 py-2 border-t border-zinc-800/60 flex items-center gap-2">
+//                 <Coins className="w-3 h-3 text-zinc-700" />
+//                 <span className="text-[10px] text-zinc-700 uppercase tracking-widest">
+//                   localStorage demo · DB မလိုပါ
+//                 </span>
+//               </div>
+//             </div>
+//           </div>
+//         </div>
+//       </div>
+//     </>
+//   );
+// }
+
+
+
 
 
 
@@ -703,7 +888,14 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+import { useSession } from "next-auth/react";
 import {
   AreaChart,
   Area,
@@ -711,45 +903,47 @@ import {
   ResponsiveContainer,
   XAxis,
   YAxis,
+  Tooltip,
 } from "recharts";
-
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
-
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
 import {
-  Package,
   RefreshCw,
-  Wand2,
-  TrendingUp,
-  ShoppingCart,
-  Coins,
-  Clock,
   Search,
-  Star,
-  ChevronRight,
   ChevronLeft,
-  ChevronRight as ChevronRightIcon,
+  ChevronRight,
+  GripVertical,
+  LayoutGrid,
+  BarChart2,
+  ImageIcon,
+  Coins,
+  PackageSearch,
+  TrendingUp,
+  Zap,
 } from "lucide-react";
-import { toast } from "sonner";
 
-/* ----------------------------- Types ----------------------------- */
+// dnd-kit
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  UniqueIdentifier,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+/* ─── Types ───────────────────────────────────────────────────────── */
 type SaleItem = {
   product_id: string;
   sku: string;
@@ -757,46 +951,155 @@ type SaleItem = {
   qty: number;
   price: number;
 };
-
 type Sale = {
   id: string;
-  created_at: string; // ISO
+  created_at: string;
   total: number;
   items: SaleItem[];
 };
-
 type Granularity = "hour" | "day" | "month" | "year";
 type Metric = "revenue" | "qty" | "orders";
+type CardView = "info" | "chart" | "image";
 
-/* ----------------------------- Storage ----------------------------- */
-const LS_KEY = "TEMP_SALES_PRODUCT_ANALYTICS_FULL_V2";
+/* ─── API / Utils ─────────────────────────────────────────────────────── */
+type ReceiptItemApi = {
+  id?: number | string;
+  productId?: number | string | null;
+  product_id?: number | string | null;
+  barcode?: string | null;
+  sku?: string | null;
+  productName?: string | null;
+  product_name?: string | null;
+  qty?: number | string | null;
+  price?: number | string | null;
+  lineTotal?: number | string | null;
+  line_total?: number | string | null;
+};
 
-/* ----------------------------- Utils ----------------------------- */
-function cn(...classes: (string | false | null | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
+type ReceiptApi = {
+  id?: number | string;
+  receiptNo?: string;
+  receipt_no?: string;
+  createdAt?: string;
+  created_at?: string;
+  grandTotal?: number | string | null;
+  grand_total?: number | string | null;
+  total?: number | string | null;
+  items?: ReceiptItemApi[];
+};
+
+const RECEIPT_ENDPOINTS = [
+  "/api/pos/receipts",
+  "/api/pos/receipts/shop",
+  "/api/pos/receipts/my",
+];
+
+function getStoredAccessToken() {
+  if (typeof window === "undefined") return "";
+
+  return (
+    localStorage.getItem("pos_shop_owner_token") ||
+    localStorage.getItem("pos_access_token") ||
+    localStorage.getItem("access_token") ||
+    localStorage.getItem("token") ||
+    ""
+  ).trim();
+}
+
+function authHeaders(token?: string | null): Record<string, string> {
+  const accessToken = (token || getStoredAccessToken()).trim();
+
+  return accessToken
+    ? {
+        Authorization: accessToken.startsWith("Bearer ")
+          ? accessToken
+          : `Bearer ${accessToken}`,
+      }
+    : {};
+}
+
+function cn(...c: (string | false | null | undefined)[]) {
+  return c.filter(Boolean).join(" ");
 }
 
 function money(n: number) {
-  return Number(n || 0).toLocaleString();
+  return Number(n || 0).toLocaleString("en-US");
 }
 
-function uuid() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+function normalizeReceiptsResponse(data: any): ReceiptApi[] {
+  if (Array.isArray(data)) return data;
+
+  if (Array.isArray(data?.receipts)) return data.receipts;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.content)) return data.content;
+
+  return [];
 }
 
-function readSales(): Sale[] {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as Sale[]) : [];
-  } catch {
-    return [];
+function normalizeSaleFromReceipt(receipt: ReceiptApi): Sale | null {
+  const itemsRaw = Array.isArray(receipt.items) ? receipt.items : [];
+
+  const items: SaleItem[] = itemsRaw
+    .map((item) => {
+      const productId = String(item.productId ?? item.product_id ?? item.sku ?? item.barcode ?? "UNKNOWN").trim();
+      const sku = String(item.sku ?? productId ?? "UNKNOWN").trim();
+      const productName = String(item.productName ?? item.product_name ?? sku ?? "Unknown Product").trim();
+      const qty = Number(item.qty ?? 0);
+      const price = Number(item.price ?? 0);
+
+      return {
+        product_id: productId || sku || "UNKNOWN",
+        sku: sku || productId || "UNKNOWN",
+        product_name: productName || sku || "Unknown Product",
+        qty: Number.isFinite(qty) ? qty : 0,
+        price: Number.isFinite(price) ? price : 0,
+      };
+    })
+    .filter((item) => item.qty > 0);
+
+  if (!items.length) return null;
+
+  const totalFromItems = items.reduce((sum, item) => sum + item.qty * item.price, 0);
+  const total = Number(receipt.grandTotal ?? receipt.grand_total ?? receipt.total ?? totalFromItems);
+
+  return {
+    id: String(receipt.id ?? receipt.receiptNo ?? receipt.receipt_no ?? crypto.randomUUID()),
+    created_at: String(receipt.createdAt ?? receipt.created_at ?? new Date().toISOString()),
+    total: Number.isFinite(total) ? total : totalFromItems,
+    items,
+  };
+}
+
+async function fetchReceiptsFromApi(accessToken?: string | null): Promise<Sale[]> {
+  let lastError = "Receipts load failed.";
+
+  for (const endpoint of RECEIPT_ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          ...authHeaders(accessToken),
+        },
+        cache: "no-store",
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        lastError = data?.message || data?.error || `${endpoint} failed (${res.status})`;
+        continue;
+      }
+
+      return normalizeReceiptsResponse(data)
+        .map(normalizeSaleFromReceipt)
+        .filter((sale): sale is Sale => Boolean(sale));
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Receipts load failed.";
+    }
   }
-}
 
-function writeSales(sales: Sale[]) {
-  localStorage.setItem(LS_KEY, JSON.stringify(sales));
+  throw new Error(lastError);
 }
 
 function groupKey(d: Date, g: Granularity) {
@@ -807,734 +1110,735 @@ function groupKey(d: Date, g: Granularity) {
   if (g === "year") return `${y}`;
   if (g === "month") return `${y}-${m}`;
   if (g === "day") return `${y}-${m}-${day}`;
-  return `${y}-${m}-${day} ${h}:00`;
+  return `${y}-${m}-${day} ${h}h`;
 }
 
-function sortKey(a: string, b: string) {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-function metricLabel(m: Metric) {
-  if (m === "revenue") return "Revenue";
-  if (m === "qty") return "Quantity";
-  return "Orders";
-}
-
-function metricFormat(m: Metric, v: number) {
-  if (m === "revenue") return money(v);
-  return Number(v || 0).toLocaleString();
-}
-
-// inline highlight (no dangerouslySetInnerHTML)
-function HighlightText({ text, q }: { text: string; q: string }) {
-  const kw = q.trim();
-  if (!kw) return <>{text}</>;
-
-  const lower = text.toLowerCase();
-  const idx = lower.indexOf(kw.toLowerCase());
-  if (idx < 0) return <>{text}</>;
-
-  const before = text.slice(0, idx);
-  const hit = text.slice(idx, idx + kw.length);
-  const after = text.slice(idx + kw.length);
-
+/* ─── Highlight ───────────────────────────────────────────────────── */
+function Highlight({ text, q }: { text: string; q: string }) {
+  if (!q.trim()) return <>{text}</>;
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return <>{text}</>;
   return (
     <>
-      {before}
-      <mark className="rounded px-1 bg-primary/15 text-foreground">{hit}</mark>
-      {after}
+      {text.slice(0, i)}
+      <span className="bg-amber-400/30 text-amber-200 rounded px-0.5">
+        {text.slice(i, i + q.length)}
+      </span>
+      {text.slice(i + q.length)}
     </>
   );
 }
 
-/* ----------------------------- Demo Seed ----------------------------- */
-function seedDemo() {
-  const products = [
-    { sku: "SKU-COKE", name: "Coke" },
-    { sku: "SKU-BREAD", name: "Bread" },
-    { sku: "SKU-MILK", name: "Milk" },
-    { sku: "SKU-EGG", name: "Egg" },
-    { sku: "SKU-WATER", name: "Water" },
-    { sku: "SKU-COFFEE", name: "Coffee" },
-    { sku: "SKU-TEA", name: "Tea" },
-    { sku: "SKU-RICE", name: "Rice" },
-    { sku: "SKU-NOODLE", name: "Noodle" },
-    { sku: "SKU-SNACK", name: "Snack" },
-    { sku: "SKU-CHIPS", name: "Chips" },
-    { sku: "SKU-SODA", name: "Soda" },
-    { sku: "SKU-CANDY", name: "Candy" },
-    { sku: "SKU-BISCUIT", name: "Biscuit" },
-    { sku: "SKU-YOGURT", name: "Yogurt" },
-    { sku: "SKU-ICE", name: "Ice" },
-    { sku: "SKU-SOAP", name: "Soap" },
-    { sku: "SKU-SHAMPOO", name: "Shampoo" },
-    { sku: "SKU-TOOTHPASTE", name: "Toothpaste" },
-    { sku: "SKU-TISSUE", name: "Tissue" },
-    { sku: "SKU-OIL", name: "Cooking Oil" },
-    { sku: "SKU-SALT", name: "Salt" },
-    { sku: "SKU-SUGAR", name: "Sugar" },
-    { sku: "SKU-FLOUR", name: "Flour" },
-    { sku: "SKU-APPLE", name: "Apple" },
-    { sku: "SKU-BANANA", name: "Banana" },
-    { sku: "SKU-ORANGE", name: "Orange" },
-    { sku: "SKU-FISH", name: "Fish" },
-    { sku: "SKU-MEAT", name: "Meat" },
-    { sku: "SKU-CHICKEN", name: "Chicken" },
-    { sku: "SKU-ONION", name: "Onion" },
-    { sku: "SKU-GARLIC", name: "Garlic" },
-    { sku: "SKU-TOMATO", name: "Tomato" },
-    { sku: "SKU-POTATO", name: "Potato" },
-    { sku: "SKU-CARROT", name: "Carrot" },
-    { sku: "SKU-PEPPER", name: "Pepper" },
-    { sku: "SKU-CHILI", name: "Chili" },
-    { sku: "SKU-RAMEN", name: "Ramen" },
-  ];
-
-  const now = Date.now();
-
-  const sales: Sale[] = Array.from({ length: 260 }).map(() => {
-    const dayOffset = Math.floor(Math.random() * 120);
-    const hour = Math.floor(Math.random() * 24);
-    const minute = Math.floor(Math.random() * 60);
-
-    const d = new Date(now - dayOffset * 86400000);
-    d.setHours(hour, minute, 0, 0);
-
-    const itemsCount = 1 + Math.floor(Math.random() * 4);
-    const items: SaleItem[] = Array.from({ length: itemsCount }).map(() => {
-      const p = products[Math.floor(Math.random() * products.length)];
-      const qty = 1 + Math.floor(Math.random() * 5);
-      const price = 200 + Math.floor(Math.random() * 2500);
-      return {
-        product_id: p.sku,
-        sku: p.sku,
-        product_name: p.name,
-        qty,
-        price,
-      };
-    });
-
-    const total = items.reduce((sum, it) => sum + it.qty * it.price, 0);
-
-    return {
-      id: uuid(),
-      created_at: d.toISOString(),
-      total,
-      items,
-    };
-  });
-
-  writeSales(sales);
+/* ─── MiniBarChart inline ─────────────────────────────────────────── */
+function SparkBars({ data }: { data: number[] }) {
+  const max = Math.max(...data, 1);
+  return (
+    <div className="flex items-end gap-[2px] h-8">
+      {data.map((v, i) => (
+        <div
+          key={i}
+          className="flex-1 rounded-sm bg-amber-400/70"
+          style={{ height: `${Math.round((v / max) * 100)}%`, minHeight: 2 }}
+        />
+      ))}
+    </div>
+  );
 }
 
-/* ----------------------------- Page ----------------------------- */
+/* ─── VIEW CYCLE TYPES ────────────────────────────────────────────── */
+const VIEW_CYCLE: CardView[] = ["info", "chart", "image"];
+const VIEW_META: Record<CardView, { icon: React.ReactNode; label: string }> = {
+  info: { icon: <LayoutGrid className="w-3 h-3" />, label: "INFO" },
+  chart: { icon: <BarChart2 className="w-3 h-3" />, label: "CHART" },
+  image: { icon: <ImageIcon className="w-3 h-3" />, label: "IMAGE" },
+};
+
+/* ─── Stat Card Types ─────────────────────────────────────────────── */
+type StatCardDef = {
+  id: string;
+  label: string;
+  view: CardView;
+};
+
+/* ─── StatCard Content ────────────────────────────────────────────── */
+type StatContentProps = {
+  id: string;
+  view: CardView;
+  allRows: ReturnType<typeof useAggregation>["allRows"];
+  totalRevenue: number;
+  totalQty: number;
+  totalOrders: number;
+};
+
+function StatContent({ id, view, allRows, totalRevenue, totalQty, totalOrders }: StatContentProps) {
+  if (view === "info") {
+    if (id === "revenue")
+      return (
+        <>
+          <div className="text-3xl font-black tracking-tight text-amber-400 font-mono">
+            {money(totalRevenue)}
+          </div>
+          <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">MMK / Total</div>
+        </>
+      );
+    if (id === "qty")
+      return (
+        <>
+          <div className="text-3xl font-black tracking-tight text-sky-400 font-mono">{totalQty}</div>
+          <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">Units Sold</div>
+        </>
+      );
+    if (id === "products")
+      return (
+        <>
+          <div className="text-3xl font-black tracking-tight text-emerald-400 font-mono">
+            {allRows.length}
+          </div>
+          <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">Unique SKUs</div>
+        </>
+      );
+  }
+
+  if (view === "chart") {
+    const top = allRows.slice(0, 8);
+    const data =
+      id === "revenue"
+        ? top.map((r) => r.revenue)
+        : id === "qty"
+        ? top.map((r) => r.qty)
+        : top.map((r) => r.orders);
+    return (
+      <div className="mt-1">
+        <SparkBars data={data} />
+        <div className="text-[10px] text-zinc-600 mt-1 uppercase tracking-widest">Top 8 products</div>
+      </div>
+    );
+  }
+
+  if (view === "image") {
+    return (
+      <div className="grid grid-cols-3 gap-1 mt-1">
+        {allRows.slice(0, 6).map((r, i) => (
+          <div
+            key={r.sku}
+            className="aspect-square rounded-md flex flex-col items-center justify-center text-center p-1"
+            style={{
+              background: `hsl(${(i * 47) % 360} 30% 18%)`,
+              border: "1px solid hsl(" + ((i * 47) % 360) + " 30% 28%)",
+            }}
+          >
+            <PackageSearch className="w-3 h-3 mb-0.5 opacity-60" style={{ color: `hsl(${(i * 47) % 360} 70% 65%)` }} />
+            <div className="text-[8px] leading-tight opacity-70 truncate w-full text-center px-0.5">
+              {r.name.slice(0, 8)}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+/* ─── useSortableCard ─────────────────────────────────────────────── */
+function SortableStatCard({
+  card,
+  allRows,
+  totalRevenue,
+  totalQty,
+  totalOrders,
+  onCycle,
+  isGhost,
+}: {
+  card: StatCardDef;
+  allRows: ReturnType<typeof useAggregation>["allRows"];
+  totalRevenue: number;
+  totalQty: number;
+  totalOrders: number;
+  onCycle: (id: string) => void;
+  isGhost?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: card.id,
+  });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isGhost ? 0.3 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <div className="lux-card rounded-2xl p-4 h-full flex flex-col">
+        {/* Header row */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">
+            {card.label}
+          </div>
+          <div className="flex items-center gap-1">
+            {/* View cycle button */}
+            <button
+              onClick={() => onCycle(card.id)}
+              className="flex items-center gap-1 text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-full border border-zinc-700 text-zinc-500 hover:border-amber-500/60 hover:text-amber-400 transition-all"
+            >
+              {VIEW_META[card.view].icon}
+              {VIEW_META[card.view].label}
+            </button>
+            {/* Drag handle */}
+            <div
+              {...attributes}
+              {...listeners}
+              className="opacity-0 group-hover:opacity-40 hover:!opacity-80 cursor-grab active:cursor-grabbing p-1 transition-opacity"
+            >
+              <GripVertical className="w-3.5 h-3.5 text-zinc-400" />
+            </div>
+          </div>
+        </div>
+
+        <StatContent
+          id={card.id}
+          view={card.view}
+          allRows={allRows}
+          totalRevenue={totalRevenue}
+          totalQty={totalQty}
+          totalOrders={totalOrders}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ─── useAggregation hook ─────────────────────────────────────────── */
+function useAggregation(sales: Sale[]) {
+  return useMemo(() => {
+    const map = new Map<
+      string,
+      { sku: string; name: string; revenue: number; qty: number; orders: number }
+    >();
+    for (const s of sales) {
+      const seen = new Set<string>();
+      for (const it of s.items) {
+        const key = it.sku || it.product_id || "?";
+        const cur = map.get(key) || { sku: key, name: it.product_name || key, revenue: 0, qty: 0, orders: 0 };
+        cur.qty += Number(it.qty || 0);
+        cur.revenue += Number(it.qty || 0) * Number(it.price || 0);
+        if (!seen.has(key)) { cur.orders += 1; seen.add(key); }
+        map.set(key, cur);
+      }
+    }
+    return { allRows: Array.from(map.values()).sort((a, b) => b.revenue - a.revenue) };
+  }, [sales]);
+}
+
+/* ─── Main Page ───────────────────────────────────────────────────── */
+const PAGE_SIZE = 20;
+
 export default function SalesByProductPage() {
+  const { data: session, status } = useSession();
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // search
   const [q, setQ] = useState("");
-
-  // selected product
-  const [selectedSku, setSelectedSku] = useState<string>("");
-
-  // chart config
+  const [selectedSku, setSelectedSku] = useState("");
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [metric, setMetric] = useState<Metric>("revenue");
-
-  // smooth scroll + pulse
-  const rightRef = useRef<HTMLDivElement | null>(null);
-  const [pulse, setPulse] = useState(false);
-
-  // ✅ Table pagination
-  const PAGE_SIZE = 30;
   const [page, setPage] = useState(1);
+  const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
 
-  function reload() {
-    setLoading(true);
+  const [statCards, setStatCards] = useState<StatCardDef[]>([
+    { id: "revenue", label: "Total Revenue", view: "info" },
+    { id: "qty", label: "Total Units", view: "info" },
+    { id: "products", label: "Unique Products", view: "info" },
+  ]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  async function reload() {
     try {
-      const data = readSales();
-      if (!data || data.length === 0) seedDemo();
-      setSales(readSales());
+      setLoading(true);
+      const accessToken = String((session as any)?.accessToken || "").trim();
+      const rows = await fetchReceiptsFromApi(accessToken);
+      setSales(rows);
+      if (rows.length) {
+        setSelectedSku("");
+      }
+    } catch (error) {
+      console.error(error);
+      setSales([]);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    reload();
-  }, []);
+    if (status === "loading") return;
+    void reload();
+  }, [status, session]);
 
-  /* ----------------------------- Aggregation ----------------------------- */
-  const allRows = useMemo(() => {
-    const map = new Map<
-      string,
-      { sku: string; name: string; revenue: number; qty: number; orders: number }
-    >();
-
-    for (const s of sales) {
-      const seen = new Set<string>();
-      for (const it of s.items) {
-        const key = it.sku || it.product_id || "NA";
-        const cur = map.get(key) || {
-          sku: key,
-          name: it.product_name || key,
-          revenue: 0,
-          qty: 0,
-          orders: 0,
-        };
-
-        cur.qty += Number(it.qty || 0);
-        cur.revenue += Number(it.qty || 0) * Number(it.price || 0);
-
-        if (!seen.has(key)) {
-          cur.orders += 1;
-          seen.add(key);
-        }
-        map.set(key, cur);
-      }
-    }
-
-    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [sales]);
+  const { allRows } = useAggregation(sales);
 
   const filteredRows = useMemo(() => {
     const kw = q.trim().toLowerCase();
     if (!kw) return allRows;
-    return allRows.filter(
-      (r) =>
-        r.sku.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw),
-    );
+    return allRows.filter(r => r.sku.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw));
   }, [allRows, q]);
 
-  // ✅ Search change => page reset
+  useEffect(() => { setPage(1); }, [q]);
   useEffect(() => {
-    setPage(1);
-  }, [q]);
+    if (!selectedSku && filteredRows.length) setSelectedSku(filteredRows[0].sku);
+  }, [filteredRows]);
 
-  // default selection
-  useEffect(() => {
-    if (!selectedSku && filteredRows.length > 0) setSelectedSku(filteredRows[0].sku);
-  }, [filteredRows, selectedSku]);
+  const totalRevenue = useMemo(() => allRows.reduce((s, r) => s + r.revenue, 0), [allRows]);
+  const totalQty = useMemo(() => allRows.reduce((s, r) => s + r.qty, 0), [allRows]);
+  const totalOrders = useMemo(() => sales.length, [sales]);
 
-  const selectedProduct = useMemo(() => {
-    return filteredRows.find((p) => p.sku === selectedSku) || null;
-  }, [filteredRows, selectedSku]);
-
-  /* ----------------------------- Pagination data ----------------------------- */
-  const total = filteredRows.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 1), totalPages);
+  const pageRows = useMemo(() => filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredRows, safePage]);
+  const selectedProduct = filteredRows.find(r => r.sku === selectedSku) || null;
 
-  const pageRows = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE;
-    return filteredRows.slice(start, start + PAGE_SIZE);
-  }, [filteredRows, safePage]);
-
-  // keep page safe if data changed
-  useEffect(() => {
-    if (page !== safePage) setPage(safePage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [safePage, total]);
+  const series = useMemo(() => {
+    if (!selectedSku) return [];
+    const bucket = new Map<string, { bucket: string; revenue: number; qty: number; orders: number }>();
+    for (const s of sales) {
+      const items = s.items.filter(it => (it.sku || it.product_id) === selectedSku);
+      if (!items.length) continue;
+      const k = groupKey(new Date(s.created_at), granularity);
+      const cur = bucket.get(k) || { bucket: k, revenue: 0, qty: 0, orders: 0 };
+      items.forEach(it => { cur.qty += Number(it.qty || 0); cur.revenue += Number(it.qty || 0) * Number(it.price || 0); });
+      cur.orders += 1;
+      bucket.set(k, cur);
+    }
+    return Array.from(bucket.values()).sort((a, b) => a.bucket < b.bucket ? -1 : 1);
+  }, [sales, selectedSku, granularity]);
 
   function selectProduct(sku: string) {
     setSelectedSku(sku);
     rightRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setPulse(true);
-    window.setTimeout(() => setPulse(false), 450);
   }
 
-  /* ----------------------------- Series for selected product ----------------------------- */
-  const series = useMemo(() => {
-    if (!selectedSku) return [];
+  const handleCycle = useCallback((id: string) => {
+    setStatCards(prev => prev.map(c => c.id === id ? {
+      ...c,
+      view: VIEW_CYCLE[(VIEW_CYCLE.indexOf(c.view) + 1) % VIEW_CYCLE.length]
+    } : c));
+  }, []);
 
-    const bucket = new Map<
-      string,
-      { bucket: string; revenue: number; qty: number; orders: number }
-    >();
-
-    for (const s of sales) {
-      const items = s.items.filter((it) => (it.sku || it.product_id) === selectedSku);
-      if (items.length === 0) continue;
-
-      const k = groupKey(new Date(s.created_at), granularity);
-
-      const cur = bucket.get(k) || { bucket: k, revenue: 0, qty: 0, orders: 0 };
-      for (const it of items) {
-        cur.qty += Number(it.qty || 0);
-        cur.revenue += Number(it.qty || 0) * Number(it.price || 0);
-      }
-      cur.orders += 1;
-
-      bucket.set(k, cur);
+  function handleDragStart(e: DragStartEvent) { setActiveId(e.active.id); }
+  function handleDragEnd(e: DragEndEvent) {
+    setActiveId(null);
+    if (e.over && e.active.id !== e.over.id) {
+      setStatCards(prev => {
+        const oi = prev.findIndex(c => c.id === e.active.id);
+        const ni = prev.findIndex(c => c.id === e.over!.id);
+        return arrayMove(prev, oi, ni);
+      });
     }
+  }
 
-    return Array.from(bucket.values()).sort((a, b) => sortKey(a.bucket, b.bucket));
-  }, [sales, selectedSku, granularity]);
-
-  const chartConfig = {
-    revenue: { label: "Revenue" },
-    qty: { label: "Quantity" },
-    orders: { label: "Orders" },
-  } as const;
-
-  const metricColorVar =
-    metric === "revenue"
-      ? "var(--chart-1)"
-      : metric === "qty"
-      ? "var(--chart-2)"
-      : "var(--chart-3)";
-
-  // pagination numbers (compact)
-  const pageNumbers = useMemo(() => {
-    const maxBtns = 5; // show up to 5
-    const half = Math.floor(maxBtns / 2);
-    let start = Math.max(1, safePage - half);
-    let end = Math.min(totalPages, start + maxBtns - 1);
-    start = Math.max(1, end - maxBtns + 1);
-
-    const nums: number[] = [];
-    for (let i = start; i <= end; i++) nums.push(i);
-    return nums;
-  }, [safePage, totalPages]);
+  const activeCard = statCards.find(c => c.id === activeId);
+  const METRIC_COLOR = { revenue: "#f59e0b", qty: "#38bdf8", orders: "#a78bfa" };
 
   return (
-    <div className="w-full flex justify-center py-8 px-3">
-      <div className="w-full max-w-6xl space-y-4">
-        {/* Header */}
-        <Card className="overflow-hidden">
-          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1">
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
+    <>
+      <style>{`
+        .lux-card {
+          background: linear-gradient(135deg, #18181b 0%, #1c1c1f 100%);
+          border: 1px solid #27272a;
+          transition: border-color 0.2s;
+        }
+        .lux-card:hover { border-color: #3f3f46; }
+        .lux-page { background: #0f0f11; min-height: 100vh; color: #e4e4e7; }
+        .lux-row-active { background: rgba(245,158,11,0.08) !important; border-left: 2px solid #f59e0b; }
+        .lux-row:hover { background: rgba(255,255,255,0.03); }
+        .progress-track { background: #27272a; border-radius: 2px; height: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+        .lux-btn { background: transparent; border: 1px solid #3f3f46; color: #a1a1aa; border-radius: 8px; padding: 4px 12px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; transition: all 0.15s; cursor: pointer; }
+        .lux-btn:hover { border-color: #f59e0b; color: #f59e0b; }
+        .lux-btn-active { border-color: #f59e0b !important; color: #f59e0b !important; background: rgba(245,158,11,0.08) !important; }
+        .lux-metric-btn { background: transparent; border: 1px solid #3f3f46; border-radius: 6px; padding: 6px 14px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: all 0.15s; color: #71717a; }
+        .lux-metric-btn:hover { border-color: #52525b; color: #a1a1aa; }
+        .lux-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; border: 1px solid #3f3f46; color: #71717a; }
+        .divider { height: 1px; background: #27272a; margin: 0; }
+        input.lux-input { background: #18181b; border: 1px solid #27272a; color: #e4e4e7; border-radius: 10px; padding: 8px 12px 8px 36px; font-size: 13px; width: 100%; outline: none; transition: border-color 0.15s; }
+        input.lux-input:focus { border-color: #52525b; }
+        input.lux-input::placeholder { color: #52525b; }
+        .chart-tooltip { background: #1c1c1f !important; border: 1px solid #3f3f46 !important; border-radius: 8px !important; font-size: 12px !important; }
+      `}</style>
+
+      <div className="lux-page p-4 md:p-8">
+        <div className="max-w-7xl mx-auto space-y-6">
+
+          {/* ── Header ── */}
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span className="text-[10px] uppercase tracking-[0.3em] text-amber-400/70 font-medium">
+                  Analytics Console
+                </span>
+              </div>
+              <h1 className="text-2xl font-black tracking-tight text-zinc-100">
                 Sales by Product
-              </CardTitle>
-              <CardDescription>
-                Table selector + Pagination (30/পৃষ্ঠা) + One Chart + Tabs
-              </CardDescription>
+              </h1>
+              <p className="text-xs text-zinc-600 mt-0.5">
+                Receipt API data · Cards drag လုပ်ပြီး sort · view button နှိပ်ပြီး{" "}
+                <span className="text-amber-500/80">info → chart → image</span> ပြောင်း
+              </p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={reload}
+            <div className="flex items-center gap-2">
+              <button
+                className="lux-btn flex items-center gap-2"
+                onClick={() => void reload()}
                 disabled={loading}
-                className="gap-2"
               >
-                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-                Reload
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  seedDemo();
-                  setSales(readSales());
-                  toast.success("Seeded demo ✅");
-                }}
-                className="gap-2"
-              >
-                <Wand2 className="h-4 w-4" />
-                Seed
-              </Button>
+                <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
+                {loading ? "Loading" : "Reload API"}
+              </button>
             </div>
-          </CardHeader>
-        </Card>
+          </div>
 
-        {/* Layout */}
-        <div className="grid gap-4 lg:grid-cols-5">
-          {/* LEFT */}
-          <Card className="lg:col-span-2 overflow-hidden">
-            <CardHeader className="space-y-2">
-              <CardTitle className="flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5" />
-                Products
-              </CardTitle>
-              <CardDescription>
-                Click product → chart update (Right)
-              </CardDescription>
-
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  className="pl-8"
-                  placeholder="Search SKU / Name..."
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                />
+          {/* ── DnD Stat Cards ── */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={statCards.map(c => c.id)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {statCards.map(card => (
+                  <SortableStatCard
+                    key={card.id}
+                    card={card}
+                    allRows={allRows}
+                    totalRevenue={totalRevenue}
+                    totalQty={totalQty}
+                    totalOrders={totalOrders}
+                    onCycle={handleCycle}
+                    isGhost={activeId === card.id}
+                  />
+                ))}
               </div>
+            </SortableContext>
 
-              <div className="text-xs text-muted-foreground">
-                Showing{" "}
-                <b>
-                  {total === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}-
-                  {Math.min(safePage * PAGE_SIZE, total)}
-                </b>{" "}
-                of <b>{total}</b>
-              </div>
-            </CardHeader>
-
-            <CardContent className="p-0">
-              <div className="border-t" />
-
-              <ScrollArea className="h-[560px]">
-                {/* Top 5 sticky */}
-                <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b">
-                  <div className="flex items-center justify-between px-3 py-2">
-                    <div className="flex items-center gap-2 text-sm font-semibold">
-                      <Star className="h-4 w-4 text-primary" />
-                      Top 5
-                    </div>
-                    <Badge variant="secondary" className="text-xs">
-                      Quick pick
-                    </Badge>
+            <DragOverlay>
+              {activeCard && (
+                <div className="lux-card rounded-2xl p-4 rotate-2 scale-105 shadow-2xl opacity-90">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-2">
+                    {activeCard.label}
                   </div>
+                  <StatContent
+                    id={activeCard.id}
+                    view={activeCard.view}
+                    allRows={allRows}
+                    totalRevenue={totalRevenue}
+                    totalQty={totalQty}
+                    totalOrders={totalOrders}
+                  />
+                </div>
+              )}
+            </DragOverlay>
+          </DndContext>
 
-                  <div className="px-2 pb-2 grid gap-2">
-                    {filteredRows.slice(0, 5).map((p, i) => {
-                      const active = p.sku === selectedSku;
+          {/* ── Main Layout ── */}
+          <div className="grid gap-4 lg:grid-cols-5">
+            {/* LEFT: Product List */}
+            <div className="lg:col-span-2 lux-card rounded-2xl overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-zinc-800/60">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-500">
+                    Products
+                  </div>
+                  <span className="lux-tag">
+                    <span>{filteredRows.length} SKUs</span>
+                  </span>
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-600" />
+                  <input
+                    className="lux-input"
+                    placeholder="Search name or SKU…"
+                    value={q}
+                    onChange={e => setQ(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <ScrollArea className="flex-1 h-[580px]">
+                {/* Top 3 highlight */}
+                <div className="p-3 border-b border-zinc-800/60">
+                  <div className="text-[9px] uppercase tracking-[0.25em] text-zinc-600 mb-2 px-1">
+                    Top Performers
+                  </div>
+                  {filteredRows.slice(0, 3).map((r, i) => {
+                    const active = r.sku === selectedSku;
+                    const pct = filteredRows[0]?.revenue ? (r.revenue / filteredRows[0].revenue) * 100 : 0;
+                    const rankColor = ["text-amber-400", "text-zinc-300", "text-zinc-500"][i];
+                    return (
+                      <button
+                        key={r.sku}
+                        onClick={() => selectProduct(r.sku)}
+                        className={cn(
+                          "w-full text-left rounded-xl px-3 py-2.5 mb-1.5 transition-all",
+                          active ? "lux-row-active" : "lux-row hover:bg-zinc-800/40"
+                        )}
+                        style={{ border: active ? undefined : "1px solid transparent" }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={cn("text-xs font-black w-4 shrink-0", rankColor)}>
+                              {i + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-zinc-100 truncate">
+                                <Highlight text={r.name} q={q} />
+                              </div>
+                              <div className="text-[10px] text-zinc-600 font-mono">
+                                <Highlight text={r.sku} q={q} />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0 ml-2">
+                            <div className="text-xs font-bold text-amber-400 font-mono">
+                              {money(r.revenue)}
+                            </div>
+                            <div className="text-[10px] text-zinc-600">{r.qty} units</div>
+                          </div>
+                        </div>
+                        <div className="progress-track mt-2">
+                          <div className="progress-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Paged table */}
+                <div className="divide-y divide-zinc-800/40">
+                  {pageRows.length === 0 ? (
+                    <div className="p-6 text-center text-zinc-600 text-sm">
+                      No receipt data — POS sale/payment လုပ်ပြီး Reload API နှိပ်ပါ
+                    </div>
+                  ) : pageRows.map((r, idx) => {
+                    const active = r.sku === selectedSku;
+                    const globalIdx = (safePage - 1) * PAGE_SIZE + idx + 1;
+                    const pct = filteredRows[0]?.revenue ? Math.min(100, (r.revenue / filteredRows[0].revenue) * 100) : 0;
+                    return (
+                      <button
+                        key={r.sku}
+                        onClick={() => selectProduct(r.sku)}
+                        className={cn(
+                          "w-full text-left px-4 py-2.5 transition-all lux-row",
+                          active ? "lux-row-active" : ""
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] text-zinc-600 font-mono w-5 shrink-0 text-right">
+                            {globalIdx}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-medium text-zinc-200 truncate">
+                              <Highlight text={r.name} q={q} />
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <div className="progress-track flex-1">
+                                <div className="progress-fill" style={{ width: `${pct}%`, background: active ? "#f59e0b" : "#52525b" }} />
+                              </div>
+                              <span className="text-[10px] text-zinc-600 font-mono shrink-0">
+                                {money(r.revenue)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Pagination */}
+                <div className="p-3 flex items-center justify-between border-t border-zinc-800/60">
+                  <span className="text-[10px] text-zinc-600">
+                    pg {safePage}/{totalPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      className="lux-btn px-2 py-1"
+                      disabled={safePage <= 1}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      const n = Math.max(1, Math.min(safePage - 2, totalPages - 4)) + i;
                       return (
                         <button
-                          key={p.sku}
-                          type="button"
-                          onClick={() => selectProduct(p.sku)}
-                          className={cn(
-                            "w-full text-left rounded-xl border px-3 py-2 transition",
-                            active
-                              ? "bg-muted/70 border-primary/30"
-                              : "hover:bg-muted/40",
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold truncate">
-                                <HighlightText text={p.name} q={q} />
-                              </div>
-                              <div className="text-xs text-muted-foreground font-mono truncate">
-                                <HighlightText text={p.sku} q={q} />
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <div className="text-sm font-semibold tabular-nums">
-                                {money(p.revenue)}
-                              </div>
-                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </div>
-
-                          <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={cn(
-                                "h-full rounded-full",
-                                active ? "bg-primary" : "bg-primary/60",
-                              )}
-                              style={{
-                                width: `${Math.min(
-                                  100,
-                                  filteredRows[0]?.revenue
-                                    ? (p.revenue / filteredRows[0].revenue) * 100
-                                    : 0,
-                                )}%`,
-                              }}
-                            />
-                          </div>
-
-                          <div className="mt-1 flex gap-2 text-[11px] text-muted-foreground">
-                            <span>Qty {p.qty}</span>
-                            <span>•</span>
-                            <span>Orders {p.orders}</span>
-                            <span>•</span>
-                            <span>Rank #{i + 1}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <Separator />
-
-                  {/* ✅ Pagination controls (sticky) */}
-                  <div className="px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
-                    <div className="text-xs text-muted-foreground">
-                      Page <b>{safePage}</b> / <b>{totalPages}</b>
-                    </div>
-
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 px-2"
-                        disabled={safePage <= 1}
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-
-                      {pageNumbers.map((n) => (
-                        <Button
                           key={n}
-                          size="sm"
-                          variant={n === safePage ? "default" : "outline"}
-                          className="h-8 px-2"
+                          className={cn("lux-btn px-2.5 py-1", n === safePage && "lux-btn-active")}
                           onClick={() => setPage(n)}
                         >
                           {n}
-                        </Button>
-                      ))}
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 px-2"
-                        disabled={safePage >= totalPages}
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      >
-                        <ChevronRightIcon className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <Separator />
-                  <div className="px-3 py-2 text-xs text-muted-foreground">
-                    Products (paged)
-                  </div>
-                </div>
-
-                {/* Table */}
-                <table className="w-full text-sm">
-                  <thead className="sticky top-[250px] z-[5] bg-background/95 backdrop-blur border-b">
-                    <tr className="text-left text-muted-foreground">
-                      <th className="p-3 w-[56px]">#</th>
-                      <th className="p-3">Product</th>
-                      <th className="p-3 text-right">Revenue</th>
-                      <th className="p-3 w-[120px]">Share</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {pageRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="p-4 text-muted-foreground">
-                          No data. Seed လုပ်ပြီးစမ်းပါ
-                        </td>
-                      </tr>
-                    ) : null}
-
-                    {pageRows.map((p, idx) => {
-                      const active = p.sku === selectedSku;
-
-                      // global rank index
-                      const globalIndex = (safePage - 1) * PAGE_SIZE + idx + 1;
-
-                      const share = filteredRows[0]?.revenue
-                        ? Math.min(100, (p.revenue / filteredRows[0].revenue) * 100)
-                        : 0;
-
-                      return (
-                        <tr
-                          key={p.sku}
-                          onClick={() => selectProduct(p.sku)}
-                          className={cn(
-                            "border-b cursor-pointer transition",
-                            active ? "bg-muted/70" : "hover:bg-muted/40",
-                          )}
-                        >
-                          <td className="p-3 text-muted-foreground font-mono">
-                            {globalIndex}
-                          </td>
-
-                          <td className="p-3">
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-medium truncate">
-                                <HighlightText text={p.name} q={q} />
-                              </span>
-                              <span className="text-xs text-muted-foreground font-mono truncate">
-                                <HighlightText text={p.sku} q={q} />
-                              </span>
-                            </div>
-                          </td>
-
-                          <td className="p-3 text-right font-semibold tabular-nums">
-                            {money(p.revenue)}
-                          </td>
-
-                          <td className="p-3">
-                            <div className="h-2 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full transition-all",
-                                  active ? "bg-primary" : "bg-primary/60",
-                                )}
-                                style={{ width: `${share}%` }}
-                              />
-                            </div>
-                          </td>
-                        </tr>
+                        </button>
                       );
                     })}
-                  </tbody>
-                </table>
-
-                <div className="h-3" />
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          {/* RIGHT */}
-          <div
-            ref={rightRef}
-            className={cn("lg:col-span-3 scroll-mt-6", pulse && "animate-pulse")}
-          >
-            <Card className="overflow-hidden">
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5" />
-                    {selectedProduct ? selectedProduct.name : "Product Analytics"}
-                  </CardTitle>
-                  <CardDescription>
-                    One Chart + Metric Tabs (Revenue / Qty / Orders)
-                  </CardDescription>
+                    <button
+                      className="lux-btn px-2 py-1"
+                      disabled={safePage >= totalPages}
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    >
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
+              </ScrollArea>
+            </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="gap-1">
-                    <Clock className="h-3.5 w-3.5" />
-                    {granularity}
-                  </Badge>
+            {/* RIGHT: Chart Panel */}
+            <div ref={rightRef} className="lg:col-span-3 lux-card rounded-2xl overflow-hidden flex flex-col">
+              {/* Panel header */}
+              <div className="p-4 border-b border-zinc-800/60">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[9px] uppercase tracking-[0.25em] text-zinc-600 mb-1">
+                      Selected Product
+                    </div>
+                    <div className="text-xl font-black text-zinc-100 tracking-tight">
+                      {selectedProduct?.name || "—"}
+                    </div>
+                    <div className="text-[11px] text-zinc-600 font-mono mt-0.5">
+                      {selectedProduct?.sku || "—"}
+                    </div>
+                  </div>
+                  {selectedProduct && (
+                    <div className="flex gap-2 flex-wrap justify-end">
+                      <div className="text-right">
+                        <div className="text-lg font-black text-amber-400 font-mono">
+                          {money(selectedProduct.revenue)}
+                        </div>
+                        <div className="text-[10px] text-zinc-600 uppercase tracking-widest">Revenue</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-black text-sky-400 font-mono">
+                          {selectedProduct.qty}
+                        </div>
+                        <div className="text-[10px] text-zinc-600 uppercase tracking-widest">Units</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-black text-violet-400 font-mono">
+                          {selectedProduct.orders}
+                        </div>
+                        <div className="text-[10px] text-zinc-600 uppercase tracking-widest">Orders</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                  {(["hour", "day", "month", "year"] as Granularity[]).map((g) => (
-                    <Button
+              {/* Controls */}
+              <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-zinc-800/60">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">Metric</span>
+                  {(["revenue", "qty", "orders"] as Metric[]).map(m => (
+                    <button
+                      key={m}
+                      className={cn("lux-metric-btn", metric === m && "lux-btn-active")}
+                      onClick={() => setMetric(m)}
+                      style={metric === m ? { borderColor: METRIC_COLOR[m], color: METRIC_COLOR[m], background: METRIC_COLOR[m] + "14" } : {}}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">Granularity</span>
+                  {(["hour", "day", "month", "year"] as Granularity[]).map(g => (
+                    <button
                       key={g}
-                      size="sm"
-                      variant={granularity === g ? "default" : "outline"}
+                      className={cn("lux-btn", granularity === g && "lux-btn-active")}
                       onClick={() => setGranularity(g)}
                     >
                       {g}
-                    </Button>
+                    </button>
                   ))}
                 </div>
-              </CardHeader>
+              </div>
 
-              <CardContent className="space-y-4">
-                {/* Summary */}
-                {selectedProduct ? (
-                  <div className="rounded-2xl border p-4 bg-card/40">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-lg font-semibold break-words">
-                          {selectedProduct.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {selectedProduct.sku}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary" className="gap-1">
-                          <Coins className="h-3.5 w-3.5" />
-                          {money(selectedProduct.revenue)}
-                        </Badge>
-                        <Badge variant="outline">Qty {selectedProduct.qty}</Badge>
-                        <Badge variant="outline">Orders {selectedProduct.orders}</Badge>
-                      </div>
-                    </div>
+              {/* Chart */}
+              <div className="flex-1 p-4">
+                {series.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-zinc-700">
+                    <TrendingUp className="w-10 h-10 mb-3 opacity-30" />
+                    <div className="text-sm">Product ရွေးပြီး data ကြည့်ပါ</div>
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground">
-                    Select a product...
+                  <div className="h-[340px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={series} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={METRIC_COLOR[metric]} stopOpacity={0.3} />
+                            <stop offset="100%" stopColor={METRIC_COLOR[metric]} stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="bucket"
+                          tick={{ fontSize: 10, fill: "#52525b" }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: "#52525b" }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={metric === "revenue" ? 72 : 40}
+                          tickFormatter={v => metric === "revenue" ? money(v) : String(v)}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "#18181b",
+                            border: "1px solid #3f3f46",
+                            borderRadius: 10,
+                            fontSize: 12,
+                            color: "#e4e4e7",
+                          }}
+                          formatter={(v: number) => [
+                            metric === "revenue" ? money(v) : v,
+                            metric.charAt(0).toUpperCase() + metric.slice(1),
+                          ]}
+                          labelStyle={{ color: "#71717a", fontSize: 11 }}
+                        />
+                        <Area
+                          dataKey={metric}
+                          type="monotone"
+                          stroke={METRIC_COLOR[metric]}
+                          fill="url(#areaGrad)"
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, fill: METRIC_COLOR[metric], strokeWidth: 0 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </div>
                 )}
+              </div>
 
-                <Separator />
-
-                {/* Tabs */}
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <Tabs value={metric} onValueChange={(v) => setMetric(v as Metric)}>
-                    <TabsList>
-                      <TabsTrigger value="revenue">Revenue</TabsTrigger>
-                      <TabsTrigger value="qty">Qty</TabsTrigger>
-                      <TabsTrigger value="orders">Orders</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-
-                  <Badge variant="secondary" className="gap-1">
-                    {metricLabel(metric)}
-                  </Badge>
-                </div>
-
-                {/* Empty */}
-                {selectedSku && series.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    ဒီ product အတွက် sales record မတွေ့ပါ (Seed ထည့်ပြီးပြန်စမ်းပါ)
-                  </div>
-                ) : null}
-
-                {/* Chart */}
-                <div className="rounded-2xl border p-3">
-                  <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                    <div className="text-sm font-medium">{metricLabel(metric)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      Value: <b>{metric === "revenue" ? "MMK/JPY" : "count"}</b>
-                    </div>
-                  </div>
-
-                  <div className="h-[360px]">
-                    <ChartContainer config={chartConfig} className="h-full w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={series} margin={{ left: 8, right: 12, top: 12, bottom: 0 }}>
-                          <CartesianGrid vertical={false} />
-                          <XAxis dataKey="bucket" tickLine={false} axisLine={false} />
-                          <YAxis
-                            tickLine={false}
-                            axisLine={false}
-                            allowDecimals={metric === "revenue"}
-                            tickFormatter={(v) => (metric === "revenue" ? money(v) : String(v))}
-                          />
-                          <ChartTooltip
-                            content={
-                              <ChartTooltipContent
-                                formatter={(value) => metricFormat(metric, Number(value))}
-                              />
-                            }
-                          />
-                          <Area
-                            dataKey={metric}
-                            type="monotone"
-                            stroke={
-                              metric === "revenue"
-                                ? "var(--chart-1)"
-                                : metric === "qty"
-                                ? "var(--chart-2)"
-                                : "var(--chart-3)"
-                            }
-                            fill={
-                              metric === "revenue"
-                                ? "var(--chart-1)"
-                                : metric === "qty"
-                                ? "var(--chart-2)"
-                                : "var(--chart-3)"
-                            }
-                            fillOpacity={0.22}
-                            strokeWidth={2}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </ChartContainer>
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground">
-                  Frontend-only test (localStorage) — DB မလိုပါ
-                </div>
-              </CardContent>
-            </Card>
+              {/* Footer */}
+              <div className="px-4 py-2 border-t border-zinc-800/60 flex items-center gap-2">
+                <Coins className="w-3 h-3 text-zinc-700" />
+                <span className="text-[10px] text-zinc-700 uppercase tracking-widest">
+                  Connected to POS receipts API · /api/pos/receipts
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

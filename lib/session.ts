@@ -2,7 +2,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { authOptions } from "./auth";
+import { authOptions } from "./next-auth";
 
 // Project-wide user type (auth callbacks ထဲက session.user format နဲ့ကိုက်)
 export type AppUser = {
@@ -23,6 +23,14 @@ export async function getSessionSafe() {
 
 export async function getCurrentUser(): Promise<AppUser | null> {
   const session = await getSessionSafe();
+  if (
+    !session ||
+    (session as any).error === "AccessTokenExpired" ||
+    !(session as any).accessToken
+  ) {
+    return null;
+  }
+
   return (session?.user as AppUser) ?? null;
 }
 
@@ -38,9 +46,9 @@ export async function requireUser(): Promise<AppUser> {
     const proto = (await h).get("x-forwarded-proto") ?? "http";
     const url = (await h).get("x-original-url") ?? (await h).get("referer") ?? "/";
     const pathname = typeof url === "string" ? new URL(url, `${proto}://${host}`).pathname : "/";
-    const to = `/login?redirect=${encodeURIComponent(pathname)}`;
+    const to = `/Sign_in?next=${encodeURIComponent(pathname)}`;
     redirect(to);
   } catch {
-    redirect("/login");
+    redirect("/Sign_in");
   }
 }

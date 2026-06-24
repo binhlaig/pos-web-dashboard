@@ -63,6 +63,7 @@ import {
   Shield,
 } from "lucide-react";
 import { toast } from "sonner";
+import { FeaturePageGuard } from "@/components/feature-page-guard";
 
 /* ----------------------------- Types ----------------------------- */
 type Product = {
@@ -228,7 +229,7 @@ function seedDemo() {
 }
 
 /* ----------------------------- Page ----------------------------- */
-export default function ProductDashboardPage() {
+function ProductDashboardPageContent() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [events, setEvents] = useState<ProductEvent[]>([]);
@@ -793,6 +794,14 @@ export default function ProductDashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProductDashboardPage() {
+  return (
+    <FeaturePageGuard featureKey="productsEnabled">
+      <ProductDashboardPageContent />
+    </FeaturePageGuard>
   );
 }
 

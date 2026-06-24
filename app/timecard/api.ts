@@ -1,10 +1,10 @@
 // /lib/timecard/api.ts
 import axios, { AxiosRequestConfig } from "axios";
-import { getAccessToken } from "./auth";
+import { clearAuthTokens, getStoredToken, redirectToSignIn } from "@/lib/auth";
 
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") || "http://localhost:3000/api";
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:8080";
 
 export const api = axios.create({
   baseURL: API_BASE,
@@ -14,13 +14,25 @@ export const api = axios.create({
 
 // JWT ကို header ထဲ auto ထည့်ပေးမယ်
 api.interceptors.request.use((cfg) => {
-  const token = getAccessToken();
+  const token = getStoredToken();
   if (token) {
     cfg.headers = cfg.headers ?? {};
     (cfg.headers as any).Authorization = `Bearer ${token}`;
   }
   return cfg;
 });
+
+api.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (error?.response?.status === 401) {
+      clearAuthTokens();
+      redirectToSignIn();
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 export async function get<T = any>(url: string, config?: AxiosRequestConfig) {
   const res = await api.get<T>(url, config);
