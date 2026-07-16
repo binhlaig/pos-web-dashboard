@@ -9,7 +9,7 @@ export default async function ProtectedLayout({ children }: { children: ReactNod
     <main className="min-h-dvh">
       <SyncUser />
       <AuthTokenSync />
-      {/* <Header /> */}
+      <Header />
       <AuthTokenGuard>{children}</AuthTokenGuard>
     </main>
   );
