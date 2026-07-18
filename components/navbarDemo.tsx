@@ -19,6 +19,7 @@ import {
 import { ThemeToggle } from "./theme-toggle";
 import { cn } from "@/lib/utils";
 import { DashboardColorPicker } from "@/app/dashboard/dashboard-color-picker";
+import { NavbarUserProfile } from "./dashboard/navbar-user-profile";
 
 type NavbarDemoProps = {
   sidebarCollapsed: boolean;
@@ -273,35 +274,9 @@ function Navbar({
           <div className="hidden h-8 w-px bg-slate-200 dark:bg-white/10 md:block" />
 
           {/* Profile */}
-          <Link
-            href="/dashboard/profile"
-            className="
-              hidden items-center gap-2
-              rounded-xl p-1.5
-              transition hover:bg-slate-100
-              dark:hover:bg-white/10
-              md:flex
-            "
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
-              SA
-            </div>
 
-            <div className="hidden text-left xl:block">
-              <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                Sai Aung
-              </p>
-
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                Administrator
-              </p>
-            </div>
-
-            <ChevronDown
-              size={14}
-              className="hidden text-slate-400 xl:block"
-            />
-          </Link>
+          <NavbarUserProfile/>
+         
         </div>
       </Menu>
     </div>
