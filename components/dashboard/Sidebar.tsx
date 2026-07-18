@@ -1,149 +1,338 @@
+
 "use client";
 
-import { useState } from "react";
-import { NAV_SECTIONS } from "@/lib/data/data";
-import type { NavPage } from "@/types";
-import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  BarChart3,
+  Boxes,
+  ClipboardList,
+  LayoutDashboard,
+  Package,
+  ReceiptText,
+  Settings,
+  ShoppingCart,
+  Store,
+  Users,
+  X,
+} from "lucide-react";
 
-interface SidebarProps {
-  activePage: NavPage;
-  onNavigate: (page: NavPage) => void;
-}
-
-const BADGE_COLORS: Record<string, string> = {
-  red: "bg-red-600 text-white",
-  amber: "bg-amber-600 text-white",
-  green: "bg-green-700 text-white",
+type DashboardSidebarProps = {
+  open: boolean;
+  collapsed: boolean;
+  onClose: () => void;
 };
 
-export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+type SidebarItem = {
+  title: string;
+  href: string;
+  icon: React.ElementType;
+};
+
+const sidebarItems: SidebarItem[] = [
+  {
+    title: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    title: "Open POS",
+    href: "/dashboard/pos",
+    icon: ShoppingCart,
+  },
+  {
+    title: "Products",
+    href: "/dashboard/products",
+    icon: Package,
+  },
+  {
+    title: "Inventory",
+    href: "/dashboard/inventory",
+    icon: Boxes,
+  },
+  {
+    title: "Receipts",
+    href: "/dashboard/receipts",
+    icon: ReceiptText,
+  },
+  {
+    title: "Staff",
+    href: "/dashboard/staff",
+    icon: Users,
+  },
+  {
+    title: "Tasks",
+    href: "/dashboard/tasks",
+    icon: ClipboardList,
+  },
+  {
+    title: "Analytics",
+    href: "/dashboard/analytics",
+    icon: BarChart3,
+  },
+];
+
+export function DashboardSidebar({
+  open,
+  collapsed,
+  onClose,
+}: DashboardSidebarProps) {
+  const pathname = usePathname();
+
+  const checkIsActive = (href: string) => {
+    if (href === "/dashboard") {
+      return pathname === "/dashboard";
+    }
+
+    return pathname.startsWith(href);
+  };
 
   return (
-    <aside
-      className={cn(
-        "flex flex-col bg-[#1a1a18] transition-all duration-300 ease-in-out h-screen sticky top-0 flex-shrink-0",
-        collapsed ? "w-[60px]" : "w-[210px]"
-      )}
-    >
-      {/* Logo */}
-      <div
-        className={cn(
-          "flex items-center border-b border-white/8 flex-shrink-0",
-          collapsed ? "justify-center px-0 py-4" : "gap-3 px-4 py-4"
-        )}
-      >
-        <div className="w-[30px] h-[30px] bg-[#b8922a] rounded-[7px] flex items-center justify-center text-[15px] flex-shrink-0">
-          🛒
-        </div>
-        {!collapsed && (
-          <div className="overflow-hidden">
-            <div className="text-[13px] font-extrabold text-white leading-tight font-sans truncate">
-              Mya Pann
-            </div>
-            <div className="text-[9px] text-white/35 mt-0.5 truncate">
-              Supermarket · Branch A
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 scrollbar-none">
-        {NAV_SECTIONS.map((section) => (
-          <div key={section.label} className="mb-3">
-            {!collapsed && (
-              <div className="px-2 pb-1.5 text-[8px] font-bold tracking-[0.12em] uppercase text-white/28">
-                {section.label}
-              </div>
-            )}
-            {collapsed && <div className="border-t border-white/8 my-2" />}
-
-            {section.items.map((item) => {
-              const isActive = activePage === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onNavigate(item.id)}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    "w-full flex items-center rounded-lg mb-0.5 transition-all duration-150 text-left",
-                    collapsed ? "justify-center px-0 py-2.5" : "gap-2.5 px-2.5 py-2",
-                    isActive
-                      ? "bg-[rgba(184,146,42,0.18)] border border-[rgba(184,146,42,0.25)]"
-                      : "hover:bg-white/7 border border-transparent"
-                  )}
-                >
-                  <span className="text-[14px] flex-shrink-0 leading-none">{item.icon}</span>
-                  {!collapsed && (
-                    <>
-                      <span
-                        className={cn(
-                          "flex-1 text-[11px] font-medium truncate",
-                          isActive ? "text-[#e8d5a0] font-semibold" : "text-white/62"
-                        )}
-                      >
-                        {item.label}
-                      </span>
-                      {item.badge !== undefined && (
-                        <span
-                          className={cn(
-                            "text-[9px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none",
-                            BADGE_COLORS[item.badgeColor ?? "red"]
-                          )}
-                        >
-                          {item.badge}
-                        </span>
-                      )}
-                    </>
-                  )}
-                  {collapsed && item.badge !== undefined && (
-                    <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
-
-      {/* User */}
-      <div className="border-t border-white/7 px-2 py-3 flex-shrink-0">
-        <div
-          className={cn(
-            "flex items-center rounded-lg bg-white/5",
-            collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
-          )}
-        >
-          <div className="w-7 h-7 rounded-full bg-[#b8922a] flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
-            KT
-          </div>
-          {!collapsed && (
-            <div className="overflow-hidden">
-              <div className="text-[11px] font-semibold text-white truncate">Ko Thet</div>
-              <div className="text-[9px] text-white/35 truncate">Store Manager</div>
-            </div>
-          )}
-        </div>
-
-        {/* Toggle button */}
+    <>
+      {/* Mobile background overlay */}
+      {open && (
         <button
-          onClick={() => setCollapsed((c) => !c)}
-          className={cn(
-            "mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg border border-white/8",
-            "text-white/35 hover:text-white/60 hover:bg-white/5 transition-colors py-1.5",
-            collapsed ? "px-0" : "px-2"
-          )}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          type="button"
+          aria-label="Close sidebar"
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+        />
+      )}
+
+      {/* <aside
+        className={`
+          fixed bottom-4 left-4  top-[94px] z-40
+          flex w-[270px] flex-col
+          rounded-2xl
+          border border-black/[0.1]
+          bg-white shadow-xl
+          transition-[width,transform] duration-300 ease-in-out
+          dark:border-white/[0.12] dark:bg-black
+          lg:translate-x-0
+          ${collapsed ? "lg:w-[76px]" : "lg:w-[220px]"}
+          ${
+            open
+              ? "translate-x-0"
+              : "-translate-x-[calc(100%+2rem)]"
+          }
+        `}
+      > */}
+
+
+
+      <aside
+        className={`
+    fixed bottom-4 left-4 top-[94px] z-[70] lg:z-40
+    flex w-[270px] flex-col
+    rounded-2xl
+    border border-black/[0.1]
+    bg-white shadow-xl
+    transition-[width,transform] duration-300 ease-in-out
+    dark:border-white/[0.12] dark:bg-black
+    lg:translate-x-0
+    ${collapsed ? "lg:w-[76px]" : "lg:w-[220px]"}
+    ${open
+            ? "translate-x-0"
+            : "-translate-x-[calc(100%+2rem)]"
+          }
+  `}
+      >
+        {/* Sidebar header */}
+        <div
+          className={`
+            flex h-16 shrink-0 items-center
+            border-b border-slate-200
+            dark:border-white/10
+            ${collapsed
+              ? "justify-between px-4 lg:justify-center lg:px-2"
+              : "justify-between px-4"
+            }
+          `}
         >
-          <span className="text-[11px] leading-none select-none">
-            {collapsed ? "▶" : "◀"}
-          </span>
-          {!collapsed && (
-            <span className="text-[9px] font-semibold tracking-wide uppercase">Collapse</span>
-          )}
-        </button>
-      </div>
-    </aside>
+          <Link
+            href="/dashboard"
+            onClick={onClose}
+            className="flex min-w-0 items-center gap-3"
+          >
+            {/* Brand icon */}
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/20">
+              <Store size={20} />
+            </div>
+
+            {/* Brand name */}
+            <div
+              className={`
+                min-w-0 overflow-hidden
+                transition-all duration-300
+                ${collapsed ? "lg:hidden" : "block"}
+              `}
+            >
+              <h1 className="whitespace-nowrap text-sm font-bold text-slate-950 dark:text-white">
+                Binhlaig POS
+              </h1>
+
+              <p className="mt-0.5 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400">
+                Shop Dashboard
+              </p>
+            </div>
+          </Link>
+
+          {/* Mobile close button */}
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            onClick={onClose}
+            className="
+              flex h-9 w-9 shrink-0 items-center justify-center
+              rounded-lg text-slate-500
+              transition hover:bg-slate-100
+              dark:text-slate-300 dark:hover:bg-white/10
+              lg:hidden
+            "
+          >
+            <X size={19} />
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-3">
+          <p
+            className={`
+              mb-3 px-3 pt-2
+              text-[10px] font-semibold uppercase
+              tracking-[0.16em] text-slate-400
+              ${collapsed ? "lg:hidden" : "block"}
+            `}
+          >
+            Main menu
+          </p>
+
+          {sidebarItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = checkIsActive(item.href);
+
+            return (
+              <div
+                key={item.href}
+                className="group relative"
+              >
+                <Link
+                  href={item.href}
+                  onClick={onClose}
+                  title={collapsed ? item.title : undefined}
+                  aria-label={item.title}
+                  className={`
+                    flex h-11 items-center rounded-xl
+                    text-sm font-medium
+                    transition-all duration-200
+                    ${collapsed
+                      ? "gap-3 px-3 lg:justify-center lg:px-0"
+                      : "gap-3 px-3"
+                    }
+                    ${isActive
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                    }
+                  `}
+                >
+                  <Icon
+                    size={19}
+                    className="shrink-0"
+                  />
+
+                  <span
+                    className={`
+                      whitespace-nowrap
+                      ${collapsed ? "lg:hidden" : "block"}
+                    `}
+                  >
+                    {item.title}
+                  </span>
+                </Link>
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Sidebar bottom */}
+        <div className="shrink-0 border-t border-slate-200 p-3 dark:border-white/10">
+          {/* Settings */}
+          <Link
+            href="/dashboard/settings"
+            onClick={onClose}
+            title={collapsed ? "Settings" : undefined}
+            aria-label="Settings"
+            className={`
+              flex h-11 items-center rounded-xl
+              text-sm font-medium
+              transition-all duration-200
+              ${collapsed
+                ? "gap-3 px-3 lg:justify-center lg:px-0"
+                : "gap-3 px-3"
+              }
+              ${pathname.startsWith("/dashboard/settings")
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+              }
+            `}
+          >
+            <Settings
+              size={19}
+              className="shrink-0"
+            />
+
+            <span
+              className={`
+                whitespace-nowrap
+                ${collapsed ? "lg:hidden" : "block"}
+              `}
+            >
+              Settings
+            </span>
+          </Link>
+
+          {/* User profile */}
+          <div
+            className={`
+              mt-3 flex items-center rounded-xl
+              bg-slate-100
+              transition-all duration-300
+              dark:bg-white/[0.06]
+              ${collapsed
+                ? "gap-3 p-3 lg:justify-center lg:p-2"
+                : "gap-3 p-3"
+              }
+            `}
+          >
+            <div
+              title={collapsed ? "Sai Aung" : undefined}
+              className="
+                flex h-9 w-9 shrink-0 items-center justify-center
+                rounded-full bg-slate-900
+                text-xs font-bold text-white
+                dark:bg-white dark:text-black
+              "
+            >
+              SA
+            </div>
+
+            <div
+              className={`
+                min-w-0 overflow-hidden
+                ${collapsed ? "lg:hidden" : "block"}
+              `}
+            >
+              <p className="truncate text-xs font-semibold text-slate-900 dark:text-white">
+                Sai Aung
+              </p>
+
+              <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                Administrator
+              </p>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }
