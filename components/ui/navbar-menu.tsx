@@ -99,8 +99,7 @@ export const Menu = ({
           bg-white px-4 py-3
           shadow-lg
           transition-colors duration-300
-          dark:border-white/[0.12]
-          dark:bg-black
+          dark:border-white/10 dark:bg-slate-950
           sm:px-5
         `,
         className,

@@ -128,7 +128,7 @@ export function DashboardSidebar({
     border border-black/[0.1]
     bg-white shadow-xl
     transition-[width,transform] duration-300 ease-in-out
-    dark:border-white/[0.12] dark:bg-black
+   dark:border-white/10 dark:bg-slate-950
     lg:translate-x-0
     ${collapsed ? "lg:w-[76px]" : "lg:w-[220px]"}
     ${open
