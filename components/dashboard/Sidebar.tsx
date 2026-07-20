@@ -52,7 +52,7 @@ const sidebarItems: SidebarItem[] = [
   },
   {
     title: "Receipts",
-    href: "/dashboard/receipts",
+    href: "/dashboard/receipt-settings",
     icon: ReceiptText,
   },
   {
@@ -67,7 +67,7 @@ const sidebarItems: SidebarItem[] = [
   },
   {
     title: "Analytics",
-    href: "/dashboard/analytics",
+    href: "/dashboard/sales-analytics",
     icon: BarChart3,
   },
 ];
