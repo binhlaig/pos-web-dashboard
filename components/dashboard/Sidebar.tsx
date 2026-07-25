@@ -7,6 +7,7 @@ import {
   BarChart3,
   Boxes,
   ClipboardList,
+  Clock1,
   LayoutDashboard,
   Package,
   ReceiptText,
@@ -70,6 +71,13 @@ const sidebarItems: SidebarItem[] = [
     href: "/dashboard/sales-analytics",
     icon: BarChart3,
   },
+  {
+    title:"Time card",
+    href:"/timecard",
+    icon: Clock1,
+  }
+
+
 ];
 
 export function DashboardSidebar({
