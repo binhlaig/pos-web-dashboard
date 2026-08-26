@@ -4,12 +4,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  AlignVerticalSpaceAround,
   BarChart3,
   Boxes,
   ClipboardList,
   Clock1,
   LayoutDashboard,
   Package,
+  PersonStandingIcon,
+  PresentationIcon,
   ReceiptText,
   Settings,
   ShoppingCart,
@@ -37,10 +40,11 @@ const sidebarItems: SidebarItem[] = [
     icon: LayoutDashboard,
   },
   {
-    title: "Open POS",
-    href: "/dashboard/pos",
-    icon: ShoppingCart,
+    title: "Admin",
+    href: "/admin",
+    icon: PresentationIcon,
   },
+
   {
     title: "Products",
     href: "/dashboard/product",

@@ -1,21 +1,21 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
 import toast, { Toaster } from "react-hot-toast";
 import {
-  CalendarDays,
   ChartPie,
   Check,
   Coffee,
   Download,
   Hash,
+  Home,
   Pause,
   Play,
   Settings,
   Square,
-  TimerReset,
   UserRound,
   X,
   Pencil,
@@ -547,22 +547,6 @@ function EntriesTable({ shifts, now, getEmployee, staffMap, onSelectStaff, onEdi
   );
 }
 
-/* ===== Keypad ===== */
-function Keypad({ onPress, onBackspace, onClear }: {
-  onPress: (n: string) => void; onBackspace: () => void; onClear: () => void;
-}) {
-  return (
-    <div className="grid grid-cols-3 gap-3">
-      {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => (
-        <Button key={k} type="button" variant="outline" onClick={() => onPress(k)} className="h-14 rounded-xl text-lg">{k}</Button>
-      ))}
-      <Button type="button" variant="secondary" onClick={onClear} className="h-14 rounded-xl text-lg">Clear</Button>
-      <Button type="button" variant="outline" onClick={() => onPress("0")} className="h-14 rounded-xl text-lg">0</Button>
-      <Button type="button" variant="secondary" onClick={onBackspace} className="h-14 rounded-xl text-lg"><X className="h-5 w-5" /></Button>
-    </div>
-  );
-}
-
 /* ===== AllStaffDialog — FIXED ===== */
 function AllStaffDialog({
   open, onOpenChange, staff, loading, error, onReload, onOpenTimecard,
@@ -629,7 +613,9 @@ function AllStaffDialog({
               <Users className="h-5 w-5 text-amber-700 dark:text-[#e8c27a]" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-[#f3e7d2]">All Employees</h2>
+              <DialogTitle className="text-lg font-semibold text-slate-800 dark:text-[#f3e7d2]">
+                All Employees
+              </DialogTitle>
               <p className="text-xs text-slate-500 dark:text-[#9f8d78]">
                 {filtered.length} staff found{shopId ? ` · Shop ${shopId}` : ""}
               </p>
@@ -1395,15 +1381,18 @@ export default function TimecardPro() {
       </a>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_10%,rgba(245,158,11,0.10),transparent_40%),radial-gradient(ellipse_at_90%_90%,rgba(217,119,6,0.08),transparent_38%)] dark:bg-[radial-gradient(ellipse_at_10%_10%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(ellipse_at_90%_90%,rgba(217,119,6,0.08),transparent_38%)]" />
 
-      <div id="main" className="relative z-10 mx-auto w-[92%] max-w-7xl py-8">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <div
+        id="main"
+        className="relative z-10 mx-auto w-[94%] max-w-[1440px] py-7 lg:py-9"
+      >
+        <div className="w-full space-y-7">
 
-          {/* ── Left column ── */}
-          <div className="lg:col-span-8 space-y-6">
+          {/* ── Full-width main content ── */}
+          <div className="w-full space-y-7">
 
             {/* Hero card */}
-            <Card className="relative overflow-hidden rounded-[28px] border border-[rgba(200,137,42,0.18)] bg-[rgba(255,255,255,0.90)] shadow-[0_24px_64px_rgba(26,21,16,0.08)] dark:bg-[rgba(14,10,6,0.84)] dark:shadow-[0_30px_80px_rgba(0,0,0,0.50),0_0_50px_rgba(200,137,42,0.08)] dark:backdrop-blur-xl">
-              <CardContent className="relative p-6 sm:p-8">
+            <Card className="relative min-h-[540px] w-full overflow-hidden rounded-[28px] border border-[rgba(200,137,42,0.18)] bg-[rgba(255,255,255,0.90)] shadow-[0_22px_58px_rgba(26,21,16,0.08)] dark:bg-[rgba(14,10,6,0.84)] dark:shadow-[0_28px_72px_rgba(0,0,0,0.44),0_0_40px_rgba(200,137,42,0.06)] dark:backdrop-blur-xl">
+              <CardContent className="relative p-6 sm:p-8 lg:p-10">
                 <div className="absolute left-0 right-0 top-0 h-[2px]" style={{ background: "linear-gradient(90deg, transparent, #c8892a, transparent)" }} />
 
                 {/* Status bar */}
@@ -1447,6 +1436,17 @@ export default function TimecardPro() {
                   )}
                   <Badge variant="secondary" className="bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-[#bca98f]" suppressHydrationWarning>{tz}</Badge>
                   <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="rounded-xl border-[rgba(200,137,42,0.22)] bg-white/70 text-slate-700 hover:bg-amber-50 hover:text-amber-800 dark:bg-white/[0.04] dark:text-[#f3e7d2] dark:hover:bg-[rgba(200,137,42,0.12)]"
+                    >
+                      <Link href="/dashboard">
+                        <Home className="mr-2 h-4 w-4" />
+                        Home
+                      </Link>
+                    </Button>
                     <ThemeToggle />
                     <Button size="sm" variant="ghost" className="rounded-xl text-slate-600 hover:bg-slate-100 dark:text-[#bca98f] dark:hover:bg-[rgba(255,255,255,0.05)]">
                       <Settings className="mr-2 h-4 w-4" /> Preferences
@@ -1455,18 +1455,18 @@ export default function TimecardPro() {
                 </div>
 
                 {/* Time + staff selector */}
-                <div className="mt-6 grid gap-6 md:grid-cols-[1.05fr_0.95fr]">
+                <div className="mt-7 grid gap-7 lg:grid-cols-[1.08fr_0.92fr]">
                   <div className="flex flex-col gap-3">
                     <div className="hidden md:block"><LanternMark size={74} glow /></div>
                     <motion.h1 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}
-                      className="serif text-[52px] font-normal leading-none tracking-tight text-slate-900 sm:text-[64px] md:text-[78px] dark:text-[#f3e7d2]" suppressHydrationWarning>
+                      className="serif text-[52px] font-normal leading-none tracking-tight text-slate-900 sm:text-[66px] lg:text-[80px] xl:text-[86px] dark:text-[#f3e7d2]" suppressHydrationWarning>
                       {heroTime}
                     </motion.h1>
                     <p className="text-[13px] font-semibold uppercase tracking-[0.22em] text-[#9a6c2a] dark:text-[#8a5f24]">Timecard Pro</p>
                     <p className="text-lg font-medium text-slate-600 md:text-2xl dark:text-[#bca98f]" suppressHydrationWarning>{heroDate}</p>
                   </div>
 
-                  <div className="grid content-start gap-3 rounded-[22px] border border-[rgba(200,137,42,0.14)] bg-[rgba(255,255,255,0.45)] p-4 dark:bg-[rgba(255,255,255,0.03)]">
+                  <div className="grid content-start gap-3 rounded-[22px] border border-[rgba(200,137,42,0.14)] bg-[rgba(255,255,255,0.45)] p-5 lg:p-6 dark:bg-[rgba(255,255,255,0.03)]">
                     <label htmlFor="empid" className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#8a5f24] dark:text-[#8a5f24]">
                       Staff / Filters
                     </label>
@@ -1523,21 +1523,21 @@ export default function TimecardPro() {
                 </div>
 
                 {/* Stats row */}
-                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <div className="mt-7 grid gap-3 sm:grid-cols-3">
                   {[
                     { label: "Today Worked", value: prettyHM(todayTotal) },
                     { label: "Week Total", value: prettyHM(weekTotal) },
                     { label: "Week Earnings", value: earningsFmt(weekGross + weekOverGross) },
                   ].map((item) => (
-                    <div key={item.label} className="rounded-[20px] border border-[rgba(200,137,42,0.14)] bg-[rgba(255,255,255,0.45)] px-4 py-4 dark:bg-[rgba(255,255,255,0.03)]">
+                    <div key={item.label} className="rounded-[20px] border border-[rgba(200,137,42,0.14)] bg-[rgba(255,255,255,0.45)] px-5 py-5 dark:bg-[rgba(255,255,255,0.03)]">
                       <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#8a5f24]">{item.label}</p>
-                      <p className="mt-2 text-[20px] font-black text-slate-900 dark:text-[#f3e7d2]">{item.value}</p>
+                      <p className="mt-2 text-[22px] font-black text-slate-900 lg:text-[24px] dark:text-[#f3e7d2]">{item.value}</p>
                     </div>
                   ))}
                 </div>
 
                 {/* Action buttons */}
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <ActionButton onClick={doClockIn} disabled={!!active || showAll || !selectedPkId} icon={Play} label="Clock In" intent="primary" />
                   <ActionButton onClick={startBreak} disabled={!active || onBreak(active) || showAll} icon={Coffee} label="Start Break" />
                   <ActionButton onClick={endBreak} disabled={!active || !onBreak(active) || showAll} icon={Pause} label="End Break" />
@@ -1550,8 +1550,8 @@ export default function TimecardPro() {
             </Card>
 
             {/* Entries card */}
-            <Card className="rounded-[26px] border border-[rgba(200,137,42,0.16)] bg-[rgba(255,255,255,0.90)] dark:bg-[rgba(14,10,6,0.84)]">
-              <CardHeader className="pb-2">
+            <Card className="min-h-[560px] w-full rounded-[28px] border border-[rgba(200,137,42,0.16)] bg-[rgba(255,255,255,0.90)] shadow-[0_20px_52px_rgba(26,21,16,0.07)] dark:bg-[rgba(14,10,6,0.84)] dark:shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
+              <CardHeader className="px-6 pb-3 pt-6 sm:px-8 sm:pt-8 lg:px-10">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-[#f3e7d2]">
                     {showAll ? "All Employees — Entries" : staff ? (
@@ -1577,7 +1577,7 @@ export default function TimecardPro() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-6 pb-8 sm:px-8 lg:px-10">
                 <Tabs defaultValue="all" className="w-full">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -1698,78 +1698,6 @@ export default function TimecardPro() {
             </Card>
           </div>
 
-          {/* ── Right column ── */}
-          <div className="lg:col-span-4 space-y-6">
-            {/* Kiosk */}
-            <Card className="relative overflow-hidden rounded-[24px] border border-[rgba(200,137,42,0.14)] bg-[rgba(255,255,255,0.92)] dark:bg-[rgba(14,10,6,0.82)]">
-              <div className="absolute right-5 top-5 hidden sm:block"><LanternMark size={18} glow /></div>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-[#f3e7d2]">
-                  <UserRound className="h-5 w-5 text-sky-600 dark:text-[#c8892a]" /> Kiosk keypad
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Keypad
-                  onPress={(n) => setEmployeeId((v) => (showAll ? v : (v + n).slice(0, 10)))}
-                  onBackspace={() => setEmployeeId((v) => (showAll ? v : v.slice(0, -1)))}
-                  onClear={() => (showAll ? null : setEmployeeId(""))}
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <Button onClick={doClockIn} disabled={showAll || !employeeId || !employeeExists || !!active}><Play className="mr-2 h-4 w-4" /> Clock In</Button>
-                  <Button onClick={doClockOut} disabled={showAll || !employeeId || !employeeExists || !active}><Square className="mr-2 h-4 w-4" /> Clock Out</Button>
-                  <Button onClick={startBreak} disabled={showAll || !employeeId || !employeeExists || !(active && !onBreak(active))}><Coffee className="mr-2 h-4 w-4" /> Start Break</Button>
-                  <Button onClick={endBreak} disabled={showAll || !employeeId || !employeeExists || !(active && onBreak(active))}><Pause className="mr-2 h-4 w-4" /> End Break</Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Notes */}
-            <Card className="relative overflow-hidden rounded-[24px] border border-[rgba(200,137,42,0.14)] bg-[rgba(255,255,255,0.92)] dark:bg-[rgba(14,10,6,0.82)]">
-              <div className="absolute right-5 top-5 hidden sm:block"><LanternMark size={18} glow /></div>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-[#f3e7d2]">
-                  <TimerReset className="h-5 w-5 text-sky-600 dark:text-[#c8892a]" /> Notes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea rows={6} placeholder="Add a note…"
-                  className="min-h-[140px] resize-none rounded-xl bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 dark:bg-[rgba(255,255,255,0.04)] dark:text-[#f3e7d2] dark:placeholder:text-[#8a7a65]"
-                  value={note} onChange={(e) => setNote(e.target.value)} />
-                <div className="mt-3 flex justify-between">
-                  <span className="text-xs text-slate-500 dark:text-[#8a7a65]">
-                    Tip: <kbd className="rounded bg-slate-100 px-1 dark:bg-white/10">i</kbd>{" "}
-                    <kbd className="rounded bg-slate-100 px-1 dark:bg-white/10">o</kbd>{" "}
-                    <kbd className="rounded bg-slate-100 px-1 dark:bg-white/10">b</kbd>
-                  </span>
-                  <Button onClick={() => toast.error("Note update API မရှိသေးပါ")}>Save</Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Today summary */}
-            <Card className="relative overflow-hidden rounded-[24px] border border-[rgba(200,137,42,0.14)] bg-[rgba(255,255,255,0.92)] dark:bg-[rgba(14,10,6,0.82)]">
-              <div className="absolute right-5 top-5 hidden sm:block"><LanternMark size={18} glow /></div>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-[#f3e7d2]">
-                  <CalendarDays className="h-5 w-5 text-sky-600 dark:text-[#c8892a]" /> Today summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="divide-y divide-slate-200 dark:divide-white/10">
-                  {[
-                    { label: "Shop clock-ins today", val: todays.length },
-                    { label: "Worked", val: prettyHM(todayTotal) },
-                    { label: "Breaks", val: prettyHM(todays.reduce((a, s) => a + breakMs(s, nowMs), 0)) },
-                  ].map(({ label, val }) => (
-                    <li key={label} className="flex items-center justify-between py-3 text-sm">
-                      <span className="text-slate-600 dark:text-[#bca98f]">{label}</span>
-                      <span className="text-slate-900 dark:text-[#f3e7d2]">{val}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </div>
         </div>
       </div>
 
