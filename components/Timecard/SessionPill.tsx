@@ -1,11 +1,5 @@
-import {
-  breakMs,
-  onBreak,
-  prettyClock,
-  prettyHM,
-  Shift,
-  workMs,
-} from "@/app/employment/employee_time_card/page";
+
+import { breakMs, onBreak, prettyClock, prettyHM, Shift, workMs } from "@/app/dashboard/timecard/page";
 import { Badge } from "../ui/badge";
 
 function SessionPill({ active, now }: { active?: Shift; now: number }) {
