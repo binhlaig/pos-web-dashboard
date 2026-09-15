@@ -17,8 +17,11 @@ import {
   Settings,
   ShoppingCart,
   Store,
+  UserPlus2,
   Users,
   X,
+
+
 } from "lucide-react";
 
 type DashboardSidebarProps = {
@@ -42,7 +45,7 @@ const sidebarItems: SidebarItem[] = [
   {
     title: "Admin",
     href: "/admin",
-    icon: PresentationIcon,
+    icon: UserPlus2,
   },
 
   {

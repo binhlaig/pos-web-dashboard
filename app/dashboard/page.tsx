@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, type ElementType } from "react";
+import { useEffect, useMemo, useState, type ElementType } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -29,35 +29,91 @@ type SalesItem = {
   value: number;
 };
 
-const salesData: Record<SalesRange, SalesItem[]> = {
-  daily: [
-    { label: "8 AM", value: 8500 },
-    { label: "10 AM", value: 18500 },
-    { label: "12 PM", value: 32000 },
-    { label: "2 PM", value: 24500 },
-    { label: "4 PM", value: 38000 },
-    { label: "6 PM", value: 46500 },
-    { label: "8 PM", value: 28000 },
-    { label: "10 PM", value: 14000 },
-  ],
-
-  weekly: [
-    { label: "Mon", value: 82000 },
-    { label: "Tue", value: 114000 },
-    { label: "Wed", value: 164000 },
-    { label: "Thu", value: 121000 },
-    { label: "Fri", value: 86000 },
-    { label: "Sat", value: 136000 },
-    { label: "Sun", value: 120000 },
-  ],
-
-  monthly: [
-    { label: "Week 1", value: 420000 },
-    { label: "Week 2", value: 568000 },
-    { label: "Week 3", value: 486000 },
-    { label: "Week 4", value: 625000 },
-  ],
+type Product = {
+  id: number | string;
+  sku?: string;
+  barcode?: string;
+  name?: string;
+  productName?: string;
+  product_name?: string;
+  category?: string;
+  productType?: string;
+  product_type?: string;
+  productQuantityAmount?: number;
+  product_quantity_amount?: number;
+  quantity?: number;
+  stock?: number;
 };
+
+type ReceiptItem = {
+  productId?: number | string;
+  product_id?: number | string;
+  productName?: string;
+  product_name?: string;
+  name?: string;
+  sku?: string;
+  barcode?: string;
+  category?: string;
+  qty?: number;
+  quantity?: number;
+  price?: number;
+  total?: number;
+};
+
+type Receipt = {
+  id?: number;
+  receiptNo?: string;
+  createdAt?: string;
+  customerName?: string;
+  grandTotal?: number;
+  total?: number;
+  paymentMethod?: string;
+  status?: string;
+  items?: ReceiptItem[];
+  receiptItems?: ReceiptItem[];
+  receipt_items?: ReceiptItem[];
+};
+
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const LOW_STOCK_LIMIT = 10;
+
+function getToken() {
+  if (typeof window === "undefined") return null;
+  for (const key of [
+    "pos_shop_owner_token",
+    "pos_access_token",
+    "access_token",
+    "token",
+    "jwt",
+  ]) {
+    const token = localStorage.getItem(key);
+    if (token) return token;
+  }
+  return null;
+}
+
+async function fetchApi<T>(path: string): Promise<T> {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`API request failed (${response.status})`);
+  return response.json() as Promise<T>;
+}
+
+function listFrom<T>(payload: T[] | { content?: T[]; data?: T[]; receipts?: T[] }): T[] {
+  if (Array.isArray(payload)) return payload;
+  return payload.content ?? payload.data ?? payload.receipts ?? [];
+}
+
+function receiptTotal(receipt: Receipt) {
+  return Number(receipt.grandTotal ?? receipt.total ?? 0);
+}
+
+function receiptDate(receipt: Receipt) {
+  return receipt.createdAt ? new Date(receipt.createdAt) : new Date(0);
+}
 
 const salesInformation: Record<
   SalesRange,
@@ -84,66 +140,6 @@ const salesInformation: Record<
   },
 };
 
-const transactions = [
-  {
-    receipt: "#RCT-250518-001",
-    time: "10:24 AM",
-    customer: "Walk-in Customer",
-    total: "¥4,250",
-    payment: "Cash",
-    status: "Completed",
-  },
-  {
-    receipt: "#RCT-250518-002",
-    time: "10:18 AM",
-    customer: "Ko Min Thant",
-    total: "¥12,800",
-    payment: "KPay",
-    status: "Completed",
-  },
-  {
-    receipt: "#RCT-250518-003",
-    time: "10:05 AM",
-    customer: "May Thu Zar",
-    total: "¥7,600",
-    payment: "Card",
-    status: "Completed",
-  },
-  {
-    receipt: "#RCT-250518-004",
-    time: "09:52 AM",
-    customer: "Walk-in Customer",
-    total: "¥2,350",
-    payment: "Cash",
-    status: "Completed",
-  },
-];
-
-const lowStockItems = [
-  {
-    name: "Mineral Water 500ml",
-    stock: 6,
-    color: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
-  },
-  {
-    name: "Potato Chips Classic",
-    stock: 8,
-    color: "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400",
-  },
-  {
-    name: "Instant Noodles Spicy",
-    stock: 5,
-    color:
-      "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400",
-  },
-  {
-    name: "Laundry Detergent 1kg",
-    stock: 7,
-    color:
-      "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
-  },
-];
-
 function formatYen(value: number) {
   return new Intl.NumberFormat("ja-JP", {
     style: "currency",
@@ -166,13 +162,142 @@ function formatChartValue(value: number) {
 
 const DashboardPage = () => {
   const [salesRange, setSalesRange] = useState<SalesRange>("weekly");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetchApi<Product[] | { content?: Product[]; data?: Product[]; receipts?: Product[] }>("/api/products"),
+      fetchApi<Receipt[] | { content?: Receipt[]; data?: Receipt[]; receipts?: Receipt[] }>(
+        "/api/pos/receipts/shop",
+      ),
+    ])
+      .then(([productPayload, receiptPayload]) => {
+        if (!active) return;
+        setProducts(listFrom(productPayload));
+        setReceipts(listFrom(receiptPayload));
+        setError(null);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : "Unable to load dashboard data");
+      })
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const now = useMemo(() => new Date(), []);
+  const startToday = useMemo(() => new Date(now.getFullYear(), now.getMonth(), now.getDate()), [now]);
+  const startTomorrow = useMemo(() => new Date(startToday.getTime() + 86_400_000), [startToday]);
+  const startYesterday = useMemo(() => new Date(startToday.getTime() - 86_400_000), [startToday]);
+  const paidReceipts = useMemo(
+    () => receipts.filter((receipt) => (receipt.status ?? "PAID").toUpperCase() !== "CANCELLED"),
+    [receipts],
+  );
+  const todayReceipts = useMemo(
+    () => paidReceipts.filter((receipt) => receiptDate(receipt) >= startToday && receiptDate(receipt) < startTomorrow),
+    [paidReceipts, startToday, startTomorrow],
+  );
+  const yesterdayReceipts = useMemo(
+    () => paidReceipts.filter((receipt) => receiptDate(receipt) >= startYesterday && receiptDate(receipt) < startToday),
+    [paidReceipts, startYesterday, startToday],
+  );
+  const todaySales = todayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
+  const yesterdaySales = yesterdayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
+  const percentChange = (current: number, previous: number) =>
+    previous === 0 ? (current > 0 ? 100 : 0) : ((current - previous) / previous) * 100;
+  const salesChange = percentChange(todaySales, yesterdaySales);
+  const orderChange = percentChange(todayReceipts.length, yesterdayReceipts.length);
+
+  const salesData = useMemo<Record<SalesRange, SalesItem[]>>(() => {
+    const daily = Array.from({ length: 24 }, (_, hour) => ({ label: `${hour.toString().padStart(2, "0")}:00`, value: 0 }));
+    const weekly = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => ({ label, value: 0 }));
+    const monthly = Array.from({ length: 5 }, (_, index) => ({ label: `Week ${index + 1}`, value: 0 }));
+    const mondayOffset = (now.getDay() + 6) % 7;
+    const weekStart = new Date(startToday.getTime() - mondayOffset * 86_400_000);
+    paidReceipts.forEach((receipt) => {
+      const date = receiptDate(receipt);
+      const value = receiptTotal(receipt);
+      if (date >= startToday && date < startTomorrow) daily[date.getHours()].value += value;
+      const weekIndex = Math.floor((date.getTime() - weekStart.getTime()) / 86_400_000);
+      if (weekIndex >= 0 && weekIndex < 7) weekly[weekIndex].value += value;
+      if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
+        monthly[Math.min(4, Math.floor((date.getDate() - 1) / 7))].value += value;
+      }
+    });
+    return { daily, weekly, monthly };
+  }, [now, paidReceipts, startToday, startTomorrow]);
 
   const selectedSales = salesData[salesRange];
-
-  const totalSales = selectedSales.reduce(
-    (total, item) => total + item.value,
-    0,
+  const totalSales = selectedSales.reduce((total, item) => total + item.value, 0);
+  const lowStockItems = useMemo(
+    () => products.map((product) => ({
+      id: product.id,
+      name: product.productName ?? product.product_name ?? product.name ?? `Product #${product.id}`,
+      stock: Number(product.productQuantityAmount ?? product.product_quantity_amount ?? product.quantity ?? product.stock ?? 0),
+      color: "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400",
+    })).filter((product) => product.stock <= LOW_STOCK_LIMIT).sort((a, b) => a.stock - b.stock),
+    [products],
   );
+  const recentTransactions = useMemo(
+    () => [...paidReceipts].sort((a, b) => receiptDate(b).getTime() - receiptDate(a).getTime()).slice(0, 5),
+    [paidReceipts],
+  );
+  const categorySales = useMemo(() => {
+    const productById = new Map(products.map((product) => [String(product.id), product]));
+    const productByName = new Map(
+      products.flatMap((product) =>
+        [product.productName, product.product_name, product.name]
+          .filter((name): name is string => Boolean(name))
+          .map((name) => [name.trim().toLowerCase(), product] as const),
+      ),
+    );
+    const productByCode = new Map(
+      products.flatMap((product) =>
+        [product.sku, product.barcode]
+          .filter((code): code is string => Boolean(code))
+          .map((code) => [String(code).trim(), product] as const),
+      ),
+    );
+    const totals = new Map<string, number>();
+    todayReceipts.forEach((receipt) => {
+      const items = receipt.items ?? receipt.receiptItems ?? receipt.receipt_items ?? [];
+      items.forEach((item) => {
+      const productId = item.productId ?? item.product_id;
+      const productName = item.productName ?? item.product_name ?? item.name;
+      const product =
+        (productId != null ? productById.get(String(productId)) : undefined) ??
+        (productName ? productByName.get(productName.trim().toLowerCase()) : undefined) ??
+        productByCode.get(String(item.sku ?? item.barcode ?? "").trim());
+      const category =
+        item.category?.trim() ||
+        product?.category?.trim() ||
+        product?.productType?.trim() ||
+        product?.product_type?.trim() ||
+        "Others";
+      const value = Number(item.total ?? Number(item.price ?? 0) * Number(item.qty ?? item.quantity ?? 0));
+      totals.set(category, (totals.get(category) ?? 0) + value);
+      });
+    });
+    return [...totals.entries()].map(([title, value]) => ({ title, value })).sort((a, b) => b.value - a.value).slice(0, 5);
+  }, [products, todayReceipts]);
+  const categoryTotal = categorySales.reduce((sum, category) => sum + category.value, 0);
+  const categoryGradient = useMemo(() => {
+    const colors = ["#2563eb", "#22c55e", "#f97316", "#8b5cf6", "#cbd5e1"];
+    if (!categoryTotal) return "conic-gradient(#e2e8f0 0% 100%)";
+    let start = 0;
+    const stops = categorySales.map((category, index) => {
+      const end = start + (category.value / categoryTotal) * 100;
+      const stop = `${colors[index]} ${start}% ${end}%`;
+      start = end;
+      return stop;
+    });
+    return `conic-gradient(${stops.join(", ")})`;
+  }, [categorySales, categoryTotal]);
 
   return (
     <section className="py-5">
@@ -202,7 +327,7 @@ const DashboardPage = () => {
               "
           >
             <CalendarDays size={17} />
-            <span>May 12 – May 18</span>
+            <span>{now.toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })}</span>
           </button>
 
           <Link
@@ -221,43 +346,51 @@ const DashboardPage = () => {
         </div>
       </div>
 
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+          {error}. Please sign in again and confirm the API URL.
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         <SummaryCard
           title="Today Sales"
-          value="¥128,500"
-          change="+18.6%"
+          value={loading ? "—" : formatYen(todaySales)}
+          change={`${salesChange >= 0 ? "+" : ""}${salesChange.toFixed(1)}%`}
           comparison="vs yesterday"
           icon={TrendingUp}
           iconStyle="bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400"
+          negative={salesChange < 0}
         />
 
         <SummaryCard
           title="Orders"
-          value="142"
-          change="+12.4%"
+          value={loading ? "—" : todayReceipts.length.toLocaleString()}
+          change={`${orderChange >= 0 ? "+" : ""}${orderChange.toFixed(1)}%`}
           comparison="vs yesterday"
           icon={ShoppingCart}
           iconStyle="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
+          negative={orderChange < 0}
         />
 
         <SummaryCard
           title="Products"
-          value="1,248"
-          change="+5.3%"
-          comparison="vs last week"
+          value={loading ? "—" : products.length.toLocaleString()}
+          change="Live"
+          comparison="from inventory"
           icon={Package}
           iconStyle="bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400"
         />
 
         <SummaryCard
           title="Low Stock"
-          value="32"
-          change="-8.2%"
-          comparison="vs last week"
+          value={loading ? "—" : lowStockItems.length.toLocaleString()}
+          change={`≤ ${LOW_STOCK_LIMIT}`}
+          comparison="items remaining"
           icon={AlertTriangle}
           iconStyle="bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400"
-          negative
+          negative={lowStockItems.length > 0}
         />
       </div>
 
@@ -312,7 +445,7 @@ const DashboardPage = () => {
             </div>
 
             <span className="mb-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-              {salesInformation[salesRange].change}
+              Live DB
             </span>
           </div>
 
@@ -457,13 +590,12 @@ const DashboardPage = () => {
             <div
               className="relative h-44 w-44 shrink-0 rounded-full"
               style={{
-                background:
-                  "conic-gradient(var(--color-blue-600) 0% 33%, #22c55e 33% 55%, #f97316 55% 74%, #8b5cf6 74% 89%, #cbd5e1 89% 100%)",
+                background: categoryGradient,
               }}
             >
               <div className="absolute inset-8 flex flex-col items-center justify-center rounded-full bg-white transition-colors dark:bg-black">
                 <p className="text-xl font-bold text-slate-950 dark:text-white">
-                  ¥128.5K
+                  {formatYen(categoryTotal)}
                 </p>
 
                 <p className="text-[10px] text-slate-500 dark:text-slate-400">
@@ -473,40 +605,17 @@ const DashboardPage = () => {
             </div>
 
             <div className="w-full space-y-3">
-              <CategoryItem
-                color="bg-blue-600"
-                title="Beverages"
-                value="¥42,300"
-                percent="32.9%"
-              />
-
-              <CategoryItem
-                color="bg-green-500"
-                title="Snacks"
-                value="¥28,600"
-                percent="22.3%"
-              />
-
-              <CategoryItem
-                color="bg-orange-500"
-                title="Groceries"
-                value="¥24,800"
-                percent="19.3%"
-              />
-
-              <CategoryItem
-                color="bg-violet-500"
-                title="Household"
-                value="¥18,700"
-                percent="14.5%"
-              />
-
-              <CategoryItem
-                color="bg-slate-300"
-                title="Others"
-                value="¥14,100"
-                percent="11.0%"
-              />
+              {categorySales.length === 0 ? (
+                <p className="text-center text-xs text-slate-400">No category sales today</p>
+              ) : categorySales.map((category, index) => (
+                <CategoryItem
+                  key={category.title}
+                  color={["bg-blue-600", "bg-green-500", "bg-orange-500", "bg-violet-500", "bg-slate-300"][index]}
+                  title={category.title}
+                  value={formatYen(category.value)}
+                  percent={`${(categoryTotal ? (category.value / categoryTotal) * 100 : 0).toFixed(1)}%`}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -555,34 +664,34 @@ const DashboardPage = () => {
               </thead>
 
               <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                {transactions.map((transaction) => (
+                {recentTransactions.map((transaction, index) => (
                   <tr
-                    key={transaction.receipt}
+                    key={transaction.id ?? transaction.receiptNo ?? index}
                     className="text-xs transition hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                   >
                     <td className="whitespace-nowrap px-5 py-3.5 font-medium text-blue-600">
-                      {transaction.receipt}
+                      {transaction.receiptNo ?? `#${transaction.id ?? "—"}`}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 text-slate-600 dark:text-slate-300">
-                      {transaction.time}
+                      {receiptDate(transaction).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 text-slate-700 dark:text-slate-200">
-                      {transaction.customer}
+                      {transaction.customerName ?? "Walk-in Customer"}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-slate-900 dark:text-white">
-                      {transaction.total}
+                      {formatYen(receiptTotal(transaction))}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 text-slate-600 dark:text-slate-300">
-                      {transaction.payment}
+                      {(transaction.paymentMethod ?? "—").replaceAll("_", " ")}
                     </td>
 
                     <td className="px-4 py-3.5">
                       <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-                        {transaction.status}
+                        {transaction.status ?? "PAID"}
                       </span>
                     </td>
                   </tr>
@@ -613,30 +722,46 @@ const DashboardPage = () => {
             </Link>
           </div>
 
-          <div className="mt-5 divide-y divide-slate-100 dark:divide-white/[0.06]">
-            {lowStockItems.map((item) => (
-              <div key={item.name} className="flex items-center gap-3 py-3">
-                <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.color}`}
-                >
-                  <Package size={18} />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-semibold text-slate-900 dark:text-white">
-                    {item.name}
-                  </p>
-
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    Current stock: {item.stock}
-                  </p>
-                </div>
-
-                <span className="whitespace-nowrap rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-medium text-orange-600 dark:bg-orange-500/10 dark:text-orange-400">
-                  {item.stock} left
-                </span>
-              </div>
-            ))}
+          <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+            <table className="w-full table-fixed">
+              <thead className="bg-slate-50 dark:bg-white/[0.04]">
+                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <th className="w-[68%] px-4 py-3 font-semibold">Product Name</th>
+                  <th className="px-4 py-3 text-right font-semibold">Remaining Stock</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                {lowStockItems.slice(0, 5).map((item) => (
+                  <tr key={item.id} className="transition hover:bg-slate-50 dark:hover:bg-white/[0.04]">
+                    <td className="px-4 py-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${item.color}`}>
+                          <Package size={17} />
+                        </div>
+                        <span className="truncate text-xs font-semibold text-slate-900 dark:text-white">
+                          {item.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={`inline-flex min-w-16 justify-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${
+                        item.stock <= 0
+                          ? "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
+                          : "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400"
+                      }`}>
+                        {item.stock}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {loading && (
+                  <tr><td colSpan={2} className="px-4 py-8 text-center text-xs text-slate-400">Loading products...</td></tr>
+                )}
+                {!loading && lowStockItems.length === 0 && (
+                  <tr><td colSpan={2} className="px-4 py-8 text-center text-xs text-slate-400">All products have enough stock</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
           <Link

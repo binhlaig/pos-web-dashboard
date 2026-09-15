@@ -24,7 +24,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   DollarSign,
-  CreditCard,
   MoreHorizontal,
   Bot,
   Store,
@@ -39,10 +38,17 @@ import {
   PanelLeftOpen,
   ShieldCheck,
   Clock3,
-  BadgeDollarSign,
   User2,
   TrendingUp,
   Flame,
+  Package,
+  Boxes,
+  ReceiptText,
+  CheckSquare,
+  ShoppingCart,
+  Menu,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -69,129 +75,160 @@ import { useRouter } from "next/navigation";
 
 type ThemeMode = "dark" | "light";
 
-const revenueData = [
-  { name: "Jan", revenue: 1200, profit: 400 },
-  { name: "Feb", revenue: 1800, profit: 610 },
-  { name: "Mar", revenue: 1600, profit: 540 },
-  { name: "Apr", revenue: 2400, profit: 830 },
-  { name: "May", revenue: 2100, profit: 760 },
-  { name: "Jun", revenue: 2800, profit: 1060 },
-  { name: "Jul", revenue: 3200, profit: 1320 },
-  { name: "Aug", revenue: 3600, profit: 1510 },
-];
+type ApiList<T> = T[] | { content?: T[]; data?: T[]; receipts?: T[] };
+type Product = { id: number | string; name?: string; productName?: string; product_name?: string; category?: string; productType?: string; product_type?: string; productQuantityAmount?: number; product_quantity_amount?: number; quantity?: number; stock?: number };
+type ReceiptItem = { productId?: number | string; product_id?: number | string; productName?: string; product_name?: string; name?: string; category?: string; qty?: number; quantity?: number; price?: number; total?: number };
+type Receipt = { id?: number | string; receiptNo?: string; receipt_no?: string; createdAt?: string; created_at?: string; customerName?: string; customer_name?: string; staffName?: string; staff_name?: string; grandTotal?: number; grand_total?: number; total?: number; paymentMethod?: string; payment_method?: string; status?: string; items?: ReceiptItem[]; receiptItems?: ReceiptItem[]; receipt_items?: ReceiptItem[] };
+type Staff = { id: number | string; fullName?: string; full_name?: string; status?: string; active?: boolean };
+type Task = { id: number | string; title?: string; status?: string; priority?: string };
+type OwnerSession = { id?: number | string; username?: string; name?: string; displayName?: string; fullName?: string; full_name?: string; role?: string; roles?: string | string[]; image?: string; imageUrl?: string; image_url?: string; profileImage?: string; profile_image?: string; profileImageUrl?: string; profile_image_url?: string; avatarUrl?: string; avatar_url?: string; shopName?: string; shop_name?: string; shopCode?: string; shop_code?: string; shop?: { name?: string; shopName?: string; code?: string; shopCode?: string } };
+type SessionPayload = OwnerSession & { user?: OwnerSession; owner?: OwnerSession; account?: OwnerSession; profile?: OwnerSession; data?: OwnerSession; session?: OwnerSession | { user?: OwnerSession } };
 
-const categoryData = [
-  { name: "Basic", value: 46 },
-  { name: "Pro", value: 32 },
-  { name: "Enterprise", value: 14 },
-  { name: "Trial", value: 8 },
-];
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const LOW_STOCK_LIMIT = 10;
 
-const shopData = [
-  { name: "Main Branch", value: 86 },
-  { name: "Branch A", value: 72 },
-  { name: "Branch B", value: 61 },
-  { name: "Online Shop", value: 49 },
-];
-
-const transactions = [
-  {
-    id: "SHP-0001",
-    customer: "Sai Mart",
-    type: "Active",
-    amount: 12800,
-    shop: "PRO",
-    time: "Renews Aug 12",
-  },
-  {
-    id: "SHP-0002",
-    customer: "Golden Table",
-    type: "Trial",
-    amount: 0,
-    shop: "TRIAL",
-    time: "Ends Jul 30",
-  },
-  {
-    id: "SHP-0003",
-    customer: "Moe Fashion",
-    type: "Expired",
-    amount: 6800,
-    shop: "BASIC",
-    time: "Expired Jul 23",
-  },
-  {
-    id: "SHP-0004",
-    customer: "Tokyo Mini Mart",
-    type: "Active",
-    amount: 22800,
-    shop: "ENTERPRISE",
-    time: "Renews Sep 01",
-  },
-  {
-    id: "SHP-0005",
-    customer: "Shwe Cafe",
-    type: "Active",
-    amount: 6800,
-    shop: "BASIC",
-    time: "Renews Aug 06",
-  },
-];
+function authToken() {
+  if (typeof window === "undefined") return null;
+  for (const key of ["pos_shop_owner_token", "pos_access_token", "access_token", "token", "jwt"]) {
+    const value = localStorage.getItem(key);
+    if (value) return value;
+  }
+  return null;
+}
+async function fetchApi<T>(path: string): Promise<T> {
+  const token = authToken();
+  const response = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: "no-store" });
+  if (!response.ok) throw new Error(`${path} (${response.status})`);
+  return response.json() as Promise<T>;
+}
+function apiList<T>(payload: ApiList<T>): T[] { return Array.isArray(payload) ? payload : payload.content ?? payload.data ?? payload.receipts ?? []; }
+function receiptTotal(receipt: Receipt) { return Number(receipt.grandTotal ?? receipt.grand_total ?? receipt.total ?? 0); }
+function receiptDate(receipt: Receipt) { return new Date(receipt.createdAt ?? receipt.created_at ?? 0); }
+function receiptNumber(receipt: Receipt) { return receipt.receiptNo ?? receipt.receipt_no ?? `#${receipt.id ?? "—"}`; }
+function receiptItems(receipt: Receipt) { return receipt.items ?? receipt.receiptItems ?? receipt.receipt_items ?? []; }
+function normalizeOwner(payload: SessionPayload): OwnerSession {
+  if (payload.user) return payload.user;
+  if (payload.owner) return payload.owner;
+  if (payload.account) return payload.account;
+  if (payload.profile) return payload.profile;
+  if (payload.data) return payload.data;
+  if (payload.session && "user" in payload.session && payload.session.user) return payload.session.user;
+  if (payload.session) return payload.session as OwnerSession;
+  return payload;
+}
+function ownerFromJwt(): OwnerSession | null {
+  const token = authToken();
+  if (!token) return null;
+  try {
+    const encoded = token.split(".")[1];
+    if (!encoded) return null;
+    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(decodeURIComponent(Array.from(atob(normalized), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""))) as Record<string, unknown>;
+    return {
+      id: claims.userId as string | number | undefined,
+      username: (claims.username ?? claims.sub) as string | undefined,
+      name: (claims.name ?? claims.fullName) as string | undefined,
+      role: claims.role as string | undefined,
+      roles: claims.roles as string | string[] | undefined,
+      shopName: claims.shopName as string | undefined,
+      shopCode: claims.shopCode as string | undefined,
+    };
+  } catch { return null; }
+}
+function ownerFromStorage(): OwnerSession | null {
+  if (typeof window === "undefined") return null;
+  for (const key of ["pos_shop_owner", "pos_user", "auth_user", "current_user", "user"]) {
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try { return normalizeOwner(JSON.parse(raw) as SessionPayload); } catch { /* try the next key */ }
+  }
+  return null;
+}
+async function fetchOwnerSession(): Promise<OwnerSession> {
+  const token = authToken();
+  const response = await fetch("/api/auth/session", {
+    credentials: "include",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const fallback = ownerFromStorage() ?? ownerFromJwt();
+    if (fallback) return fallback;
+    throw new Error(`/api/auth/session (${response.status})`);
+  }
+  const owner = normalizeOwner(await response.json() as SessionPayload);
+  const hasIdentity = Boolean(owner.id ?? owner.username ?? owner.name ?? owner.fullName ?? owner.full_name ?? owner.displayName);
+  const stored = ownerFromStorage();
+  const jwt = ownerFromJwt();
+  return hasIdentity ? { ...jwt, ...stored, ...owner } : stored ?? jwt ?? owner;
+}
+function ownerName(owner: OwnerSession | null) { return owner?.fullName ?? owner?.full_name ?? owner?.displayName ?? owner?.name ?? owner?.username ?? "Shop Owner"; }
+function ownerRole(owner: OwnerSession | null) { const role = String(Array.isArray(owner?.roles) ? owner?.roles[0] : owner?.roles ?? owner?.role ?? "OWNER").replace("ROLE_", "").toUpperCase(); return role === "ADMIN" ? "OWNER" : role; }
+function ownerInitials(owner: OwnerSession | null) { return ownerName(owner).split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "OW"; }
+function ownerImage(owner: OwnerSession | null) {
+  const path = owner?.imageUrl ?? owner?.image_url ?? owner?.profileImageUrl ?? owner?.profile_image_url ?? owner?.profileImage ?? owner?.profile_image ?? owner?.avatarUrl ?? owner?.avatar_url ?? owner?.image ?? "";
+  if (!path) return "";
+  if (/^(https?:|data:|blob:)/i.test(path)) return path;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return API_BASE ? `${API_BASE}${normalizedPath}` : normalizedPath;
+}
+function ownerShop(owner: OwnerSession | null) { return owner?.shopName ?? owner?.shop_name ?? owner?.shop?.shopName ?? owner?.shop?.name ?? owner?.shopCode ?? owner?.shop_code ?? owner?.shop?.shopCode ?? owner?.shop?.code ?? "THIS SHOP"; }
 
 const quickActions = [
   {
-    label: "Add Shop",
-    href: "/admin/shops/new",
-    icon: Store,
+    label: "Open POS",
+    href: "/dashboard/pos",
+    icon: ShoppingCart,
     color: "from-amber-500/20 to-orange-600/10",
     iconColor: "text-amber-600 dark:text-amber-400",
   },
   {
-    label: "Manage Users",
-    href: "/admin/users",
-    icon: Users,
+    label: "Products",
+    href: "/dashboard/products",
+    icon: Package,
     color: "from-orange-500/20 to-amber-600/10",
     iconColor: "text-orange-600 dark:text-orange-400",
   },
   {
-    label: "Plans & Features",
-    href: "/admin/plans",
-    icon: ShieldCheck,
+    label: "Inventory",
+    href: "/dashboard/inventory",
+    icon: Boxes,
     color: "from-emerald-500/20 to-emerald-600/10",
     iconColor: "text-emerald-600 dark:text-emerald-400",
   },
   {
-    label: "Subscriptions",
-    href: "/admin/subscriptions",
-    icon: CreditCard,
+    label: "Receipts",
+    href: "/dashboard/receipts",
+    icon: ReceiptText,
     color: "from-yellow-500/20 to-orange-600/10",
     iconColor: "text-yellow-600 dark:text-yellow-400",
   },
   {
-    label: "System Health",
-    href: "/admin/system",
-    icon: Activity,
+    label: "Staff",
+    href: "/dashboard/staff",
+    icon: Users,
     color: "from-amber-500/20 to-yellow-600/10",
     iconColor: "text-amber-600 dark:text-amber-400",
   },
   {
-    label: "Audit Logs",
-    href: "/admin/audit-logs",
-    icon: Clock3,
+    label: "Tasks",
+    href: "/dashboard/tasks",
+    icon: CheckSquare,
     color: "from-rose-500/20 to-rose-600/10",
     iconColor: "text-rose-600 dark:text-rose-400",
   },
 ];
 
 const sidebarItems = [
-  { label: "Admin Overview", icon: LayoutDashboard, active: true },
-  { label: "Back to Dashboard", icon: ChevronRight, href: "/dashboard" },
-  { label: "Shops", icon: Store, href: "/admin/shops" },
-  { label: "Users", icon: Users, href: "/admin/users" },
-  { label: "Plans & Features", icon: ShieldCheck, href: "/admin/plans" },
-  { label: "Subscriptions", icon: CreditCard, href: "/admin/subscriptions" },
-  { label: "System Health", icon: Activity, href: "/admin/system" },
-  { label: "Audit Logs", icon: Clock3, href: "/admin/audit-logs" },
-  { label: "Settings", icon: Settings, href: "/admin/settings" },
+  { label: "Owner Overview", icon: LayoutDashboard, active: true, href: "/dashboard" },
+  { label: "Open POS", icon: ShoppingCart, href: "/dashboard/pos" },
+  { label: "Receipts", icon: ReceiptText, href: "/dashboard/receipts" },
+  { label: "Products", icon: Package, href: "/dashboard/products" },
+  { label: "Inventory", icon: Boxes, href: "/dashboard/inventory" },
+  { label: "Staff", icon: Users, href: "/dashboard/staff" },
+  { label: "Timecard", icon: Clock3, href: "/dashboard/timecard" },
+  { label: "Tasks", icon: CheckSquare, href: "/dashboard/tasks" },
+  { label: "Shop Settings", icon: Settings, href: "/dashboard/settings" },
 ];
 
 function money(n: number) {
@@ -825,7 +862,7 @@ function DashboardSkeleton({ theme }: { theme: ThemeMode }) {
   const tk = t(theme);
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:gap-4 2xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className={tk.card}>
             <CardContent className="p-6">
@@ -840,13 +877,13 @@ function DashboardSkeleton({ theme }: { theme: ThemeMode }) {
   );
 }
 
-function AnalyticsStrip({ theme }: { theme: ThemeMode }) {
+function AnalyticsStrip({ theme, todaySales, todayOrders, activeStaff, lowStock }: { theme: ThemeMode; todaySales: number; todayOrders: number; activeStaff: number; lowStock: number }) {
   const tk = t(theme);
   const items = [
     {
-      label: "Active Shops",
-      value: "24",
-      icon: Store,
+      label: "Today Sales",
+      value: money(todaySales),
+      icon: TrendingUp,
       accent: theme === "dark" ? "text-emerald-400" : "text-emerald-600",
       bg:
         theme === "dark"
@@ -854,9 +891,9 @@ function AnalyticsStrip({ theme }: { theme: ThemeMode }) {
           : "bg-emerald-50 border-emerald-200",
     },
     {
-      label: "Subscriptions",
-      value: "21",
-      icon: CreditCard,
+      label: "Today Orders",
+      value: todayOrders.toLocaleString(),
+      icon: ReceiptText,
       accent: theme === "dark" ? "text-amber-400" : "text-amber-600",
       bg:
         theme === "dark"
@@ -864,8 +901,8 @@ function AnalyticsStrip({ theme }: { theme: ThemeMode }) {
           : "bg-amber-50 border-amber-200",
     },
     {
-      label: "Staff Accounts",
-      value: "186",
+      label: "Active Staff",
+      value: activeStaff.toLocaleString(),
       icon: Users,
       accent: theme === "dark" ? "text-orange-400" : "text-orange-600",
       bg:
@@ -874,9 +911,9 @@ function AnalyticsStrip({ theme }: { theme: ThemeMode }) {
           : "bg-orange-50 border-orange-200",
     },
     {
-      label: "System Uptime",
-      value: "99.98%",
-      icon: ShieldCheck,
+      label: "Low Stock",
+      value: lowStock.toLocaleString(),
+      icon: AlertTriangle,
       accent: theme === "dark" ? "text-yellow-400" : "text-yellow-600",
       bg:
         theme === "dark"
@@ -1132,9 +1169,11 @@ function MiniMetric({
 function DesktopSidebar({
   theme,
   collapsed,
+  owner,
 }: {
   theme: ThemeMode;
   collapsed: boolean;
+  owner: OwnerSession | null;
 }) {
   const tk = t(theme);
   const router = useRouter();
@@ -1167,7 +1206,7 @@ function DesktopSidebar({
               BINHLAIG
             </div>
             <div className={cn("text-[10px] font-medium", tk.textMuted)}>
-              Lantern Admin
+              POS Owner
             </div>
           </div>
         )}
@@ -1192,7 +1231,7 @@ function DesktopSidebar({
               Workspace
             </div>
             <div className={cn("mt-0.5 text-sm font-semibold", tk.text)}>
-              Platform Control
+              Shop Operations
             </div>
           </div>
         </div>
@@ -1236,15 +1275,15 @@ function DesktopSidebar({
             )}
           >
             <Avatar className="h-9 w-9 ring-2 ring-offset-1 ring-amber-600/20">
-              <AvatarImage src="" />
+              <AvatarImage src={ownerImage(owner)} />
               <AvatarFallback className="text-xs font-bold bg-gradient-to-br from-amber-600 to-orange-700 text-white">
-                SA
+                {ownerInitials(owner)}
               </AvatarFallback>
             </Avatar>
             {!collapsed && (
               <div>
                 <div className={cn("text-[13px] font-semibold", tk.text)}>
-                  Sai Aung
+                  {ownerName(owner)}
                 </div>
                 <div
                   className={cn(
@@ -1252,7 +1291,7 @@ function DesktopSidebar({
                     tk.textSubtle,
                   )}
                 >
-                  Admin
+                  {ownerRole(owner)}
                 </div>
               </div>
             )}
@@ -1269,6 +1308,13 @@ export default function DashboardPage() {
   const [range, setRange] = React.useState("30d");
   const [txFilter, setTxFilter] = React.useState("all");
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [products, setProducts] = React.useState<Product[]>([]);
+  const [receipts, setReceipts] = React.useState<Receipt[]>([]);
+  const [staff, setStaff] = React.useState<Staff[]>([]);
+  const [tasks, setTasks] = React.useState<Task[]>([]);
+  const [owner, setOwner] = React.useState<OwnerSession | null>(null);
+  const [apiError, setApiError] = React.useState<string | null>(null);
 
   const router = useRouter();
 
@@ -1279,8 +1325,25 @@ export default function DashboardPage() {
     const savedSidebar = localStorage.getItem("binhlaig-sidebar");
     if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
     if (savedSidebar === "true") setSidebarCollapsed(true);
-    const timer = setTimeout(() => setLoading(false), 900);
-    return () => clearTimeout(timer);
+    let active = true;
+    Promise.allSettled([
+      fetchApi<ApiList<Product>>("/api/products"),
+      fetchApi<ApiList<Receipt>>("/api/pos/receipts/shop"),
+      fetchApi<ApiList<Staff>>("/api/staff"),
+      fetchApi<ApiList<Task>>("/api/tasks"),
+      fetchOwnerSession(),
+    ]).then((results) => {
+      if (!active) return;
+      if (results[0].status === "fulfilled") setProducts(apiList(results[0].value));
+      if (results[1].status === "fulfilled") setReceipts(apiList(results[1].value));
+      if (results[2].status === "fulfilled") setStaff(apiList(results[2].value));
+      if (results[3].status === "fulfilled") setTasks(apiList(results[3].value));
+      if (results[4].status === "fulfilled") setOwner(results[4].value);
+      const failed = results.filter((result) => result.status === "rejected").length;
+      setApiError(failed ? `${failed} dashboard API request${failed > 1 ? "s" : ""} failed.` : null);
+      setLoading(false);
+    });
+    return () => { active = false; };
   }, []);
 
   React.useEffect(() => {
@@ -1292,13 +1355,39 @@ export default function DashboardPage() {
   }, [sidebarCollapsed]);
 
   const tk = t(theme);
-  const filteredTransactions = React.useMemo(
-    () =>
-      txFilter === "all"
-        ? transactions
-        : transactions.filter((x) => x.type.toLowerCase() === txFilter),
-    [txFilter],
-  );
+  const now = React.useMemo(() => new Date(), []);
+  const todayStart = React.useMemo(() => new Date(now.getFullYear(), now.getMonth(), now.getDate()), [now]);
+  const yesterdayStart = React.useMemo(() => new Date(todayStart.getTime() - 86_400_000), [todayStart]);
+  const todayReceipts = React.useMemo(() => receipts.filter((receipt) => receiptDate(receipt) >= todayStart && (receipt.status ?? "PAID").toUpperCase() !== "CANCELLED"), [receipts, todayStart]);
+  const yesterdayReceipts = React.useMemo(() => receipts.filter((receipt) => receiptDate(receipt) >= yesterdayStart && receiptDate(receipt) < todayStart), [receipts, yesterdayStart, todayStart]);
+  const todaySales = todayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
+  const yesterdaySales = yesterdayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
+  const salesChange = yesterdaySales ? ((todaySales - yesterdaySales) / yesterdaySales) * 100 : todaySales ? 100 : 0;
+  const orderChange = yesterdayReceipts.length ? ((todayReceipts.length - yesterdayReceipts.length) / yesterdayReceipts.length) * 100 : todayReceipts.length ? 100 : 0;
+  const targetProgress = yesterdaySales > 0 ? Math.min(100, Math.round((todaySales / yesterdaySales) * 100)) : todaySales > 0 ? 100 : 0;
+  const lowStock = React.useMemo(() => products.map((product) => ({ id: product.id, name: product.productName ?? product.product_name ?? product.name ?? `Product #${product.id}`, value: Number(product.productQuantityAmount ?? product.product_quantity_amount ?? product.quantity ?? product.stock ?? 0) })).filter((product) => product.value <= LOW_STOCK_LIMIT).sort((a, b) => a.value - b.value), [products]);
+  const activeStaff = staff.filter((member) => member.active !== false && (member.status ?? "ACTIVE").toUpperCase() !== "INACTIVE");
+  const openTasks = tasks.filter((task) => !["DONE", "COMPLETED"].includes((task.status ?? "PENDING").toUpperCase()));
+  const liveRevenueData = React.useMemo(() => {
+    const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
+    const bucketSize = days === 90 ? 7 : 1;
+    const bucketCount = Math.ceil(days / bucketSize);
+    return Array.from({ length: bucketCount }, (_, index) => {
+      const start = new Date(todayStart.getTime() - (bucketCount - 1 - index) * bucketSize * 86_400_000);
+      const end = new Date(start.getTime() + bucketSize * 86_400_000);
+      return { name: start.toLocaleDateString("en", { month: "short", day: "numeric" }), revenue: receipts.filter((receipt) => receiptDate(receipt) >= start && receiptDate(receipt) < end).reduce((sum, receipt) => sum + receiptTotal(receipt), 0) };
+    });
+  }, [range, receipts, todayStart]);
+  const liveCategoryData = React.useMemo(() => {
+    const byId = new Map(products.map((product) => [String(product.id), product]));
+    const totals = new Map<string, number>();
+    todayReceipts.forEach((receipt) => receiptItems(receipt).forEach((item) => { const product = item.productId != null || item.product_id != null ? byId.get(String(item.productId ?? item.product_id)) : undefined; const category = item.category ?? product?.category ?? product?.productType ?? product?.product_type ?? "Others"; const qty = Number(item.qty ?? item.quantity ?? 0); const amount = Number(item.total ?? Number(item.price ?? 0) * qty); totals.set(category, (totals.get(category) ?? 0) + amount); }));
+    return [...totals.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
+  }, [products, todayReceipts]);
+  const categoryTotal = liveCategoryData.reduce((sum, item) => sum + item.value, 0);
+  const liveShopData = liveCategoryData.map((item) => ({ name: item.name, value: categoryTotal ? Math.round((item.value / categoryTotal) * 100) : 0 }));
+  const liveTransactions = React.useMemo(() => [...receipts].sort((a, b) => receiptDate(b).getTime() - receiptDate(a).getTime()).slice(0, 8).map((receipt) => { const status = (receipt.status ?? "PAID").toLowerCase(); return { id: receiptNumber(receipt), customer: receipt.customerName ?? receipt.customer_name ?? "Walk-in Customer", type: status.charAt(0).toUpperCase() + status.slice(1), amount: receiptTotal(receipt), shop: receipt.paymentMethod ?? receipt.payment_method ?? "—", time: receiptDate(receipt).toLocaleString() }; }), [receipts]);
+  const filteredTransactions = React.useMemo(() => txFilter === "all" ? liveTransactions : liveTransactions.filter((item) => item.type.toLowerCase() === txFilter), [liveTransactions, txFilter]);
   const mainOffset = sidebarCollapsed ? "xl:pl-[108px]" : "xl:pl-[284px]";
 
   return (
@@ -1315,7 +1404,38 @@ export default function DashboardPage() {
           tk.grid,
         )}
       />
-      <DesktopSidebar theme={theme} collapsed={sidebarCollapsed} />
+      <DesktopSidebar theme={theme} collapsed={sidebarCollapsed} owner={owner} />
+
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 xl:hidden">
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <motion.aside
+            initial={{ x: -300 }}
+            animate={{ x: 0 }}
+            className={cn("absolute inset-y-0 left-0 flex w-[286px] flex-col border-r", tk.sidebar)}
+          >
+            <div className="flex h-16 items-center justify-between px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-600 via-orange-600 to-yellow-600 text-white"><Flame className="h-5 w-5" /></div>
+                <div><div className={cn("text-sm font-bold tracking-widest", tk.text)}>BINHLAIG</div><div className={cn("text-[10px]", tk.textMuted)}>POS OWNER</div></div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)}><X className="h-5 w-5" /></Button>
+            </div>
+            <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
+              {sidebarItems.map((item) => { const Icon = item.icon; return (
+                <button key={item.label} type="button" onClick={() => { setMobileMenuOpen(false); item.href && router.push(item.href); }} className={cn("flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left", item.active ? tk.navActive : tk.navInactive)}>
+                  <Icon className="h-[18px] w-[18px]" /><span className="text-[13px] font-medium">{item.label}</span>
+                </button>
+              ); })}
+            </nav>
+          </motion.aside>
+        </div>
+      )}
 
       <div className={cn("relative z-10", mainOffset)}>
         {/* NAVBAR */}
@@ -1327,6 +1447,9 @@ export default function DashboardPage() {
             )}
           >
             <div className="flex items-center gap-3">
+              <Button variant="outline" size="icon" className={cn("h-9 w-9 rounded-xl xl:hidden", tk.outlineBtn)} onClick={() => setMobileMenuOpen(true)}>
+                <Menu className="h-4 w-4" />
+              </Button>
               <Button
                 variant="outline"
                 size="icon"
@@ -1349,10 +1472,10 @@ export default function DashboardPage() {
 
               <div>
                 <div className={cn("text-sm font-bold", tk.text)}>
-                  BINHLAIG Admin
+                  BINHLAIG POS
                 </div>
                 <div className={cn("text-[11px]", tk.textMuted)}>
-                  Platform control center
+                  Shop owner workspace
                 </div>
               </div>
             </div>
@@ -1366,7 +1489,7 @@ export default function DashboardPage() {
                   )}
                 />
                 <Input
-                  placeholder="Search shops, users, plans..."
+                  placeholder="Search products, receipts, staff..."
                   className={cn("h-9 rounded-xl pl-9 text-sm", tk.input)}
                 />
               </div>
@@ -1378,7 +1501,7 @@ export default function DashboardPage() {
                   <Button
                     variant="outline"
                     className={cn(
-                      "h-9 rounded-xl text-sm gap-1.5",
+                    "hidden h-9 rounded-xl text-sm gap-1.5 sm:inline-flex",
                       tk.outlineBtn,
                     )}
                   >
@@ -1413,28 +1536,33 @@ export default function DashboardPage() {
               <Button
                 variant="outline"
                 size="icon"
-                className={cn("h-9 w-9 rounded-xl", tk.outlineBtn)}
+                className={cn("hidden h-9 w-9 rounded-xl sm:inline-flex", tk.outlineBtn)}
               >
                 <Bell className="h-4 w-4" />
               </Button>
 
               <Button
-                onClick={() => router.push("/admin/shops/new")}
+                onClick={() => router.push("/dashboard/pos")}
                 className={cn(
-                  "h-9 rounded-xl text-sm gap-1.5 font-semibold shadow-lg",
+                  "h-9 rounded-xl px-3 text-sm gap-1.5 font-semibold shadow-lg",
                   theme === "dark"
                     ? "bg-amber-700 text-white hover:bg-amber-600 shadow-amber-900/30"
                     : "bg-amber-600 text-white hover:bg-amber-700 shadow-amber-700/20",
                 )}
               >
-                <Plus className="h-4 w-4" />
-                Add Shop
+                <ShoppingCart className="h-4 w-4" />
+                <span className="hidden sm:inline">Open POS</span>
               </Button>
             </div>
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[1850px] px-4 py-6 md:px-6 xl:px-8 2xl:py-8">
+        <div className="mx-auto w-full max-w-[1850px] px-4 py-6 pb-24 md:px-6 md:pb-8 xl:px-8 2xl:py-8">
+          {apiError && (
+            <div className="mb-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-500">
+              {apiError} Please sign in again and confirm NEXT_PUBLIC_API_URL.
+            </div>
+          )}
           {/* Hero header */}
           <div className="mb-7">
             <div
@@ -1444,7 +1572,7 @@ export default function DashboardPage() {
               )}
             >
               <Flame className="h-3 w-3" />
-              Platform admin · live system overview
+              Shop owner · live operations overview
             </div>
             <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
               <div>
@@ -1454,7 +1582,7 @@ export default function DashboardPage() {
                     tk.text,
                   )}
                 >
-                  Admin Control Center
+                  Owner Control Center
                 </h1>
                 <p
                   className={cn(
@@ -1462,7 +1590,7 @@ export default function DashboardPage() {
                     tk.textMuted,
                   )}
                 >
-                  Manage shops, users, subscriptions, plan limits and system
+                  Manage sales, products, inventory, staff and daily shop
                   activity from one workspace.
                 </p>
               </div>
@@ -1483,14 +1611,14 @@ export default function DashboardPage() {
                   )}
                 >
                   <User2 className="h-3.5 w-3.5" />
-                  Admin session active
+                  Owner session active
                 </div>
               </div>
             </div>
           </div>
 
           <div className="mb-6 2xl:mb-7">
-            <AnalyticsStrip theme={theme} />
+            <AnalyticsStrip theme={theme} todaySales={todaySales} todayOrders={todayReceipts.length} activeStaff={activeStaff.length} lowStock={lowStock.length} />
           </div>
 
           {/* HERO CARD — lanterns on both corners */}
@@ -1514,19 +1642,19 @@ export default function DashboardPage() {
                 <>
                   <SwingingLantern
                     size={80}
-                    className="right-[7%] top-[-12px]"
+                    className="right-[7%] top-[-12px] hidden md:block"
                     dimmed={true}
                   />
                   <SwingingLantern
                     size={44}
-                    className="left-[3%] bottom-4 opacity-70"
+                    className="left-[3%] bottom-4 hidden opacity-70 md:block"
                     delay={0.9}
                     dimmed={true}
                   />
                   {/* extra small lantern on far right */}
                   <SwingingLantern
                     size={32}
-                    className="right-[22%] top-[-6px] opacity-50"
+                    className="right-[22%] top-[-6px] hidden opacity-50 md:block"
                     delay={1.8}
                     dimmed={true}
                   />
@@ -1545,7 +1673,7 @@ export default function DashboardPage() {
                       )}
                     >
                       <TrendingUp className="h-3 w-3" />
-                      SaaS operations overview
+                      POS operations overview
                     </div>
                     <h2
                       className={cn(
@@ -1553,8 +1681,8 @@ export default function DashboardPage() {
                         tk.text,
                       )}
                     >
-                      Control every shop, subscription and feature from one
-                      admin workspace.
+                      Control sales, stock and your shop team from one
+                      beautiful owner workspace.
                     </h2>
                     <p
                       className={cn(
@@ -1562,12 +1690,12 @@ export default function DashboardPage() {
                         tk.textMuted,
                       )}
                     >
-                      Review account health, extend subscriptions, adjust plan
-                      limits and respond to system alerts quickly.
+                      Review daily revenue, recent receipts, inventory levels,
+                      staff activity and tasks without leaving the dashboard.
                     </p>
                     <div className="mt-6 flex flex-wrap gap-3">
                       <Button
-                        onClick={() => router.push("/admin/shops/new")}
+                        onClick={() => router.push("/dashboard/pos")}
                         className={cn(
                           "rounded-xl gap-2 font-semibold shadow-lg",
                           theme === "dark"
@@ -1576,15 +1704,15 @@ export default function DashboardPage() {
                         )}
                       >
                         <Plus className="h-4 w-4" />
-                        Add New Shop
+                        Open POS Register
                       </Button>
                       <Button
                         variant="outline"
                         className={cn("rounded-xl gap-2", tk.outlineBtn)}
-                        onClick={() => router.push("/admin/plans")}
+                        onClick={() => router.push("/dashboard/inventory")}
                       >
                         <ChevronRight className="h-4 w-4" />
-                        Manage Plans
+                        Manage Inventory
                       </Button>
                     </div>
                   </div>
@@ -1592,17 +1720,17 @@ export default function DashboardPage() {
                   <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {[
                       {
-                        label: "System Uptime",
-                        value: "99.98%",
-                        icon: ShieldCheck,
+                        label: "Today Sales",
+                        value: money(todaySales),
+                        icon: TrendingUp,
                       },
-                      { label: "Active Shops", value: "24", icon: Store },
+                      { label: "Today Orders", value: String(todayReceipts.length), icon: ReceiptText },
                       {
-                        label: "Available Plans",
-                        value: "03",
-                        icon: BadgeDollarSign,
+                        label: "Products",
+                        value: products.length.toLocaleString(),
+                        icon: Package,
                       },
-                      { label: "Open Alerts", value: "02", icon: Activity },
+                      { label: "Low Stock", value: String(lowStock.length), icon: AlertTriangle },
                     ].map((item) => {
                       const Icon = item.icon;
                       return (
@@ -1649,7 +1777,7 @@ export default function DashboardPage() {
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div className={cn("text-sm font-medium", tk.textMuted)}>
-                        Subscription Health
+                        Today&apos;s Sales Target
                       </div>
                       <div
                         className={cn(
@@ -1664,12 +1792,12 @@ export default function DashboardPage() {
                     <div
                       className={cn("text-3xl font-bold 2xl:text-4xl", tk.text)}
                     >
-                      <CountUp end={21} duration={1.4} /> / 24
+                      ¥<CountUp end={todaySales} duration={1.4} separator="," />
                     </div>
 
                     <div className="mt-2 flex items-center gap-1.5 text-sm text-emerald-500 font-medium">
                       <ArrowUpRight className="h-4 w-4" />
-                      87.5% shops on active plans
+                      {targetProgress}% compared with yesterday
                     </div>
 
                     <div
@@ -1680,7 +1808,7 @@ export default function DashboardPage() {
                     >
                       <motion.div
                         initial={{ width: 0 }}
-                        animate={{ width: "74%" }}
+                        animate={{ width: `${targetProgress}%` }}
                         transition={{ duration: 1, delay: 0.5 }}
                         className="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-400 to-yellow-400"
                       />
@@ -1693,7 +1821,7 @@ export default function DashboardPage() {
                       )}
                     >
                       <span>0%</span>
-                      <span>Active: 87.5%</span>
+                      <span>Reached: {targetProgress}%</span>
                       <span>100%</span>
                     </div>
                   </motion.div>
@@ -1701,15 +1829,15 @@ export default function DashboardPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <MiniMetric
                       theme={theme}
-                      label="Staff Accounts"
-                      value="186"
+                      label="On-duty Staff"
+                      value={String(activeStaff.length).padStart(2, "0")}
                       icon={Users}
                     />
                     <MiniMetric
                       theme={theme}
-                      label="Expiring Soon"
-                      value="03"
-                      icon={Clock3}
+                      label="Open Tasks"
+                      value={String(openTasks.length).padStart(2, "0")}
+                      icon={CheckSquare}
                     />
                   </div>
                 </div>
@@ -1721,45 +1849,46 @@ export default function DashboardPage() {
             <DashboardSkeleton theme={theme} />
           ) : (
             <>
-              <div className="mb-6 grid gap-4 md:grid-cols-2 2xl:mb-7 2xl:grid-cols-4 2xl:gap-5">
+              <div className="mb-6 grid grid-cols-2 gap-3 md:gap-4 2xl:mb-7 2xl:grid-cols-4 2xl:gap-5">
                 <AnimatedStatCard
                   theme={theme}
-                  title="Active Shops"
-                  value={24}
-                  change="+3 this month"
-                  positive
-                  icon={Store}
-                  sub="Across all business types"
+                  title="Today Sales"
+                  value={todaySales}
+                  prefix="¥"
+                  change={`${salesChange >= 0 ? "+" : ""}${salesChange.toFixed(1)}%`}
+                  positive={salesChange >= 0}
+                  icon={TrendingUp}
+                  sub="Compared with yesterday"
                   gradient="from-[#1a0d04] via-[#6b4210] to-[#a8701a]"
                 />
                 <AnimatedStatCard
                   theme={theme}
-                  title="Active Subscriptions"
-                  value={21}
-                  change="87.5%"
-                  positive
-                  icon={CreditCard}
-                  sub="3 require attention"
+                  title="Today Orders"
+                  value={todayReceipts.length}
+                  change={`${orderChange >= 0 ? "+" : ""}${orderChange.toFixed(1)}%`}
+                  positive={orderChange >= 0}
+                  icon={ReceiptText}
+                  sub="Paid POS transactions"
                   gradient="from-[#0e0f04] via-[#3d4810] to-[#6e8018]"
                 />
                 <AnimatedStatCard
                   theme={theme}
-                  title="Total Users"
-                  value={186}
-                  change="+14.2%"
+                  title="Products"
+                  value={products.length}
+                  change="Live inventory"
                   positive
-                  icon={Users}
-                  sub="Admin and staff accounts"
+                  icon={Package}
+                  sub="Available in this shop"
                   gradient="from-[#180c04] via-[#7a3408] to-[#c05e12]"
                 />
                 <AnimatedStatCard
                   theme={theme}
-                  title="Expiring Plans"
-                  value={3}
-                  change="Next 7 days"
+                  title="Low Stock"
+                  value={lowStock.length}
+                  change="Needs attention"
                   positive={false}
-                  icon={Clock3}
-                  sub="Renewal follow-up needed"
+                  icon={AlertTriangle}
+                  sub="10 items or fewer"
                   gradient="from-[#2a0606] via-[#6b1212] to-[#c43030]"
                 />
               </div>
@@ -1773,24 +1902,19 @@ export default function DashboardPage() {
                         <CardTitle
                           className={cn("text-[18px] font-bold", tk.text)}
                         >
-                          Platform Revenue
+                          Shop Sales
                         </CardTitle>
                         <CardDescription
                           className={cn("text-sm mt-0.5", tk.textMuted)}
                         >
-                          Subscription and retained revenue trend
+                          Sales and profit performance trend
                         </CardDescription>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <LegendChip
                           theme={theme}
-                          label="Subscription"
+                          label="Sales"
                           color="#d97706"
-                        />
-                        <LegendChip
-                          theme={theme}
-                          label="Retained"
-                          color="#34d399"
                         />
                       </div>
                     </CardHeader>
@@ -1798,7 +1922,7 @@ export default function DashboardPage() {
                       <div className="h-[320px] w-full 2xl:h-[380px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart
-                            data={revenueData}
+                            data={liveRevenueData}
                             margin={{ top: 5, right: 5, bottom: 0, left: 0 }}
                           >
                             <defs>
@@ -1885,15 +2009,6 @@ export default function DashboardPage() {
                               strokeWidth={2}
                               dot={false}
                             />
-                            <Area
-                              type="monotone"
-                              dataKey="profit"
-                              name="Profit"
-                              stroke="#34d399"
-                              fill="url(#profFillDark)"
-                              strokeWidth={1.8}
-                              dot={false}
-                            />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -1907,16 +2022,16 @@ export default function DashboardPage() {
                         <CardTitle
                           className={cn("text-[17px] font-bold", tk.text)}
                         >
-                          Shop Health
+                          Top Categories
                         </CardTitle>
                         <CardDescription
                           className={cn("text-sm", tk.textMuted)}
                         >
-                          Usage and account health score
+                          Sales performance by product category
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-5">
-                        {shopData.map((shop, i) => (
+                        {liveShopData.map((shop, i) => (
                           <div key={shop.name}>
                             <div className="mb-2.5 flex items-center justify-between">
                               <div className="flex items-center gap-2.5">
@@ -1974,7 +2089,7 @@ export default function DashboardPage() {
                         <CardDescription
                           className={cn("text-sm", tk.textMuted)}
                         >
-                          Fast access to admin modules
+                          Fast access to owner modules
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="grid grid-cols-2 gap-3 2xl:grid-cols-3">
@@ -2029,19 +2144,19 @@ export default function DashboardPage() {
                     </SectionCard>
                   </div>
 
-                  {/* Shop and subscription management */}
+                  {/* Recent receipts */}
                   <SectionCard theme={theme} lantern>
                     <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle
                           className={cn("text-[17px] font-bold", tk.text)}
                         >
-                          Shops & Subscriptions
+                          Recent Receipts
                         </CardTitle>
                         <CardDescription
                           className={cn("text-sm", tk.textMuted)}
                         >
-                          Review plan, status and upcoming renewal
+                          Review recent POS sales and payments
                         </CardDescription>
                       </div>
                       <Tabs value={txFilter} onValueChange={setTxFilter}>
@@ -2053,9 +2168,8 @@ export default function DashboardPage() {
                           )}
                         >
                           <TabsTrigger value="all">All</TabsTrigger>
-                          <TabsTrigger value="active">Active</TabsTrigger>
-                          <TabsTrigger value="trial">Trial</TabsTrigger>
-                          <TabsTrigger value="expired">Expired</TabsTrigger>
+                          <TabsTrigger value="paid">Paid</TabsTrigger>
+                          <TabsTrigger value="refunded">Refunded</TabsTrigger>
                         </TabsList>
                       </Tabs>
                     </CardHeader>
@@ -2065,12 +2179,12 @@ export default function DashboardPage() {
                           <thead>
                             <tr className={cn("border-b", tk.tableRowBorder)}>
                               {[
-                                "Shop Code",
-                                "Shop",
-                                "Plan",
+                                "Receipt No",
+                                "Customer",
+                                "Payment",
                                 "Status",
-                                "Renewal",
-                                "Monthly",
+                                "Date & Time",
+                                "Total",
                               ].map((h, i) => (
                                 <th
                                   key={h}
@@ -2117,9 +2231,9 @@ export default function DashboardPage() {
                                   <span
                                     className={cn(
                                       "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
-                                      tx.type === "Active"
+                                      tx.type === "Paid"
                                         ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                        : tx.type === "Trial"
+                                        : tx.type === "Pending"
                                           ? "bg-amber-600/10 text-amber-600 dark:text-amber-400"
                                           : "bg-rose-500/10 text-rose-600 dark:text-rose-400",
                                     )}
@@ -2160,12 +2274,12 @@ export default function DashboardPage() {
                         <CardTitle
                           className={cn("text-[17px] font-bold", tk.text)}
                         >
-                          Plan Distribution
+                          Sales by Category
                         </CardTitle>
                         <CardDescription
                           className={cn("text-sm", tk.textMuted)}
                         >
-                          Current subscription mix
+                          Current product sales mix
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -2173,14 +2287,14 @@ export default function DashboardPage() {
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
-                                data={categoryData}
+                                data={liveCategoryData}
                                 dataKey="value"
                                 nameKey="name"
                                 innerRadius={65}
                                 outerRadius={100}
                                 paddingAngle={3}
                               >
-                                {categoryData.map((_, index) => (
+                                {liveCategoryData.map((_, index) => (
                                   <Cell
                                     key={index}
                                     fill={
@@ -2202,7 +2316,7 @@ export default function DashboardPage() {
                           </ResponsiveContainer>
                         </div>
                         <div className="mt-3 space-y-2.5">
-                          {categoryData.map((item, i) => (
+                          {liveCategoryData.map((item, i) => (
                             <div
                               key={item.name}
                               className="flex items-center justify-between"
@@ -2235,7 +2349,7 @@ export default function DashboardPage() {
                                   tk.textMuted,
                                 )}
                               >
-                                {item.value}%
+                                {categoryTotal ? `${((item.value / categoryTotal) * 100).toFixed(1)}%` : "0%"}
                               </span>
                             </div>
                           ))}
@@ -2263,12 +2377,12 @@ export default function DashboardPage() {
                         <CardTitle
                           className={cn("text-[17px] font-bold", tk.text)}
                         >
-                          System Insight
+                          Owner Insight
                         </CardTitle>
                         <CardDescription
                           className={cn("text-sm", tk.textMuted)}
                         >
-                          Admin attention summary
+                          Shop attention summary
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -2296,7 +2410,7 @@ export default function DashboardPage() {
                                 BINHLAIG AI
                               </div>
                               <div className={cn("text-[11px]", tk.textMuted)}>
-                                Generated platform insight
+                                Generated shop insight
                               </div>
                             </div>
                           </div>
@@ -2306,16 +2420,16 @@ export default function DashboardPage() {
                               tk.textMuted,
                             )}
                           >
-                            Three subscriptions expire within seven days. One
-                            trial shop is close to its staff limit, while all
-                            core services remain healthy.
+                            Low-stock products need restocking today. Sales are
+                            trending above yesterday, while staff tasks and POS
+                            operations remain on schedule.
                           </p>
                           <div className="mt-4 flex flex-wrap gap-2">
                             <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                              Services healthy
+                              POS operating
                             </span>
                             <span className="inline-flex items-center rounded-full bg-amber-600/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-                              3 renewals due
+                              32 low-stock items
                             </span>
                           </div>
                         </div>
@@ -2339,7 +2453,7 @@ export default function DashboardPage() {
                         <CardDescription
                           className={cn("text-sm", tk.textMuted)}
                         >
-                          Admin and system updates
+                          Shop and staff updates
                         </CardDescription>
                       </div>
                       <Button
@@ -2353,7 +2467,7 @@ export default function DashboardPage() {
                     <CardContent className="space-y-3">
                       {[
                         {
-                          title: "Golden Table started a trial",
+                          title: "New POS receipt completed",
                           time: "5 min ago",
                           icon: Store,
                           color:
@@ -2362,7 +2476,7 @@ export default function DashboardPage() {
                               : "bg-amber-50 border-amber-200 text-amber-600",
                         },
                         {
-                          title: "Sai Mart staff limit increased",
+                          title: "Staff member clocked in",
                           time: "18 min ago",
                           icon: Users,
                           color:
@@ -2371,7 +2485,7 @@ export default function DashboardPage() {
                               : "bg-orange-50 border-orange-200 text-orange-600",
                         },
                         {
-                          title: "Monthly audit log exported",
+                          title: "Inventory stock updated",
                           time: "40 min ago",
                           icon: Download,
                           color:
@@ -2380,7 +2494,7 @@ export default function DashboardPage() {
                               : "bg-emerald-50 border-emerald-200 text-emerald-600",
                         },
                         {
-                          title: "All platform services operational",
+                          title: "Today&apos;s tasks are on schedule",
                           time: "1 hour ago",
                           icon: ShieldCheck,
                           color:
@@ -2433,19 +2547,19 @@ export default function DashboardPage() {
                     <CardContent className="p-5">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-12 w-12 ring-2 ring-offset-2 ring-amber-600/15">
-                          <AvatarImage src="" />
+                          <AvatarImage src={ownerImage(owner)} />
                           <AvatarFallback className="font-bold text-sm bg-gradient-to-br from-amber-600 to-orange-700 text-white">
-                            SA
+                            {ownerInitials(owner)}
                           </AvatarFallback>
                         </Avatar>
                         <div>
                           <div className={cn("font-bold", tk.text)}>
-                            Sai Aung
+                            {ownerName(owner)}
                           </div>
                           <div
                             className={cn("text-xs font-medium", tk.textMuted)}
                           >
-                            Platform Administrator
+                            {owner?.username ? `@${owner.username}` : "Current signed-in user"}
                           </div>
                         </div>
                       </div>
@@ -2468,7 +2582,7 @@ export default function DashboardPage() {
                             Role
                           </div>
                           <div className={cn("mt-1 font-bold", tk.text)}>
-                            ADMIN
+                            {ownerRole(owner)}
                           </div>
                         </div>
                         <div
@@ -2488,7 +2602,7 @@ export default function DashboardPage() {
                             Scope
                           </div>
                           <div className={cn("mt-1 font-bold", tk.text)}>
-                            ALL SHOPS
+                            {ownerShop(owner)}
                           </div>
                         </div>
                       </div>
@@ -2506,11 +2620,23 @@ export default function DashboardPage() {
               tk.textSubtle,
             )}
           >
-            <div>© 2026 BINHLAIG. Admin control center.</div>
-            <div>Shops · subscriptions · plans · system activity.</div>
+            <div>© 2026 BINHLAIG. POS owner control center.</div>
+            <div>Sales · inventory · staff · shop activity.</div>
           </div>
         </div>
       </div>
+
+      <nav className={cn("fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-1.5 md:hidden", tk.navbar)}>
+        {sidebarItems.slice(0, 5).map((item) => {
+          const Icon = item.icon;
+          return (
+            <button key={item.label} type="button" onClick={() => item.href && router.push(item.href)} className={cn("flex min-w-0 flex-col items-center gap-1 rounded-lg py-1.5 text-[9px] font-semibold", item.active ? tk.navActive : tk.textMuted)}>
+              <Icon className="h-[18px] w-[18px]" />
+              <span className="max-w-full truncate">{item.label.replace("Owner ", "")}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -908,11 +909,19 @@ function StaffCard({
   const taskStats = getTaskStats(member.tasks || []);
 
   return (
-    <motion.button
+    <motion.div
+      role="button"
+      tabIndex={0}
       whileHover={{ y: -6, scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       onClick={() => onSelect?.(member)}
-      className="w-full overflow-hidden rounded-[24px] text-left"
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect?.(member);
+        }
+      }}
+      className="w-full cursor-pointer overflow-hidden rounded-[24px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8892a]/70"
       style={{
         ...glassCard(night),
         border: `1px solid ${
@@ -924,7 +933,7 @@ function StaffCard({
         }`,
       }}
     >
-      <div className="relative p-5">
+      <div className="relative p-4 sm:p-5">
         <div
           className="absolute left-0 right-0 top-0 h-[2px]"
           style={{
@@ -932,11 +941,11 @@ function StaffCard({
           }}
         />
 
-        <div className="mb-4 flex items-start justify-between">
-          <div className="flex items-center gap-3">
+        <div className="mb-4 flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="relative">
               <div
-                className="h-14 w-14 overflow-hidden rounded-full p-[2px]"
+                className="h-12 w-12 overflow-hidden rounded-full p-[2px] sm:h-14 sm:w-14"
                 style={{
                   background: "linear-gradient(135deg,#7a5210,#d4a352,#7a5210)",
                 }}
@@ -957,10 +966,10 @@ function StaffCard({
               />
             </div>
 
-            <div>
+            <div className="min-w-0">
               <div
                 className={cn(
-                  "serif text-[28px] leading-none",
+                  "serif truncate text-[22px] leading-none sm:text-[28px]",
                   night ? "text-[#e8dcc8]" : "text-[#1a1510]",
                 )}
               >
@@ -976,7 +985,7 @@ function StaffCard({
             </div>
           </div>
 
-          <MiniBadge text={status.label} night={night} color={status.color} />
+          <div className="shrink-0"><MiniBadge text={status.label} night={night} color={status.color} /></div>
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -984,7 +993,7 @@ function StaffCard({
           <MiniBadge text={`Staff ID ${member.staffId || "—"}`} night={night} color="#c8892a" />
         </div>
 
-        <div className="mb-4 grid grid-cols-3 gap-2">
+        <div className="mb-4 grid grid-cols-3 gap-1.5 sm:gap-2">
           {[
             { l: "Sales", v: shortMoney(member.sales) },
             { l: "Orders", v: member.orders > 0 ? String(member.orders) : "—" },
@@ -992,7 +1001,7 @@ function StaffCard({
           ].map((item) => (
             <div
               key={item.l}
-              className="rounded-[16px] p-3 text-center"
+              className="rounded-[14px] p-2 text-center sm:rounded-[16px] sm:p-3"
               style={{
                 background: night ? "rgba(255,255,255,0.025)" : "rgba(255,255,255,0.65)",
                 border: `1px solid ${
@@ -1087,7 +1096,9 @@ function StaffCard({
                     night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
                   }`,
                 }}
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
+                aria-label={`Open actions for ${member.name}`}
               >
                 <MoreHorizontal
                   className="h-4 w-4"
@@ -1125,7 +1136,7 @@ function StaffCard({
           </DropdownMenu>
         </div>
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
@@ -1160,7 +1171,7 @@ function CompactCard({
         }`,
       }}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
         <div
           className="rounded-full p-[2px]"
           style={{
@@ -1170,7 +1181,7 @@ function CompactCard({
           <Avatar
             src={member.img}
             name={member.name}
-            className="h-14 w-14 rounded-full object-cover"
+            className="h-11 w-11 rounded-full object-cover sm:h-14 sm:w-14"
           />
         </div>
 
@@ -1178,7 +1189,7 @@ function CompactCard({
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={cn(
-                "serif text-[24px] leading-none",
+                "serif text-[20px] leading-none sm:text-[24px]",
                 night ? "text-[#e8dcc8]" : "text-[#1a1510]",
               )}
             >
@@ -1203,7 +1214,7 @@ function CompactCard({
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-2">
+        <div className="hidden flex-col items-end gap-2 sm:flex">
           <RatingStars rating={member.rating} />
 
           <ChevronRight
@@ -1228,7 +1239,7 @@ function DetailPanel({
   const [tab, setTab] = React.useState<"profile" | "tasks">("profile");
 
   return (
-    <div className="sticky top-5 h-fit overflow-hidden rounded-[26px]" style={glassCard(night)}>
+    <div className="max-h-[calc(100dvh-2rem)] h-fit overflow-y-auto rounded-[26px] xl:sticky xl:top-5" style={glassCard(night)}>
       <div
         className="px-5 py-4"
         style={{
@@ -1578,11 +1589,11 @@ function PaginationBar({
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-5 rounded-[24px] p-4"
+      className="mt-5 rounded-[20px] p-3 sm:rounded-[24px] sm:p-4"
       style={glassCard(night)}
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
           <div
             className="rounded-full px-4 py-2 text-[12px] font-bold"
             style={{
@@ -1596,7 +1607,7 @@ function PaginationBar({
             Showing {totalItems === 0 ? 0 : startIndex}-{endIndex} of {totalItems}
           </div>
 
-          <div className="flex items-center gap-2 rounded-full px-3 py-2" style={premiumInputStyle(night)}>
+          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-2 sm:px-3" style={premiumInputStyle(night)}>
             <span
               className="text-[11px] font-bold"
               style={{ color: night ? "#bca98f" : "#7d6f60" }}
@@ -1609,7 +1620,7 @@ function PaginationBar({
                 key={size}
                 type="button"
                 onClick={() => onPageSizeChange(size)}
-                className="rounded-full px-3 py-1 text-[11px] font-bold"
+                className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold sm:px-3"
                 style={{
                   background: pageSize === size ? "linear-gradient(135deg,#a07020,#d4a352)" : "transparent",
                   color: pageSize === size ? "#140d05" : night ? "#bca98f" : "#7d6f60",
@@ -1624,7 +1635,7 @@ function PaginationBar({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center justify-center gap-1.5 sm:justify-start sm:gap-2">
           {[
             { icon: ChevronsLeft, page: 1, disabled: currentPage === 1 },
             { icon: ChevronLeft, page: currentPage - 1, disabled: currentPage === 1 },
@@ -1644,7 +1655,7 @@ function PaginationBar({
             </button>
           ))}
 
-          <div className="flex items-center gap-2 rounded-[18px] px-2 py-2" style={premiumInputStyle(night)}>
+          <div className="hidden items-center gap-2 rounded-[18px] px-2 py-2 sm:flex" style={premiumInputStyle(night)}>
             {pages.map((page, idx) =>
               page === "..." ? (
                 <span
@@ -1720,6 +1731,7 @@ export default function StaffPage() {
   const [sortMode, setSortMode] = React.useState<SortMode>("name_asc");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [panelOpen, setPanelOpen] = React.useState(true);
+  const [mobileDetailOpen, setMobileDetailOpen] = React.useState(false);
   const [notification, setNotification] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -1917,7 +1929,7 @@ export default function StaffPage() {
   return (
     <section
       className={cn(
-        "relative min-h-screen overflow-hidden px-4 py-6 transition-colors md:px-8",
+        "relative min-h-screen overflow-hidden px-3 py-4 transition-colors sm:px-4 sm:py-5 md:px-6 lg:px-8 lg:py-6",
         night ? "text-[#e8dcc8]" : "text-[#1a1510]",
       )}
       style={{ background: pageBg }}
@@ -1953,13 +1965,13 @@ export default function StaffPage() {
 
             <h1
               className={cn(
-                "serif text-[44px] leading-none md:text-[58px]",
+                "serif text-[36px] leading-none sm:text-[44px] md:text-[58px]",
                 night ? "text-[#e8dcc8]" : "text-[#1a1510]",
               )}
             >
               Staff
               <span
-                className="ml-3 text-[22px]"
+                className="mt-2 block text-[16px] sm:ml-3 sm:mt-0 sm:inline sm:text-[22px]"
                 style={{ color: night ? "#7a5520" : "#8a7a65" }}
               >
                 / Team Control
@@ -1975,12 +1987,12 @@ export default function StaffPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
             <button
               type="button"
               onClick={() => void fetchStaff(true)}
               disabled={refreshing || loading}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl px-4 text-[13px] font-bold disabled:opacity-60"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-3 text-[12px] font-bold disabled:opacity-60 sm:px-4 sm:text-[13px]"
               style={premiumInputStyle(night)}
             >
               {refreshing ? (
@@ -1994,7 +2006,7 @@ export default function StaffPage() {
             <button
               type="button"
               onClick={() => setViewMode((v) => (v === "grid" ? "compact" : "grid"))}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl px-4 text-[13px] font-bold"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-3 text-[12px] font-bold sm:px-4 sm:text-[13px]"
               style={premiumInputStyle(night)}
             >
               {viewMode === "grid" ? (
@@ -2005,11 +2017,11 @@ export default function StaffPage() {
               {viewMode === "grid" ? "Compact" : "Grid"}
             </button>
 
-            <LanternToggle dark={night} onToggle={() => setNight((v) => !v)} />
+            <div className="flex justify-center"><LanternToggle dark={night} onToggle={() => setNight((v) => !v)} /></div>
 
-            <button
-              type="button"
-              className="inline-flex h-11 items-center gap-2 rounded-2xl px-5 text-[13px] font-black"
+            <Link
+              href="/admin/staff/add_staff"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-[12px] font-black sm:px-5 sm:text-[13px]"
               style={{
                 background: "linear-gradient(135deg,#a07020,#d4a352)",
                 color: "#140d05",
@@ -2018,7 +2030,7 @@ export default function StaffPage() {
             >
               <Plus className="h-4 w-4" />
               Add Staff
-            </button>
+            </Link>
           </div>
         </div>
 
@@ -2030,7 +2042,7 @@ export default function StaffPage() {
           </div>
         )}
 
-        <div className="mb-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
           <KpiCard
             label="Total Staff"
             value={staffList.length}
@@ -2068,7 +2080,7 @@ export default function StaffPage() {
           />
         </div>
 
-        <div className="mb-5 rounded-[26px] p-4" style={glassCard(night)}>
+        <div className="mb-5 rounded-[22px] p-3 sm:rounded-[26px] sm:p-4" style={glassCard(night)}>
           <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto_auto] xl:items-center">
             <div className="relative">
               <Search
@@ -2085,7 +2097,7 @@ export default function StaffPage() {
               />
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {ROLES.map((role) => (
                 <PremiumPill
                   key={role}
@@ -2099,7 +2111,7 @@ export default function StaffPage() {
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {STATUSES.map((status) => (
                 <PremiumPill
                   key={status}
@@ -2116,7 +2128,7 @@ export default function StaffPage() {
             <select
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as SortMode)}
-              className="h-12 rounded-2xl px-4 text-sm font-bold outline-none"
+              className="h-12 w-full rounded-2xl px-4 text-sm font-bold outline-none xl:w-auto"
               style={premiumInputStyle(night)}
             >
               <option value="name_asc">Name A-Z</option>
@@ -2137,7 +2149,7 @@ export default function StaffPage() {
           <div>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div
-                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[12px] font-bold"
+                className="hidden items-center gap-2 rounded-full px-4 py-2 text-[12px] font-bold xl:inline-flex"
                 style={premiumInputStyle(night)}
               >
                 {sortMode.includes("asc") ? (
@@ -2197,8 +2209,8 @@ export default function StaffPage() {
                 className={cn(
                   "grid gap-4",
                   panelOpen
-                    ? "md:grid-cols-2 2xl:grid-cols-3"
-                    : "md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
+                    ? "sm:grid-cols-2 2xl:grid-cols-3"
+                    : "sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
                 )}
               >
                 {paginatedStaff.map((member) => (
@@ -2208,6 +2220,8 @@ export default function StaffPage() {
                     selected={selectedId === member.id}
                     onSelect={(m) => {
                       setSelectedId(m.id);
+                      setPanelOpen(true);
+                      setMobileDetailOpen(true);
                       showNotif(`${m.name} selected.`);
                     }}
                     night={night}
@@ -2223,6 +2237,8 @@ export default function StaffPage() {
                     selected={selectedId === member.id}
                     onSelect={(m) => {
                       setSelectedId(m.id);
+                      setPanelOpen(true);
+                      setMobileDetailOpen(true);
                       showNotif(`${m.name} selected.`);
                     }}
                     night={night}
@@ -2251,14 +2267,23 @@ export default function StaffPage() {
           </div>
 
           {panelOpen && (
-            <DetailPanel
-              member={selectedMember}
-              onClose={() => setPanelOpen(false)}
-              night={night}
-            />
+            <div className="hidden xl:block">
+              <DetailPanel member={selectedMember} onClose={() => setPanelOpen(false)} night={night} />
+            </div>
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {mobileDetailOpen && selectedMember && (
+          <motion.div className="fixed inset-0 z-40 flex items-end justify-center p-2 sm:items-center sm:p-5 xl:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <button type="button" aria-label="Close staff detail" onClick={() => setMobileDetailOpen(false)} className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
+            <motion.div className="relative z-10 w-full max-w-2xl" initial={{ y: 60, scale: 0.98 }} animate={{ y: 0, scale: 1 }} exit={{ y: 60, scale: 0.98 }} transition={{ type: "spring", damping: 26, stiffness: 280 }}>
+              <DetailPanel member={selectedMember} onClose={() => setMobileDetailOpen(false)} night={night} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

@@ -1,1167 +1,3 @@
-// // "use client";
-
-// // import React, { useEffect, useMemo, useState } from "react";
-// // import { useParams, useRouter } from "next/navigation";
-// // import { useSession, signIn } from "next-auth/react";
-
-// // import {
-// //   Card,
-// //   CardHeader,
-// //   CardTitle,
-// //   CardDescription,
-// //   CardContent,
-// // } from "@/components/ui/card";
-// // import { Button } from "@/components/ui/button";
-// // import { Input } from "@/components/ui/input";
-// // import { Textarea } from "@/components/ui/textarea";
-// // import { Label } from "@/components/ui/label";
-// // import { Badge } from "@/components/ui/badge";
-// // import { Separator } from "@/components/ui/separator";
-
-// // import { ArrowLeft, Save, RefreshCw, ImageIcon, Package } from "lucide-react";
-// // import toast from "react-hot-toast";
-
-// // type Product = {
-// //   id: string;
-// //   sku: string;
-// //   product_name: string;
-// //   product_price: number;
-// //   barcode?: string | null;
-// //   category?: string | null;
-// //   product_quantity_amount: number;
-
-// //   // ✅ image fields (backend may return any of these)
-// //   product_image?: string | null;
-// //   imagePath?: string | null;
-// //   image_path?: string | null;
-// //   productImage?: string | null;
-
-// //   product_discount?: number | null;
-// //   note?: string | null;
-// //   product_type?: string | null;
-// // };
-
-// // function pickImagePath(p: any): string | null {
-// //   return (
-// //     p?.imagePath ??
-// //     p?.image_path ??
-// //     p?.product_image ??
-// //     p?.productImage ??
-// //     null
-// //   );
-// // }
-
-// // function buildImageUrl(path?: string | null) {
-// //   if (!path) return null;
-// //   const raw = String(path).trim();
-// //   if (!raw) return null;
-
-// //   if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-
-// //   const cleaned = raw.replace(/^\/?uploads\/?/, "").replace(/^\/+/, "");
-// //   return `/uploads/${cleaned}`;
-// // }
-
-// // async function readErrorText(res: Response) {
-// //   const ct = res.headers.get("content-type") || "";
-// //   try {
-// //     if (ct.includes("application/json")) {
-// //       const j = await res.json();
-// //       return j?.message || j?.error || JSON.stringify(j);
-// //     }
-// //     return (await res.text()) || "";
-// //   } catch {
-// //     return "";
-// //   }
-// // }
-
-// // export default function ProductEditPage() {
-// //   const router = useRouter();
-// //   const params = useParams<{ id: string }>();
-// //   const id = params?.id;
-
-// //   const { data: session, status } = useSession();
-
-// //   const token =
-// //     (session as any)?.accessToken ||
-// //     (session as any)?.access_token ||
-// //     (session as any)?.token ||
-// //     null;
-
-// //   function authHeaders(): Record<string, string> {
-// //     return token ? { Authorization: `Bearer ${token}` } : {};
-// //   }
-
-// //   const [loading, setLoading] = useState(true);
-// //   const [saving, setSaving] = useState(false);
-
-// //   const [product, setProduct] = useState<Product | null>(null);
-
-// //   // form fields
-// //   const [sku, setSku] = useState("");
-// //   const [name, setName] = useState("");
-// //   const [price, setPrice] = useState<number>(0);
-// //   const [barcode, setBarcode] = useState("");
-// //   const [category, setCategory] = useState("");
-// //   const [type, setType] = useState("");
-// //   const [qty, setQty] = useState<number>(0);
-// //   const [discount, setDiscount] = useState<number>(0);
-// //   const [note, setNote] = useState("");
-
-// //   // image
-// //   const [imageFile, setImageFile] = useState<File | null>(null);
-// //   const [imagePreview, setImagePreview] = useState<string | null>(null);
-
-// //   useEffect(() => {
-// //     if (status === "unauthenticated") {
-// //       toast.error("Login လုပ်ပါ");
-// //       signIn();
-// //     }
-// //   }, [status]);
-
-// //   async function loadProduct() {
-// //     if (!id) return;
-
-// //     if (status === "loading") return;
-// //     if (!token) {
-// //       toast.error("Session token မရပါ — Login ပြန်လုပ်ပါ");
-// //       signIn();
-// //       return;
-// //     }
-
-// //     const tId = toast.loading("Loading product...");
-
-// //     try {
-// //       setLoading(true);
-
-// //       const res = await fetch(`/backend/api/products/${id}`, {
-// //         method: "GET",
-// //         headers: { ...authHeaders() },
-// //         cache: "no-store",
-// //       });
-
-// //       if (!res.ok) {
-// //         const detail = await readErrorText(res);
-
-// //         if (res.status === 401) {
-// //           toast.error("Unauthorized — Login ပြန်လုပ်ပါ", { id: tId });
-// //           signIn();
-// //         } else if (res.status === 403) {
-// //           toast.error("Forbidden — ADMIN လိုနိုင်တယ်", { id: tId });
-// //         } else if (res.status === 404) {
-// //           toast.error("Product မတွေ့ပါ (404)", { id: tId });
-// //         } else {
-// //           toast.error(detail || `Product load မရပါ (status ${res.status})`, { id: tId });
-// //         }
-
-// //         setProduct(null);
-// //         return;
-// //       }
-
-// //       const data = (await res.json()) as Product;
-// //       setProduct(data);
-
-// //       setSku(data.sku ?? "");
-// //       setName(data.product_name ?? "");
-// //       setPrice(Number(data.product_price ?? 0));
-// //       setBarcode(data.barcode ?? "");
-// //       setCategory(data.category ?? "");
-// //       setType(data.product_type ?? "");
-// //       setQty(Number(data.product_quantity_amount ?? 0));
-// //       setDiscount(Number(data.product_discount ?? 0));
-// //       setNote(data.note ?? "");
-
-// //       // ✅ FIX: pick image path from multiple possible fields
-// //       const imgPath = pickImagePath(data);
-// //       setImagePreview(buildImageUrl(imgPath));
-
-// //       setImageFile(null);
-
-// //       toast.success("Loaded ✅", { id: tId });
-// //     } catch (e) {
-// //       console.error(e);
-// //       toast.error("Server error ဖြစ်နေတယ်", { id: tId });
-// //       setProduct(null);
-// //     } finally {
-// //       setLoading(false);
-// //     }
-// //   }
-
-// //   useEffect(() => {
-// //     if (!id) return;
-// //     if (status !== "authenticated") return;
-// //     loadProduct();
-// //     // eslint-disable-next-line react-hooks/exhaustive-deps
-// //   }, [id, status, token]);
-
-// //   useEffect(() => {
-// //     if (!imageFile) return;
-// //     const url = URL.createObjectURL(imageFile);
-// //     setImagePreview(url);
-// //     return () => URL.revokeObjectURL(url);
-// //   }, [imageFile]);
-
-// //   const stockStatus = useMemo(() => {
-// //     if (qty <= 0) return { label: "Out", cls: "bg-red-500/10 text-red-700 border-red-500/20" };
-// //     if (qty < 5) return { label: "Low", cls: "bg-amber-500/10 text-amber-800 border-amber-500/20" };
-// //     return { label: "In", cls: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20" };
-// //   }, [qty]);
-
-// //   async function onSave() {
-// //     if (!product) return;
-
-// //     if (status === "loading") return;
-// //     if (!token) {
-// //       toast.error("Session token မရပါ — Login ပြန်လုပ်ပါ");
-// //       signIn();
-// //       return;
-// //     }
-
-// //     if (!sku.trim()) return toast.error("SKU မဖြစ်မနေလိုပါတယ်");
-// //     if (!name.trim()) return toast.error("Product name မဖြစ်မနေလိုပါတယ်");
-// //     if (!Number.isFinite(price) || price < 0) return toast.error("Price မှန်မှန်ထည့်ပါ");
-// //     if (!Number.isInteger(qty) || qty < 0) return toast.error("Stock (quantity) ကို 0 သို့ အပေါင်းကိန်း ထည့်ပါ");
-
-// //     const tId = toast.loading("Saving...");
-
-// //     try {
-// //       setSaving(true);
-
-// //       const fd = new FormData();
-// //       fd.append("sku", sku.trim());
-// //       fd.append("product_name", name.trim());
-// //       fd.append("product_price", String(price));
-// //       fd.append("product_quantity_amount", String(qty));
-
-// //       fd.append("barcode", barcode.trim());
-// //       fd.append("category", category.trim());
-// //       fd.append("product_type", type.trim());
-// //       fd.append("note", note.trim());
-// //       fd.append("product_discount", String(Number.isFinite(discount) ? discount : 0));
-
-// //       if (imageFile) fd.append("image", imageFile);
-
-// //       const res = await fetch(`/backend/api/products/${product.id}`, {
-// //         method: "PUT",
-// //         headers: { ...authHeaders() },
-// //         body: fd,
-// //       });
-
-// //       if (!res.ok) {
-// //         const detail = await readErrorText(res);
-
-// //         if (res.status === 401) {
-// //           toast.error("Unauthorized — Login ပြန်လုပ်ပါ", { id: tId });
-// //           signIn();
-// //         } else if (res.status === 403) {
-// //           toast.error("Forbidden — ADMIN လိုနိုင်တယ်", { id: tId });
-// //         } else if (res.status === 404) {
-// //           toast.error("Product မတွေ့ပါ (404)", { id: tId });
-// //         } else {
-// //           toast.error(detail || `Update failed (status ${res.status})`, { id: tId });
-// //         }
-// //         return;
-// //       }
-
-// //       toast.success("Product update ပြီးပါပြီ ✅", { id: tId });
-// //       router.push(`/products/${product.id}`);
-// //     } catch (e) {
-// //       console.error(e);
-// //       toast.error("Server error (update)", { id: tId });
-// //     } finally {
-// //       setSaving(false);
-// //     }
-// //   }
-
-// //   if (status === "loading" || loading) {
-// //     return <div className="flex justify-center py-10 text-muted-foreground">Loading...</div>;
-// //   }
-
-// //   if (status === "unauthenticated") {
-// //     return <div className="flex justify-center py-10 text-muted-foreground">Redirecting to Sign in...</div>;
-// //   }
-
-// //   if (!product) {
-// //     return (
-// //       <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-3">
-// //         <div>Product not found</div>
-// //         <Button variant="outline" size="sm" onClick={loadProduct} className="gap-2">
-// //           <RefreshCw className="h-4 w-4" /> Retry
-// //         </Button>
-// //       </div>
-// //     );
-// //   }
-
-// //   return (
-// //     <div className="flex justify-center py-8 px-3 overflow-x-hidden">
-// //       <Card className="w-full max-w-4xl overflow-hidden">
-// //         <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-// //           <div className="space-y-1 min-w-0">
-// //             <CardTitle className="flex items-center gap-2">
-// //               <Package className="h-5 w-5" />
-// //               Edit Product
-// //             </CardTitle>
-// //             <CardDescription>
-// //               Product ကိုပြင်ဆင်ပြီး Save လုပ်ပါ (image upload အပါအဝင်)
-// //             </CardDescription>
-// //           </div>
-
-// //           <div className="flex flex-wrap gap-2">
-// //             <Button variant="outline" size="sm" onClick={() => router.back()} className="gap-2" disabled={saving}>
-// //               <ArrowLeft className="h-4 w-4" />
-// //               Back
-// //             </Button>
-
-// //             <Button variant="outline" size="sm" onClick={loadProduct} className="gap-2" disabled={saving}>
-// //               <RefreshCw className={saving ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-// //               Reload
-// //             </Button>
-
-// //             <Button size="sm" onClick={onSave} className="gap-2" disabled={saving}>
-// //               <Save className="h-4 w-4" />
-// //               {saving ? "Saving..." : "Save"}
-// //             </Button>
-// //           </div>
-// //         </CardHeader>
-
-// //         <CardContent className="grid gap-6 md:grid-cols-2">
-// //           <div className="space-y-3">
-// //             <div className="rounded-xl border bg-muted flex items-center justify-center min-h-[260px] overflow-hidden">
-// //               {imagePreview ? (
-// //                 <img src={imagePreview} alt="preview" className="max-h-[320px] object-contain" />
-// //               ) : (
-// //                 <div className="flex flex-col items-center text-muted-foreground">
-// //                   <ImageIcon className="h-8 w-8" />
-// //                   <span className="text-sm">No Image</span>
-// //                 </div>
-// //               )}
-// //             </div>
-
-// //             <div className="space-y-2">
-// //               <Label>Change image (optional)</Label>
-// //               <Input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} />
-// //               <p className="text-xs text-muted-foreground">
-// //                 Backend မှာ field name က <code>image</code> ဖြစ်ရမယ်။
-// //               </p>
-// //             </div>
-// //           </div>
-
-// //           <div className="space-y-4">
-// //             <div className="grid gap-3">
-// //               <div className="grid gap-2">
-// //                 <Label>SKU</Label>
-// //                 <Input value={sku} onChange={(e) => setSku(e.target.value)} />
-// //               </div>
-
-// //               <div className="grid gap-2">
-// //                 <Label>Name</Label>
-// //                 <Input value={name} onChange={(e) => setName(e.target.value)} />
-// //               </div>
-
-// //               <div className="grid gap-2">
-// //                 <Label>Price</Label>
-// //                 <Input type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
-// //               </div>
-
-// //               <div className="grid gap-2">
-// //                 <Label>Stock</Label>
-// //                 <div className="flex items-center gap-2">
-// //                   <Input type="number" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
-// //                   <Badge className={stockStatus.cls}>{stockStatus.label}</Badge>
-// //                 </div>
-// //               </div>
-
-// //               <Separator />
-
-// //               <div className="grid gap-2">
-// //                 <Label>Barcode (optional)</Label>
-// //                 <Input value={barcode} onChange={(e) => setBarcode(e.target.value)} />
-// //               </div>
-
-// //               <div className="grid gap-2">
-// //                 <Label>Category (optional)</Label>
-// //                 <Input value={category} onChange={(e) => setCategory(e.target.value)} />
-// //               </div>
-
-// //               <div className="grid gap-2">
-// //                 <Label>Type (optional)</Label>
-// //                 <Input value={type} onChange={(e) => setType(e.target.value)} />
-// //               </div>
-
-// //               <div className="grid gap-2">
-// //                 <Label>Discount (optional)</Label>
-// //                 <Input type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
-// //               </div>
-
-// //               <div className="grid gap-2">
-// //                 <Label>Note (optional)</Label>
-// //                 <Textarea value={note} onChange={(e) => setNote(e.target.value)} />
-// //               </div>
-// //             </div>
-// //           </div>
-// //         </CardContent>
-// //       </Card>
-// //     </div>
-// //   );
-// // }
-
-
-
-
-
-
-
-
-
-
-
-
-
-// "use client";
-
-// import React, { useEffect, useMemo, useRef, useState } from "react";
-// import { useRouter, useParams } from "next/navigation";
-// import { useSession } from "next-auth/react";
-// import toast from "react-hot-toast";
-// import JsBarcode from "jsbarcode";
-
-// import { Button } from "@/components/ui/button";
-// import { Input } from "@/components/ui/input";
-// import { Label } from "@/components/ui/label";
-// import { Textarea } from "@/components/ui/textarea";
-// import {
-//   Select,
-//   SelectContent,
-//   SelectItem,
-//   SelectTrigger,
-//   SelectValue,
-// } from "@/components/ui/select";
-// import {
-//   Card,
-//   CardContent,
-//   CardDescription,
-//   CardHeader,
-//   CardTitle,
-// } from "@/components/ui/card";
-
-// import {
-//   ArrowLeft,
-//   Sparkles,
-//   Upload,
-//   ScanLine,
-//   Image as ImageIcon,
-//   Trash2,
-//   Loader2,
-//   Wand2,
-//   Tag,
-//   Save,
-//   Boxes,
-//   CircleDollarSign,
-//   Crop,
-//   RefreshCw,
-//   Pencil,
-// } from "lucide-react";
-
-// type ProductForm = {
-//   sku: string;
-//   product_name: string;
-//   product_price: string;
-//   barcode: string;
-//   category: string;
-//   product_quantity_amount: string;
-//   product_discount: string;
-//   note: string;
-//   product_type: string;
-// };
-
-// type ProductApi = {
-//   id: string;
-//   sku?: string;
-//   product_name?: string;
-//   product_price?: number | string;
-//   barcode?: string;
-//   category?: string;
-//   product_quantity_amount?: number | string;
-//   product_discount?: number | string;
-//   note?: string;
-//   product_type?: string;
-//   product_image?: string;
-//   imagePath?: string;
-//   image_path?: string;
-// };
-
-// type CategoryOption = {
-//   label: string;
-//   value: string;
-// };
-
-// const FALLBACK_CATEGORIES: CategoryOption[] = [
-//   { label: "Drink", value: "DRINK" },
-//   { label: "Food", value: "FOOD" },
-//   { label: "Snack", value: "SNACK" },
-//   { label: "Household", value: "HOUSEHOLD" },
-//   { label: "Frozen", value: "FROZEN" },
-//   { label: "Cosmetic", value: "COSMETIC" },
-//   { label: "Other", value: "OTHER" },
-// ];
-
-// function normalizeTokenType(v: unknown) {
-//   const s = String(v ?? "Bearer").replace(/\s+/g, " ").trim();
-//   return s || "Bearer";
-// }
-
-// function slugify(v: string) {
-//   return v
-//     .toUpperCase()
-//     .replace(/[^A-Z0-9]+/g, "-")
-//     .replace(/^-+|-+$/g, "")
-//     .slice(0, 24);
-// }
-
-// function inferCategory(name: string) {
-//   const n = name.toLowerCase();
-//   if (["cola", "coffee", "tea", "juice", "water", "drink", "soda", "milk"].some((k) => n.includes(k))) return "DRINK";
-//   if (["chip", "cracker", "cookie", "snack", "nuts"].some((k) => n.includes(k))) return "SNACK";
-//   if (["rice", "bread", "noodle", "food", "egg", "meat"].some((k) => n.includes(k))) return "FOOD";
-//   if (["soap", "clean", "tissue", "detergent"].some((k) => n.includes(k))) return "HOUSEHOLD";
-//   return "OTHER";
-// }
-
-// function inferType(name: string) {
-//   const n = name.toLowerCase();
-//   if (["cola", "coffee", "tea", "juice", "water", "drink", "soda", "milk"].some((k) => n.includes(k))) return "DRINK";
-//   if (["rice", "bread", "noodle", "food", "egg", "meat"].some((k) => n.includes(k))) return "FOOD";
-//   if (["chip", "cracker", "cookie", "snack", "nuts"].some((k) => n.includes(k))) return "SNACK";
-//   return "OTHER";
-// }
-
-// function generateSku(name: string) {
-//   const base = slugify(name || "PRODUCT").slice(0, 10) || "PRODUCT";
-//   const rand = Math.floor(1000 + Math.random() * 9000);
-//   return `${base}-${rand}`;
-// }
-
-// function generateBarcodeString(seed?: string) {
-//   const base = String(Date.now()).slice(-9);
-//   const extra = String(Math.floor(100 + Math.random() * 900));
-//   const cleaned = (seed || "").replace(/\D/g, "").slice(0, 4);
-//   return `${cleaned}${base}${extra}`.slice(0, 13);
-// }
-
-// function pickImagePath(p: ProductApi | null) {
-//   if (!p) return null;
-//   return p.imagePath || p.image_path || p.product_image || null;
-// }
-
-// function buildImageUrl(path?: string | null) {
-//   if (!path) return null;
-//   const raw = String(path).trim();
-//   if (!raw) return null;
-//   if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-//   const cleaned = raw.replace(/^\/?uploads\/?/, "").replace(/^\/+/, "");
-//   return `/uploads/${cleaned}`;
-// }
-
-// async function cropImageToSquare(file: File): Promise<File> {
-//   const dataUrl = await new Promise<string>((resolve, reject) => {
-//     const reader = new FileReader();
-//     reader.onload = () => resolve(String(reader.result || ""));
-//     reader.onerror = reject;
-//     reader.readAsDataURL(file);
-//   });
-
-//   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-//     const el = new Image();
-//     el.onload = () => resolve(el);
-//     el.onerror = reject;
-//     el.src = dataUrl;
-//   });
-
-//   const size = Math.min(img.width, img.height);
-//   const sx = Math.floor((img.width - size) / 2);
-//   const sy = Math.floor((img.height - size) / 2);
-
-//   const canvas = document.createElement("canvas");
-//   canvas.width = size;
-//   canvas.height = size;
-//   const ctx = canvas.getContext("2d");
-//   if (!ctx) throw new Error("Canvas unavailable");
-
-//   ctx.drawImage(img, sx, sy, size, size, 0, 0, size, size);
-
-//   const blob = await new Promise<Blob | null>((resolve) =>
-//     canvas.toBlob((b) => resolve(b), "image/jpeg", 0.92)
-//   );
-
-//   if (!blob) throw new Error("Crop failed");
-//   const name = file.name.replace(/\.[^.]+$/, "") + "-crop.jpg";
-//   return new File([blob], name, { type: "image/jpeg" });
-// }
-
-// export default function ProductEditPagePro() {
-//   const router = useRouter();
-//   const params = useParams();
-//   const id = String(params?.id || "");
-//   const { data: session, status } = useSession();
-
-//   const [form, setForm] = useState<ProductForm>({
-//     sku: "",
-//     product_name: "",
-//     product_price: "",
-//     barcode: "",
-//     category: "",
-//     product_quantity_amount: "0",
-//     product_discount: "0",
-//     note: "",
-//     product_type: "OTHER",
-//   });
-//   const [loading, setLoading] = useState(false);
-//   const [initialLoading, setInitialLoading] = useState(true);
-//   const [imageFile, setImageFile] = useState<File | null>(null);
-//   const [imagePreview, setImagePreview] = useState<string | null>(null);
-//   const [dragOver, setDragOver] = useState(false);
-//   const [categories, setCategories] = useState<CategoryOption[]>(FALLBACK_CATEGORIES);
-//   const [categoriesLoading, setCategoriesLoading] = useState(false);
-//   const [aiFilling, setAiFilling] = useState(false);
-//   const [cropping, setCropping] = useState(false);
-
-//   const fileInputRef = useRef<HTMLInputElement | null>(null);
-//   const barcodeSvgRef = useRef<SVGSVGElement | null>(null);
-
-//   const apiBase = useMemo(() => (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, ""), []);
-//   const accessToken = String((session as any)?.accessToken || "").trim();
-//   const tokenType = normalizeTokenType((session as any)?.tokenType);
-
-//   function setField<K extends keyof ProductForm>(key: K, value: ProductForm[K]) {
-//     setForm((prev) => ({ ...prev, [key]: value }));
-//   }
-
-//   function updatePreviewWithFile(file: File) {
-//     setImageFile(file);
-//     setImagePreview((prev) => {
-//       if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
-//       return URL.createObjectURL(file);
-//     });
-//   }
-
-//   function applyImage(file: File) {
-//     if (!file.type.startsWith("image/")) {
-//       toast.error("Image file ပဲရွေးပါ");
-//       return;
-//     }
-//     updatePreviewWithFile(file);
-//   }
-
-//   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-//     const file = e.target.files?.[0];
-//     if (!file) return;
-//     applyImage(file);
-//   }
-
-//   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-//     e.preventDefault();
-//     setDragOver(false);
-//     const file = e.dataTransfer.files?.[0];
-//     if (!file) return;
-//     applyImage(file);
-//   }
-
-//   async function cropCurrentImage() {
-//     if (!imageFile) {
-//       toast.error("Image မရှိသေးပါ");
-//       return;
-//     }
-
-//     try {
-//       setCropping(true);
-//       const cropped = await cropImageToSquare(imageFile);
-//       updatePreviewWithFile(cropped);
-//       toast.success("Image cropped ✅");
-//     } catch {
-//       toast.error("Crop failed");
-//     } finally {
-//       setCropping(false);
-//     }
-//   }
-
-//   function autoFillFromName() {
-//     if (!form.product_name.trim()) {
-//       toast.error("Product name အရင်ထည့်ပါ");
-//       return;
-//     }
-
-//     setAiFilling(true);
-//     window.setTimeout(() => {
-//       const name = form.product_name.trim();
-//       const category = inferCategory(name);
-//       const productType = inferType(name);
-//       const nextSku = form.sku.trim() || generateSku(name);
-//       const nextBarcode = form.barcode.trim() || generateBarcodeString(nextSku);
-
-//       setForm((prev) => ({
-//         ...prev,
-//         sku: nextSku,
-//         barcode: nextBarcode,
-//         category: prev.category || category,
-//         product_type: prev.product_type === "OTHER" ? productType : prev.product_type,
-//         note: prev.note || `Auto-filled from product name: ${name}`,
-//       }));
-
-//       toast.success("AI auto fill done ✅");
-//       setAiFilling(false);
-//     }, 650);
-//   }
-
-//   function generateBarcodeNow() {
-//     const next = generateBarcodeString(form.sku || form.product_name);
-//     setField("barcode", next);
-//     toast.success("Barcode generated ✅");
-//   }
-
-//   async function loadCategoriesFromApi() {
-//     if (!apiBase) {
-//       toast.error("NEXT_PUBLIC_API_URL မထည့်ရသေးပါ");
-//       return;
-//     }
-
-//     setCategoriesLoading(true);
-//     try {
-//       const res = await fetch(`${apiBase}/api/categories`, {
-//         headers: accessToken
-//           ? { Authorization: `${tokenType} ${accessToken}` }
-//           : undefined,
-//       });
-
-//       if (!res.ok) throw new Error();
-//       const data = await res.json();
-
-//       const mapped: CategoryOption[] = Array.isArray(data)
-//         ? data.map((item: any) => ({
-//             label: String(item.label ?? item.name ?? item.category ?? item.value ?? "OTHER"),
-//             value: String(item.value ?? item.name ?? item.category ?? item.label ?? "OTHER").toUpperCase(),
-//           }))
-//         : [];
-
-//       if (!mapped.length) throw new Error();
-//       setCategories(mapped);
-//       toast.success("Category API connected ✅");
-//     } catch {
-//       toast.error("API category မရလို့ fallback categories သုံးထားပါတယ်");
-//       setCategories(FALLBACK_CATEGORIES);
-//     } finally {
-//       setCategoriesLoading(false);
-//     }
-//   }
-
-//   async function loadProduct() {
-//     if (!id || !apiBase || !accessToken) return;
-
-//     setInitialLoading(true);
-//     try {
-//       const res = await fetch(`${apiBase}/api/products/${id}`, {
-//         headers: { Authorization: `${tokenType} ${accessToken}` },
-//         cache: "no-store",
-//       });
-
-//       if (!res.ok) throw new Error();
-//       const data: ProductApi = await res.json();
-
-//       setForm({
-//         sku: String(data.sku || ""),
-//         product_name: String(data.product_name || ""),
-//         product_price: String(data.product_price ?? ""),
-//         barcode: String(data.barcode || ""),
-//         category: String(data.category || ""),
-//         product_quantity_amount: String(data.product_quantity_amount ?? "0"),
-//         product_discount: String(data.product_discount ?? "0"),
-//         note: String(data.note || ""),
-//         product_type: String(data.product_type || "OTHER"),
-//       });
-
-//       const img = buildImageUrl(pickImagePath(data));
-//       if (img) {
-//         setImagePreview((prev) => {
-//           if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
-//           return img;
-//         });
-//       }
-//     } catch {
-//       toast.error("Product load failed");
-//     } finally {
-//       setInitialLoading(false);
-//     }
-//   }
-
-//   useEffect(() => {
-//     if (!barcodeSvgRef.current) return;
-//     if (!form.barcode.trim()) return;
-
-//     try {
-//       JsBarcode(barcodeSvgRef.current, form.barcode.trim(), {
-//         format: "CODE128",
-//         displayValue: true,
-//         fontSize: 12,
-//         height: 55,
-//         margin: 6,
-//       });
-//     } catch {}
-//   }, [form.barcode]);
-
-//   useEffect(() => {
-//     if (status === "authenticated" && accessToken && id) {
-//       loadProduct();
-//     }
-//   }, [status, accessToken, id]);
-
-//   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-//     e.preventDefault();
-
-//     if (!apiBase) {
-//       toast.error("NEXT_PUBLIC_API_URL မထည့်ရသေးပါ (.env.local)");
-//       return;
-//     }
-
-//     if (status === "loading") {
-//       toast("Checking login...");
-//       return;
-//     }
-
-//     if (status !== "authenticated") {
-//       toast.error("Login မဝင်ရသေးပါ");
-//       return;
-//     }
-
-//     if (!accessToken) {
-//       toast.error("Session ထဲမှာ accessToken မတွေ့ပါ");
-//       return;
-//     }
-
-//     if (!form.sku.trim() || !form.product_name.trim() || !form.product_price.trim()) {
-//       toast.error("SKU, Product Name, Price ကို ထည့်ပေးပါ");
-//       return;
-//     }
-
-//     const product_price = Number(form.product_price);
-//     const product_quantity_amount = Number(form.product_quantity_amount || 0);
-//     const product_discount = Number(form.product_discount || 0);
-
-//     if (Number.isNaN(product_price)) return toast.error("Price သည် number ဖြစ်ရပါမယ်");
-//     if (Number.isNaN(product_quantity_amount)) return toast.error("Quantity သည် number ဖြစ်ရပါမယ်");
-//     if (Number.isNaN(product_discount)) return toast.error("Discount သည် number ဖြစ်ရပါမယ်");
-
-//     setLoading(true);
-//     const toastId = toast.loading("Updating product...");
-
-//     try {
-//       const formData = new FormData();
-//       formData.append("sku", form.sku.trim());
-//       formData.append("product_name", form.product_name.trim());
-//       formData.append("product_price", String(product_price));
-//       formData.append("product_quantity_amount", String(product_quantity_amount));
-//       formData.append("product_discount", String(product_discount));
-
-//       if (form.barcode.trim()) formData.append("barcode", form.barcode.trim());
-//       if (form.category.trim()) formData.append("category", form.category.trim());
-//       if (form.product_type.trim()) formData.append("product_type", form.product_type.trim());
-//       if (form.note.trim()) formData.append("note", form.note.trim());
-//       if (imageFile) formData.append("image", imageFile);
-
-//       const res = await fetch(`${apiBase}/api/products/${id}`, {
-//         method: "PUT",
-//         body: formData,
-//         headers: { Authorization: `${tokenType} ${accessToken}` },
-//       });
-
-//       const text = await res.text().catch(() => "");
-//       let json: any = null;
-//       try {
-//         json = text ? JSON.parse(text) : null;
-//       } catch {}
-
-//       if (!res.ok) {
-//         const msg = json?.message || json?.error || text || `Failed (${res.status})`;
-//         toast.error(String(msg), { id: toastId });
-//         return;
-//       }
-
-//       toast.success(`Updated: ${json?.product_name ?? form.product_name}`, { id: toastId });
-//       router.push(`/dashboard/product/${id}`);
-//     } catch {
-//       toast.error("Server error ဖြစ်နေတယ်", { id: toastId });
-//     } finally {
-//       setLoading(false);
-//     }
-//   }
-
-//   if (initialLoading) {
-//     return (
-//       <div className="mx-auto flex min-h-[60vh] max-w-7xl items-center justify-center px-4 py-6 md:px-6 2xl:px-10">
-//         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-//           <Loader2 className="h-4 w-4 animate-spin" />
-//           Loading product...
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   return (
-//     <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6 2xl:px-10 space-y-6">
-//       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-//         <div>
-//           <div className="flex items-center gap-2 text-sm font-bold text-cyan-600">
-//             <Sparkles className="h-4 w-4" />
-//             PRO EDIT PAGE
-//           </div>
-//           <h1 className="mt-1 text-3xl font-black tracking-tight">Edit Product</h1>
-//           <p className="mt-1 text-sm text-muted-foreground">
-//             create page နဲ့တူတဲ့ workflow, barcode preview, category API, drag & drop image + crop
-//           </p>
-//         </div>
-
-//         <div className="flex items-center gap-2">
-//           <Button type="button" variant="outline" onClick={() => router.back()} className="gap-2">
-//             <ArrowLeft className="h-4 w-4" />
-//             Back
-//           </Button>
-//           <Button type="button" variant="outline" onClick={loadProduct} className="gap-2">
-//             <RefreshCw className="h-4 w-4" />
-//             Reload
-//           </Button>
-//         </div>
-//       </div>
-
-//       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-//         <Card className="rounded-3xl border">
-//           <CardHeader>
-//             <CardTitle className="flex items-center gap-2 text-2xl">
-//               <Pencil className="h-5 w-5" />
-//               Product Form
-//             </CardTitle>
-//             <CardDescription>
-//               edit page ကို pro create version နဲ့ align ဖြစ်အောင် ပြင်ထားပါတယ်
-//             </CardDescription>
-//           </CardHeader>
-
-//           <form onSubmit={handleSubmit} noValidate>
-//             <CardContent className="space-y-6">
-//               <div className="flex flex-wrap gap-2">
-//                 <Button type="button" variant="outline" onClick={autoFillFromName} disabled={aiFilling} className="gap-2">
-//                   {aiFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-//                   AI Auto Fill
-//                 </Button>
-
-//                 <Button type="button" variant="outline" onClick={generateBarcodeNow} className="gap-2">
-//                   <ScanLine className="h-4 w-4" />
-//                   Generate Barcode
-//                 </Button>
-
-//                 <Button type="button" variant="outline" onClick={loadCategoriesFromApi} disabled={categoriesLoading} className="gap-2">
-//                   {categoriesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
-//                   Category API Connect
-//                 </Button>
-//               </div>
-
-//               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-//                 <div className="space-y-2">
-//                   <Label htmlFor="sku">SKU / Code</Label>
-//                   <Input id="sku" value={form.sku} onChange={(e) => setField("sku", e.target.value)} placeholder="SKU-1001" />
-//                 </div>
-
-//                 <div className="space-y-2 md:col-span-2">
-//                   <Label htmlFor="product_name">Product Name</Label>
-//                   <Input id="product_name" value={form.product_name} onChange={(e) => setField("product_name", e.target.value)} placeholder="Coca Cola 500ml" />
-//                 </div>
-//               </div>
-
-//               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-//                 <div className="space-y-2">
-//                   <Label htmlFor="product_price">Price</Label>
-//                   <Input id="product_price" type="number" min="0" step="0.01" value={form.product_price} onChange={(e) => setField("product_price", e.target.value)} placeholder="1200" />
-//                 </div>
-
-//                 <div className="space-y-2">
-//                   <Label htmlFor="product_quantity_amount">Quantity / Stock</Label>
-//                   <Input id="product_quantity_amount" type="number" min="0" step="1" value={form.product_quantity_amount} onChange={(e) => setField("product_quantity_amount", e.target.value)} placeholder="50" />
-//                 </div>
-
-//                 <div className="space-y-2">
-//                   <Label htmlFor="product_discount">Discount</Label>
-//                   <Input id="product_discount" type="number" min="0" step="0.01" value={form.product_discount} onChange={(e) => setField("product_discount", e.target.value)} placeholder="100" />
-//                 </div>
-//               </div>
-
-//               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-//                 <div className="space-y-2">
-//                   <Label htmlFor="barcode">Barcode</Label>
-//                   <Input id="barcode" value={form.barcode} onChange={(e) => setField("barcode", e.target.value)} placeholder="8852121212333" />
-//                 </div>
-
-//                 <div className="space-y-2">
-//                   <Label>Category</Label>
-//                   <Select value={form.category} onValueChange={(value) => setField("category", value)}>
-//                     <SelectTrigger>
-//                       <SelectValue placeholder="Select category" />
-//                     </SelectTrigger>
-//                     <SelectContent>
-//                       {categories.map((cat) => (
-//                         <SelectItem key={cat.value} value={cat.value}>
-//                           {cat.label}
-//                         </SelectItem>
-//                       ))}
-//                     </SelectContent>
-//                   </Select>
-//                 </div>
-
-//                 <div className="space-y-2">
-//                   <Label>Product Type</Label>
-//                   <Select value={form.product_type} onValueChange={(value) => setField("product_type", value)}>
-//                     <SelectTrigger>
-//                       <SelectValue placeholder="Select type" />
-//                     </SelectTrigger>
-//                     <SelectContent>
-//                       <SelectItem value="DRINK">Drink</SelectItem>
-//                       <SelectItem value="FOOD">Food</SelectItem>
-//                       <SelectItem value="SNACK">Snack</SelectItem>
-//                       <SelectItem value="OTHER">Other</SelectItem>
-//                     </SelectContent>
-//                   </Select>
-//                 </div>
-//               </div>
-
-//               <div className="space-y-2">
-//                 <Label htmlFor="note">Note</Label>
-//                 <Textarea id="note" value={form.note} onChange={(e) => setField("note", e.target.value)} placeholder="..." rows={4} />
-//               </div>
-
-//               <div className="flex justify-end gap-2">
-//                 <Button type="submit" disabled={loading} className="gap-2">
-//                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-//                   {loading ? "Saving..." : "Update Product"}
-//                 </Button>
-//               </div>
-//             </CardContent>
-//           </form>
-//         </Card>
-
-//         <div className="space-y-6">
-//           <Card className="rounded-3xl border">
-//             <CardHeader>
-//               <CardTitle className="text-xl">Image Upload</CardTitle>
-//               <CardDescription>drag & drop + square crop</CardDescription>
-//             </CardHeader>
-//             <CardContent className="space-y-4">
-//               <div
-//                 onDragOver={(e) => {
-//                   e.preventDefault();
-//                   setDragOver(true);
-//                 }}
-//                 onDragLeave={() => setDragOver(false)}
-//                 onDrop={handleDrop}
-//                 className={
-//                   "rounded-3xl border-2 border-dashed p-6 text-center transition " +
-//                   (dragOver ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/20" : "border-muted-foreground/20")
-//                 }
-//               >
-//                 <input ref={fileInputRef} type="file" hidden accept="image/*" onChange={handleImageChange} />
-
-//                 <div className="flex flex-col items-center gap-3">
-//                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
-//                     <Upload className="h-6 w-6" />
-//                   </div>
-//                   <div>
-//                     <div className="font-semibold">Drop image here</div>
-//                     <div className="text-sm text-muted-foreground">or click button below</div>
-//                   </div>
-//                   <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
-//                     <Upload className="h-4 w-4" />
-//                     Choose File
-//                   </Button>
-//                 </div>
-//               </div>
-
-//               <div className="flex gap-2">
-//                 <Button type="button" variant="outline" onClick={cropCurrentImage} disabled={!imageFile || cropping} className="gap-2 flex-1">
-//                   {cropping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crop className="h-4 w-4" />}
-//                   Crop Square
-//                 </Button>
-//                 <Button type="button" variant="outline" onClick={() => imageFile && updatePreviewWithFile(imageFile)} disabled={!imageFile} className="gap-2">
-//                   <RefreshCw className="h-4 w-4" />
-//                 </Button>
-//               </div>
-
-//               <div className="overflow-hidden rounded-3xl border bg-muted/30 min-h-[280px] flex items-center justify-center">
-//                 {imagePreview ? (
-//                   <img src={imagePreview} alt="Preview" className="max-h-[360px] w-full object-contain" />
-//                 ) : (
-//                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
-//                     <ImageIcon className="h-10 w-10" />
-//                     <span className="text-sm">No Image</span>
-//                   </div>
-//                 )}
-//               </div>
-//             </CardContent>
-//           </Card>
-
-//           <Card className="rounded-3xl border">
-//             <CardHeader>
-//               <CardTitle className="text-xl">Live Preview</CardTitle>
-//               <CardDescription>barcode + quick info</CardDescription>
-//             </CardHeader>
-//             <CardContent className="space-y-4">
-//               <div className="grid grid-cols-3 gap-3">
-//                 <div className="rounded-2xl border p-3">
-//                   <div className="text-[11px] text-muted-foreground">Price</div>
-//                   <div className="mt-1 font-black flex items-center gap-1"><CircleDollarSign className="h-4 w-4" />{form.product_price || "0"}</div>
-//                 </div>
-//                 <div className="rounded-2xl border p-3">
-//                   <div className="text-[11px] text-muted-foreground">Stock</div>
-//                   <div className="mt-1 font-black flex items-center gap-1"><Boxes className="h-4 w-4" />{form.product_quantity_amount || "0"}</div>
-//                 </div>
-//                 <div className="rounded-2xl border p-3">
-//                   <div className="text-[11px] text-muted-foreground">Type</div>
-//                   <div className="mt-1 font-black">{form.product_type || "OTHER"}</div>
-//                 </div>
-//               </div>
-
-//               <div className="rounded-3xl border p-4">
-//                 <div className="text-sm font-semibold">{form.product_name || "Product Name"}</div>
-//                 <div className="text-xs text-muted-foreground mt-1">SKU: {form.sku || "-"}</div>
-//                 <div className="text-xs text-muted-foreground">Category: {form.category || "-"}</div>
-//               </div>
-
-//               <div className="rounded-3xl border p-4 overflow-x-auto">
-//                 {form.barcode ? (
-//                   <svg ref={barcodeSvgRef} />
-//                 ) : (
-//                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-//                     <ScanLine className="h-4 w-4" />
-//                     barcode not generated yet
-//                   </div>
-//                 )}
-//               </div>
-//             </CardContent>
-//           </Card>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 "use client";
 
@@ -1481,6 +317,122 @@ type ProductForm = {
 };
 
 type CategoryOption = { label: string; value: string };
+type BusinessType = "SUPERMARKET" | "RESTAURANT" | "FASHION";
+
+const BUSINESS_OPTIONS: Record<BusinessType, {
+  categories: CategoryOption[];
+  productTypes: CategoryOption[];
+}> = {
+  SUPERMARKET: {
+    categories: [
+      { label: "Beverages", value: "BEVERAGES" },
+      { label: "Food", value: "FOOD" },
+      { label: "Snacks", value: "SNACKS" },
+      { label: "Fresh Produce", value: "FRESH_PRODUCE" },
+      { label: "Meat & Seafood", value: "MEAT_SEAFOOD" },
+      { label: "Dairy & Eggs", value: "DAIRY_EGGS" },
+      { label: "Bakery", value: "BAKERY" },
+      { label: "Frozen", value: "FROZEN" },
+      { label: "Household", value: "HOUSEHOLD" },
+      { label: "Personal Care", value: "PERSONAL_CARE" },
+      { label: "Cosmetic", value: "COSMETIC" },
+      { label: "Other", value: "OTHER" },
+    ],
+    productTypes: [
+      { label: "Drink", value: "DRINK" },
+      { label: "Food", value: "FOOD" },
+      { label: "Snack", value: "SNACK" },
+      { label: "Grocery", value: "GROCERY" },
+      { label: "Fresh", value: "FRESH" },
+      { label: "Frozen", value: "FROZEN" },
+      { label: "Household", value: "HOUSEHOLD" },
+      { label: "Personal Care", value: "PERSONAL_CARE" },
+      { label: "Other", value: "OTHER" },
+    ],
+  },
+  RESTAURANT: {
+    categories: [
+      { label: "Appetizers", value: "APPETIZERS" },
+      { label: "Main Course", value: "MAIN_COURSE" },
+      { label: "Rice & Noodles", value: "RICE_NOODLES" },
+      { label: "Soup", value: "SOUP" },
+      { label: "Salad", value: "SALAD" },
+      { label: "Grill", value: "GRILL" },
+      { label: "Dessert", value: "DESSERT" },
+      { label: "Hot Drinks", value: "HOT_DRINKS" },
+      { label: "Cold Drinks", value: "COLD_DRINKS" },
+      { label: "Alcohol", value: "ALCOHOL" },
+      { label: "Combo / Set", value: "COMBO_SET" },
+      { label: "Other", value: "OTHER" },
+    ],
+    productTypes: [
+      { label: "Food", value: "FOOD" },
+      { label: "Drink", value: "DRINK" },
+      { label: "Dessert", value: "DESSERT" },
+      { label: "Combo", value: "COMBO" },
+      { label: "Add-on", value: "ADD_ON" },
+      { label: "Modifier", value: "MODIFIER" },
+      { label: "Other", value: "OTHER" },
+    ],
+  },
+  FASHION: {
+    categories: [
+      { label: "Men", value: "MEN" },
+      { label: "Women", value: "WOMEN" },
+      { label: "Kids", value: "KIDS" },
+      { label: "Tops", value: "TOPS" },
+      { label: "Bottoms", value: "BOTTOMS" },
+      { label: "Dresses", value: "DRESSES" },
+      { label: "Outerwear", value: "OUTERWEAR" },
+      { label: "Shoes", value: "SHOES" },
+      { label: "Bags", value: "BAGS" },
+      { label: "Accessories", value: "ACCESSORIES" },
+      { label: "Sportswear", value: "SPORTSWEAR" },
+      { label: "Other", value: "OTHER" },
+    ],
+    productTypes: [
+      { label: "Shirt", value: "SHIRT" },
+      { label: "T-Shirt", value: "T_SHIRT" },
+      { label: "Pants", value: "PANTS" },
+      { label: "Jeans", value: "JEANS" },
+      { label: "Dress", value: "DRESS" },
+      { label: "Skirt", value: "SKIRT" },
+      { label: "Jacket", value: "JACKET" },
+      { label: "Shoes", value: "SHOES" },
+      { label: "Bag", value: "BAG" },
+      { label: "Accessory", value: "ACCESSORY" },
+      { label: "Other", value: "OTHER" },
+    ],
+  },
+};
+
+function normalizeBusinessType(value: unknown): BusinessType | null {
+  const v = String(value ?? "").trim().toUpperCase();
+  if (v === "SUPERMARKET" || v === "RESTAURANT" || v === "FASHION") return v;
+  return null;
+}
+
+function getSessionBusinessType(session: any): BusinessType | null {
+  // Prefer the literal business_type field from the authenticated user session.
+  return normalizeBusinessType(
+    session?.user?.business_type ??
+    session?.user?.businessType ??
+    session?.user?.shop_business_type ??
+    session?.user?.shopBusinessType ??
+    session?.business_type ??
+    session?.businessType ??
+    session?.shop_business_type ??
+    session?.shopBusinessType ??
+    session?.shop?.business_type ??
+    session?.shop?.businessType
+  );
+}
+
+function withCurrentOption(options: CategoryOption[], current: string): CategoryOption[] {
+  const value = String(current ?? "").trim().toUpperCase();
+  if (!value || options.some((o) => o.value === value)) return options;
+  return [{ label: value.replace(/_/g, " "), value }, ...options];
+}
 
 type AISuggestion = {
   sku: string; category: string; product_type: string;
@@ -1638,6 +590,12 @@ export default function ProductEditPage() {
   const tokenType   = normalizeTokenType((session as any)?.tokenType);
   const apiBase     = useMemo(() => (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, ""), []);
 
+  // Read business_type directly from the authenticated user session.
+  const sessionBusinessType = useMemo(
+    () => getSessionBusinessType(session as any),
+    [session]
+  );
+
   // form
   const [form,        setForm]        = useState<ProductForm>(EMPTY_FORM);
   const [origForm,    setOrigForm]    = useState<ProductForm>(EMPTY_FORM);   // snapshot for dirty check
@@ -1648,8 +606,32 @@ export default function ProductEditPage() {
   const [preview,     setPreview]     = useState<string | null>(null);       // new file preview
   const [serverImage, setServerImage] = useState<string | null>(null);       // existing image URL
   const [dragOver,    setDragOver]    = useState(false);
-  const [categories,  setCategories]  = useState<CategoryOption[]>(FALLBACK_CATEGORIES);
+  const [businessType, setBusinessType] = useState<BusinessType | null>(null);
+  const [apiCategories, setApiCategories] = useState<CategoryOption[] | null>(null);
   const [catLoading,  setCatLoading]  = useState(false);
+
+  const businessConfig = businessType ? BUSINESS_OPTIONS[businessType] : null;
+  const categories = useMemo(() => {
+    const base = apiCategories?.length
+      ? apiCategories
+      : (businessConfig?.categories ?? []);
+    return withCurrentOption(base, form.category);
+  }, [apiCategories, businessConfig, form.category]);
+
+  const productTypes = useMemo(
+    () => withCurrentOption(businessConfig?.productTypes ?? [], form.product_type),
+    [businessConfig, form.product_type]
+  );
+
+  // Session is the first source for current user's shop business type.
+  // Never silently default to SUPERMARKET when the value is missing.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    if (sessionBusinessType) {
+      setBusinessType(sessionBusinessType);
+      setApiCategories(null);
+    }
+  }, [sessionBusinessType, status]);
   const [aiFilling,   setAiFilling]   = useState(false);
   const [cropping,    setCropping]    = useState(false);
   const [deleting,    setDeleting]    = useState(false);
@@ -1699,6 +681,26 @@ export default function ProductEditPage() {
           note:                   String(p?.note ?? ""),
           product_type:           String(p?.productType ?? p?.product_type ?? "OTHER"),
         };
+        // DB/product response wins when backend returns the shop's business type.
+        // Otherwise use the authenticated user's session business type.
+        const dbBusinessType = normalizeBusinessType(
+          p?.businessType ??
+          p?.business_type ??
+          p?.shopBusinessType ??
+          p?.shop_business_type ??
+          p?.shop?.businessType ??
+          p?.shop?.business_type
+        );
+        // Current authenticated user's session is authoritative for this page.
+        // DB/product value is only a fallback.
+        const resolvedBusinessType = sessionBusinessType ?? dbBusinessType;
+        if (resolvedBusinessType) {
+          setBusinessType(resolvedBusinessType);
+        } else {
+          toast.error("user session ရဲ့ business_type ကို မတွေ့ပါ");
+        }
+        setApiCategories(null);
+
         setForm(populated);
         setOrigForm(populated);
         const imgPath = buildImageUrl(p?.imagePath ?? p?.image_path ?? p?.product_image ?? null);
@@ -1709,7 +711,7 @@ export default function ProductEditPage() {
         setFetching(false);
       }
     })();
-  }, [productId, status]);
+  }, [productId, status, sessionBusinessType]);
 
   // ── barcode render ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1798,11 +800,21 @@ export default function ProductEditPage() {
           }))
         : [];
       if (!mapped.length) throw new Error();
-      setCategories(mapped);
-      toast.success("Category API connected ✅");
+
+      if (!businessConfig || !businessType) {
+        throw new Error("Business type unavailable");
+      }
+
+      const allowed = new Set(businessConfig.categories.map((item) => item.value));
+      const filtered = mapped.filter((item) => allowed.has(item.value));
+
+      setApiCategories(filtered.length ? filtered : businessConfig.categories);
+      toast.success(`${businessType} categories loaded ✅`);
     } catch {
-      toast.error("API မရလို့ fallback categories သုံးထားပါ");
-      setCategories(FALLBACK_CATEGORIES);
+      toast.error(businessType
+        ? `API မရလို့ ${businessType} categories သုံးထားပါ`
+        : "Business type မရသေးပါ");
+      setApiCategories(null);
     } finally {
       setCatLoading(false);
     }
@@ -2033,7 +1045,7 @@ export default function ProductEditPage() {
                     </button>
                     <button type="button" onClick={loadCategories} disabled={catLoading} className={cn("flex h-9 items-center gap-2 rounded-xl border px-3 text-[12px] font-semibold transition-all", t.btn)}>
                       {catLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
-                      Category API
+                      {businessType ? `${businessType} Categories` : "Categories"}
                     </button>
                   </div>
 
@@ -2146,6 +1158,28 @@ export default function ProductEditPage() {
                     ))}
                   </div>
 
+                  {/* Business Type */}
+                  <div className="space-y-1.5">
+                    <Label className={cn("text-[11px] font-bold uppercase tracking-wider", t.textSubtle)}>
+                      User Session Business Type
+                    </Label>
+                    <div className={cn(
+                      "flex h-10 items-center justify-between rounded-xl border px-3 text-[12px] font-black",
+                      t.input
+                    )}>
+                      <span>{sessionBusinessType ?? businessType ?? "SESSION BUSINESS TYPE MISSING"}</span>
+                      {(sessionBusinessType ?? businessType) && (
+                        <Badge className={cn("border text-[10px] font-bold", t.tag)}>
+                          {(sessionBusinessType ?? businessType) === "SUPERMARKET"
+                            ? "Retail"
+                            : (sessionBusinessType ?? businessType) === "RESTAURANT"
+                              ? "Food Service"
+                              : "Apparel"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Barcode + Category + Type */}
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="space-y-1.5">
@@ -2183,8 +1217,8 @@ export default function ProductEditPage() {
                           <SelectValue placeholder="Select type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {["DRINK","FOOD","SNACK","OTHER"].map((v) => (
-                            <SelectItem key={v} value={v}>{v.charAt(0) + v.slice(1).toLowerCase()}</SelectItem>
+                          {productTypes.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -2329,7 +1363,7 @@ export default function ProductEditPage() {
                       <div>
                         <div className={cn("text-[13px] font-black", t.text)}>{form.product_name || "Product Name"}</div>
                         <div className={cn("text-[10px]", t.textSubtle)}>
-                          SKU: {form.sku || "—"} · {form.category || "UNCATEGORIZED"}
+                          {sessionBusinessType ?? businessType ?? "BUSINESS TYPE N/A"} · SKU: {form.sku || "—"} · {form.category || "UNCATEGORIZED"}
                         </div>
                       </div>
                     </div>
