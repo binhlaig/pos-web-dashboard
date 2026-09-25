@@ -23,7 +23,8 @@ export class BackendApiError extends Error {
   }
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "";
 
 export function backendApiUrl(path: string) {
   const base = API_BASE.replace(/\/+$/, "");
