@@ -72,6 +72,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/navigation";
+import { getStoredToken } from "@/lib/auth";
 
 type ThemeMode = "dark" | "light";
 
@@ -84,22 +85,39 @@ type Task = { id: number | string; title?: string; status?: string; priority?: s
 type OwnerSession = { id?: number | string; username?: string; name?: string; displayName?: string; fullName?: string; full_name?: string; role?: string; roles?: string | string[]; image?: string; imageUrl?: string; image_url?: string; profileImage?: string; profile_image?: string; profileImageUrl?: string; profile_image_url?: string; avatarUrl?: string; avatar_url?: string; shopName?: string; shop_name?: string; shopCode?: string; shop_code?: string; shop?: { name?: string; shopName?: string; code?: string; shopCode?: string } };
 type SessionPayload = OwnerSession & { user?: OwnerSession; owner?: OwnerSession; account?: OwnerSession; profile?: OwnerSession; data?: OwnerSession; session?: OwnerSession | { user?: OwnerSession } };
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const API_BASE = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:8080"
+).replace(/\/+$/, "");
 const LOW_STOCK_LIMIT = 10;
 
-function authToken() {
-  if (typeof window === "undefined") return null;
-  for (const key of ["pos_shop_owner_token", "pos_access_token", "access_token", "token", "jwt"]) {
-    const value = localStorage.getItem(key);
-    if (value) return value;
-  }
-  return null;
-}
 async function fetchApi<T>(path: string): Promise<T> {
-  const token = authToken();
-  const response = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: "no-store" });
-  if (!response.ok) throw new Error(`${path} (${response.status})`);
-  return response.json() as Promise<T>;
+  const token = getStoredToken();
+  console.debug(`[admin dashboard] GET ${path}`);
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    cache: "no-store",
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    let message = text;
+    try {
+      const data = JSON.parse(text) as { message?: string; error?: string; detail?: string };
+      message = data.message || data.error || data.detail || text;
+    } catch {
+      // Keep a non-JSON backend response as-is.
+    }
+    const error = new Error(`${path}: ${message || "API request failed"} (${response.status})`);
+    console.error(`[admin dashboard] GET ${path} failed`, error);
+    throw error;
+  }
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 function apiList<T>(payload: ApiList<T>): T[] { return Array.isArray(payload) ? payload : payload.content ?? payload.data ?? payload.receipts ?? []; }
 function receiptTotal(receipt: Receipt) { return Number(receipt.grandTotal ?? receipt.grand_total ?? receipt.total ?? 0); }
@@ -117,7 +135,7 @@ function normalizeOwner(payload: SessionPayload): OwnerSession {
   return payload;
 }
 function ownerFromJwt(): OwnerSession | null {
-  const token = authToken();
+  const token = getStoredToken();
   if (!token) return null;
   try {
     const encoded = token.split(".")[1];
@@ -145,7 +163,7 @@ function ownerFromStorage(): OwnerSession | null {
   return null;
 }
 async function fetchOwnerSession(): Promise<OwnerSession> {
-  const token = authToken();
+  const token = getStoredToken();
   const response = await fetch("/api/auth/session", {
     credentials: "include",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1339,8 +1357,10 @@ export default function DashboardPage() {
       if (results[2].status === "fulfilled") setStaff(apiList(results[2].value));
       if (results[3].status === "fulfilled") setTasks(apiList(results[3].value));
       if (results[4].status === "fulfilled") setOwner(results[4].value);
-      const failed = results.filter((result) => result.status === "rejected").length;
-      setApiError(failed ? `${failed} dashboard API request${failed > 1 ? "s" : ""} failed.` : null);
+      const errors = results
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason));
+      setApiError(errors.length ? errors.join("; ") : null);
       setLoading(false);
     });
     return () => { active = false; };
@@ -1560,7 +1580,7 @@ export default function DashboardPage() {
         <div className="mx-auto w-full max-w-[1850px] px-4 py-6 pb-24 md:px-6 md:pb-8 xl:px-8 2xl:py-8">
           {apiError && (
             <div className="mb-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-500">
-              {apiError} Please sign in again and confirm NEXT_PUBLIC_API_URL.
+              {apiError}
             </div>
           )}
           {/* Hero header */}

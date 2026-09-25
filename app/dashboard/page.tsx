@@ -21,6 +21,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { getStoredToken } from "@/lib/auth";
 
 type SalesRange = "daily" | "weekly" | "monthly";
 
@@ -74,32 +75,47 @@ type Receipt = {
   receipt_items?: ReceiptItem[];
 };
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const API_BASE = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:8080"
+).replace(/\/+$/, "");
 const LOW_STOCK_LIMIT = 10;
 
-function getToken() {
-  if (typeof window === "undefined") return null;
-  for (const key of [
-    "pos_shop_owner_token",
-    "pos_access_token",
-    "access_token",
-    "token",
-    "jwt",
-  ]) {
-    const token = localStorage.getItem(key);
-    if (token) return token;
-  }
-  return null;
-}
-
 async function fetchApi<T>(path: string): Promise<T> {
-  const token = getToken();
+  const token = getStoredToken();
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     cache: "no-store",
   });
-  if (!response.ok) throw new Error(`API request failed (${response.status})`);
-  return response.json() as Promise<T>;
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    let message = text;
+
+    try {
+      const data = JSON.parse(text) as {
+        message?: string;
+        error?: string;
+        detail?: string;
+      };
+      message = data.message || data.error || data.detail || text;
+    } catch {
+      // Keep a non-JSON backend response as-is.
+    }
+
+    throw new Error(
+      `${path}: ${message || "API request failed"} (${response.status})`,
+    );
+  }
+
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 function listFrom<T>(payload: T[] | { content?: T[]; data?: T[]; receipts?: T[] }): T[] {
@@ -348,7 +364,7 @@ const DashboardPage = () => {
 
       {error && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-          {error}. Please sign in again and confirm the API URL.
+          {error}
         </div>
       )}
 

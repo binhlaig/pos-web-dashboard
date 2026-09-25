@@ -5,6 +5,8 @@ const PUBLIC_PATHS = new Set([
   "/Sign_in",
   "/sign-in",
   "/auth-bin",
+  "/forgot-password",
+  "/reset-password",
 ]);
 
 function isStaticOrAuthPath(pathname: string) {

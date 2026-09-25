@@ -1335,7 +1335,7 @@ export default function LoginPage() {
                       </label>
 
                       <a
-                        href="/forgot"
+                        href="/forgot-password"
                         style={{
                           fontSize: 11.5,
                           color: accent,
@@ -1344,7 +1344,7 @@ export default function LoginPage() {
                           letterSpacing: "0.02em",
                         }}
                       >
-                        Forgot password
+                        Forgot password?
                       </a>
                     </div>
 

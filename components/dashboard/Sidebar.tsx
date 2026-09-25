@@ -7,10 +7,12 @@ import {
   AlignVerticalSpaceAround,
   BarChart3,
   Boxes,
+  CheckCheckIcon,
   ClipboardList,
   Clock1,
   LayoutDashboard,
   Package,
+  PackageIcon,
   PersonStandingIcon,
   PresentationIcon,
   ReceiptText,
@@ -54,9 +56,19 @@ const sidebarItems: SidebarItem[] = [
     icon: Package,
   },
   {
+    title: "sale",
+    href: "/dashboard/sale",
+    icon: PackageIcon,
+  },
+  {
     title: "Inventory",
     href: "/dashboard/inventory",
     icon: Boxes,
+  },
+  {
+    title:"Product Check",
+    href:"/dashboard/product/check",
+    icon: CheckCheckIcon,
   },
   {
     title: "Receipts",
@@ -79,8 +91,8 @@ const sidebarItems: SidebarItem[] = [
     icon: BarChart3,
   },
   {
-    title:"Time card",
-    href:"/timecard",
+    title: "Time card",
+    href: "/timecard",
     icon: Clock1,
   }
 
