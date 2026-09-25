@@ -1,13 +1,14 @@
 "use client";
-
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { useZxing } from "react-zxing";
 import {
   AlertCircle,
   Barcode,
   Boxes,
+  Camera,
   CheckCircle2,
   ChevronRight,
   FlaskConical,
@@ -23,13 +24,10 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-
 type Theme = "dark" | "light";
-
 type Product = {
   id: string;
   sku: string;
@@ -45,7 +43,6 @@ type Product = {
   cost?: number;
   isActive: boolean;
 };
-
 const tk = (theme: Theme) =>
   theme === "dark"
     ? {
@@ -92,14 +89,11 @@ const tk = (theme: Theme) =>
         line: "border-slate-200",
         rowHover: "hover:bg-white/70",
       };
-
 function FontImport() {
   return (
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;700;900&display=swap');
-
       * { font-family: 'DM Sans', sans-serif; }
-
       @keyframes star-blink {
         0%,100% { opacity:.2; transform: scale(.7); }
         50% { opacity:1; transform: scale(1.25); }
@@ -107,7 +101,6 @@ function FontImport() {
     `}</style>
   );
 }
-
 function NightParticles() {
   const stars = Array.from({ length: 24 }).map((_, i) => ({
     id: i,
@@ -117,7 +110,6 @@ function NightParticles() {
     delay: `${(i * 0.25) % 4}s`,
     duration: `${2.8 + (i % 4) * 0.8}s`,
   }));
-
   return (
     <div className="pointer-events-none fixed inset-0 overflow-hidden">
       {stars.map((s) => (
@@ -136,20 +128,16 @@ function NightParticles() {
     </div>
   );
 }
-
 function numberFormat(n: number) {
   return new Intl.NumberFormat().format(n || 0);
 }
-
 function formattedPrice(p?: number) {
   if (p == null) return "-";
-
   return new Intl.NumberFormat("ja-JP", {
     style: "currency",
     currency: "JPY",
   }).format(p);
 }
-
 function stockBadge(stock: number) {
   if (stock <= 0) {
     return {
@@ -157,34 +145,27 @@ function stockBadge(stock: number) {
       cls: "bg-rose-500/12 text-rose-400 border-rose-500/20",
     };
   }
-
   if (stock < 5) {
     return {
       label: "LOW",
       cls: "bg-amber-500/12 text-amber-400 border-amber-500/20",
     };
   }
-
   return {
     label: "IN",
     cls: "bg-emerald-500/12 text-emerald-400 border-emerald-500/20",
   };
 }
-
 function getImageUrl(product: Product, apiBase: string) {
   if (!product.product_image) return null;
-
   if (product.product_image.startsWith("http")) {
     return product.product_image;
   }
-
   if (product.product_image.startsWith("/")) {
     return `${apiBase}${product.product_image}`;
   }
-
   return `${apiBase}/${product.product_image}`;
 }
-
 function ProductImage({
   product,
   apiBase,
@@ -195,7 +176,6 @@ function ProductImage({
   className?: string;
 }) {
   const imageUrl = getImageUrl(product, apiBase);
-
   if (!imageUrl) {
     return (
       <div
@@ -208,7 +188,6 @@ function ProductImage({
       </div>
     );
   }
-
   return (
     <img
       src={imageUrl}
@@ -218,7 +197,6 @@ function ProductImage({
     />
   );
 }
-
 function SummaryBar({
   theme,
   products,
@@ -227,7 +205,6 @@ function SummaryBar({
   products: Product[];
 }) {
   const t = tk(theme);
-
   const inStock = products.filter((p) => p.product_quantity_amount > 0).length;
   const lowStock = products.filter(
     (p) => p.product_quantity_amount > 0 && p.product_quantity_amount < 5
@@ -237,7 +214,6 @@ function SummaryBar({
     (sum, p) => sum + (p.product_price || 0) * (p.product_quantity_amount || 0),
     0
   );
-
   const items = [
     {
       label: "Results",
@@ -270,12 +246,10 @@ function SummaryBar({
       color: "text-violet-400",
     },
   ];
-
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
       {items.map((item) => {
         const Icon = item.icon;
-
         return (
           <div
             key={item.label}
@@ -292,7 +266,6 @@ function SummaryBar({
             >
               <Icon className={cn("h-4 w-4", item.color)} />
             </span>
-
             <div className="min-w-0">
               <div
                 className={cn(
@@ -302,7 +275,6 @@ function SummaryBar({
               >
                 {item.label}
               </div>
-
               <div className={cn("truncate text-[14px] font-black", t.text)}>
                 {item.value}
               </div>
@@ -313,7 +285,6 @@ function SummaryBar({
     </div>
   );
 }
-
 function ProductRow({
   product,
   theme,
@@ -329,7 +300,6 @@ function ProductRow({
 }) {
   const t = tk(theme);
   const badge = stockBadge(product.product_quantity_amount);
-
   return (
     <motion.button
       type="button"
@@ -346,13 +316,11 @@ function ProductRow({
         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl">
           <ProductImage product={product} apiBase={apiBase} className="h-10 w-10" />
         </div>
-
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <div className={cn("truncate text-[13px] font-black", t.text)}>
               {product.product_name}
             </div>
-
             <span
               className={cn(
                 "rounded-full border px-2 py-0.5 text-[10px] font-bold",
@@ -361,14 +329,12 @@ function ProductRow({
             >
               {badge.label}
             </span>
-
             {!product.isActive ? (
               <span className="rounded-full border border-slate-500/20 bg-slate-500/10 px-2 py-0.5 text-[10px] font-bold text-slate-400">
                 INACTIVE
               </span>
             ) : null}
           </div>
-
           <div className={cn("mt-0.5 flex flex-wrap items-center gap-2 text-[11px]", t.textMuted)}>
             <span className="font-mono">{product.sku || "NO-SKU"}</span>
             <span>·</span>
@@ -384,7 +350,6 @@ function ProductRow({
             ) : null}
           </div>
         </div>
-
         <div className="hidden min-w-[100px] text-right sm:block">
           <div className={cn("text-[12px] font-black", t.text)}>
             {formattedPrice(product.product_price)}
@@ -393,13 +358,11 @@ function ProductRow({
             Stock {product.product_quantity_amount ?? 0}
           </div>
         </div>
-
         <ChevronRight className={cn("h-4 w-4", t.textSubtle)} />
       </div>
     </motion.button>
   );
 }
-
 function ProductDetailDialog({
   product,
   theme,
@@ -412,12 +375,9 @@ function ProductDetailDialog({
   onClose: () => void;
 }) {
   const t = tk(theme);
-
   if (!product) return null;
-
   const badge = stockBadge(product.product_quantity_amount);
   const imageUrl = getImageUrl(product, apiBase);
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -453,21 +413,17 @@ function ProductDetailDialog({
             >
               Product Check Detail
             </div>
-
             <h2 className={cn("mt-1 text-xl font-black", t.text)}>
               {product.product_name}
             </h2>
-
             <div className={cn("mt-1 font-mono text-[11px]", t.textMuted)}>
               {product.sku || "NO-SKU"}
             </div>
           </div>
-
           <button onClick={onClose} className={cn("rounded-xl border p-2", t.btn)}>
             <X className="h-4 w-4" />
           </button>
         </div>
-
         <div className="max-h-[72vh] overflow-y-auto p-5">
           <div className="grid gap-4 md:grid-cols-[240px_1fr]">
             <div className="relative h-[210px] overflow-hidden rounded-2xl">
@@ -479,9 +435,7 @@ function ProductDetailDialog({
                   <span className="text-xs font-bold">No Image</span>
                 </div>
               )}
-
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-
               <div className="absolute left-3 top-3">
                 <span
                   className={cn(
@@ -498,7 +452,6 @@ function ProductDetailDialog({
                 </span>
               </div>
             </div>
-
             <div className="grid gap-2 sm:grid-cols-2">
               {[
                 {
@@ -558,7 +511,6 @@ function ProductDetailDialog({
                     <item.icon className="h-3 w-3" />
                     {item.label}
                   </div>
-
                   <div className={cn("break-words text-[13px] font-black", t.text)}>
                     {item.value}
                   </div>
@@ -566,7 +518,6 @@ function ProductDetailDialog({
               ))}
             </div>
           </div>
-
           {product.note ? (
             <div className={cn("mt-4 rounded-xl border p-3", t.statChip)}>
               <div
@@ -577,13 +528,11 @@ function ProductDetailDialog({
               >
                 Note
               </div>
-
               <div className={cn("whitespace-pre-wrap text-[12px] leading-6", t.textMuted)}>
                 {product.note}
               </div>
             </div>
           ) : null}
-
           {product.product_image ? (
             <div className={cn("mt-4 text-[10px]", t.textSubtle)}>
               Image Path:{" "}
@@ -591,7 +540,6 @@ function ProductDetailDialog({
             </div>
           ) : null}
         </div>
-
         <div
           className="flex flex-wrap justify-end gap-2 border-t px-5 py-4"
           style={{
@@ -610,56 +558,156 @@ function ProductDetailDialog({
     </motion.div>
   );
 }
-
+function ProductBarcodeScannerDialog({
+  theme,
+  onScan,
+  onClose,
+}: {
+  theme: Theme;
+  onScan: (barcode: string) => void;
+  onClose: () => void;
+}) {
+  const t = tk(theme);
+  const scanLockedRef = React.useRef(false);
+  const [paused, setPaused] = React.useState(false);
+  const [cameraError, setCameraError] = React.useState("");
+  const { ref } = useZxing({
+    paused,
+    formats: ["retail_codes", "code_128", "qr_code"],
+    constraints: {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    },
+    trySkew: true,
+    timeBetweenDecodingAttempts: 300,
+    onDecodeResult(result) {
+      const barcode = result.rawValue?.trim();
+      if (!barcode || scanLockedRef.current) return;
+      scanLockedRef.current = true;
+      setPaused(true);
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate(120);
+      }
+      onScan(barcode);
+    },
+    onError(error) {
+      console.error("Barcode camera error:", error);
+      setCameraError((current) =>
+        current ||
+        "Camera ဖွင့်မရပါ။ Browser Settings မှ Camera permission ကို Allow လုပ်ပေးပါ။"
+      );
+    },
+  });
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[70] flex flex-col bg-black"
+    >
+      <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white sm:px-6">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-black">
+            <Camera className="h-4 w-4 text-emerald-400" />
+            Product Barcode Scanner
+          </div>
+          <p className="mt-0.5 truncate text-xs text-white/60">
+            Barcode ကို camera ဘောင်အတွင်း အလျားလိုက်ထားပါ
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/20"
+        >
+          <X className="mr-1.5 inline h-4 w-4" />
+          Close
+        </button>
+      </header>
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <video
+          ref={ref}
+          autoPlay
+          muted
+          playsInline
+          className="h-full w-full object-cover"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-black/15" />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-36 w-[86%] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-2xl border-[3px] border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.42)]">
+          <div className="absolute left-4 right-4 top-1/2 h-0.5 -translate-y-1/2 bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.9)]" />
+        </div>
+        <div className="absolute inset-x-4 bottom-5 flex justify-center">
+          <div className="rounded-full border border-white/15 bg-black/60 px-4 py-2 text-center text-xs font-bold text-white backdrop-blur-xl">
+            EAN-13 · EAN-8 · UPC · Code 128 · QR
+          </div>
+        </div>
+      </div>
+      {cameraError ? (
+        <div className="border-t border-red-400/20 bg-red-600 px-4 py-3 text-center text-sm font-bold text-white">
+          <AlertCircle className="mr-2 inline h-4 w-4" />
+          {cameraError}
+        </div>
+      ) : (
+        <div className={cn("border-t px-4 py-3 text-center text-xs font-bold", t.line, "bg-black text-white/70")}>
+          Scan ပြီးသည်နှင့် product stock ကို အလိုအလျောက်ရှာပေးပါမည်။
+        </div>
+      )}
+    </motion.div>
+  );
+}
 export default function ProductCheckPage() {
   const { resolvedTheme, setTheme: setNextTheme } = useTheme();
-
   const [theme, setTheme] = React.useState<Theme>("dark");
   const [q, setQ] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [products, setProducts] = React.useState<Product[]>([]);
   const [selected, setSelected] = React.useState<Product | null>(null);
-
+  const [scannerOpen, setScannerOpen] = React.useState(false);
   const apiBase =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
-
   const t = tk(theme);
-
   React.useEffect(() => {
     const next: Theme = resolvedTheme === "light" ? "light" : "dark";
     setTheme(next);
   }, [resolvedTheme]);
-
+  function getAuthHeaders(): HeadersInit {
+    if (typeof window === "undefined") return {};
+    const token =
+      localStorage.getItem("pos_shop_owner_token") ||
+      localStorage.getItem("pos_access_token") ||
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("jwt");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
   async function handleSearch(e?: React.FormEvent, overrideQuery?: string) {
     if (e) e.preventDefault();
-
     const searchValue = overrideQuery ?? q;
-
     setLoading(true);
     setSelected(null);
-
     try {
       const url =
         searchValue.trim().length > 0
           ? `${apiBase}/api/products?q=${encodeURIComponent(searchValue.trim())}`
           : `${apiBase}/api/products`;
-
-      const res = await fetch(url, { cache: "no-store" });
-
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         const msg = data?.message || `Search failed (status ${res.status})`;
-
         toast.error(msg);
         setProducts([]);
         return;
       }
-
       const data = (await res.json()) as Product[] | Product;
       const list = Array.isArray(data) ? data : [data];
-
       setProducts(list);
-
       if (list.length === 0) {
         toast.info("Product မတွေ့ပါ");
       } else if (list.length === 1) {
@@ -673,19 +721,21 @@ export default function ProductCheckPage() {
       setLoading(false);
     }
   }
-
+  async function handleBarcodeScan(barcode: string) {
+    setScannerOpen(false);
+    setQ(barcode);
+    toast.success(`Barcode scanned: ${barcode}`);
+    await handleSearch(undefined, barcode);
+  }
   function setTest(value: string) {
     setQ(value);
     void handleSearch(undefined, value);
   }
-
   return (
     <>
       <FontImport />
-
       <div className={cn("relative min-h-screen transition-colors duration-500", t.root)}>
         {theme === "dark" && <NightParticles />}
-
         <div className="pointer-events-none fixed inset-0 overflow-hidden">
           <div
             className={cn(
@@ -693,14 +743,12 @@ export default function ProductCheckPage() {
               t.glow1
             )}
           />
-
           <div
             className={cn(
               "absolute -bottom-20 right-[-10%] h-[500px] w-[500px] rounded-full blur-[140px]",
               t.glow2
             )}
           />
-
           <div
             className={cn(
               "absolute left-1/2 top-1/2 h-[400px] w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[160px]",
@@ -708,7 +756,15 @@ export default function ProductCheckPage() {
             )}
           />
         </div>
-
+        <AnimatePresence>
+          {scannerOpen ? (
+            <ProductBarcodeScannerDialog
+              theme={theme}
+              onScan={(barcode) => void handleBarcodeScan(barcode)}
+              onClose={() => setScannerOpen(false)}
+            />
+          ) : null}
+        </AnimatePresence>
         <AnimatePresence>
           {selected ? (
             <ProductDetailDialog
@@ -719,7 +775,6 @@ export default function ProductCheckPage() {
             />
           ) : null}
         </AnimatePresence>
-
         <main className="relative z-10 mx-auto max-w-[1500px] px-4 py-5 md:px-6 lg:px-8">
           <section className="mb-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -733,7 +788,6 @@ export default function ProductCheckPage() {
                   <PackageSearch className="h-3.5 w-3.5" />
                   Product Check
                 </span>
-
                 <span
                   className={cn(
                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
@@ -743,7 +797,6 @@ export default function ProductCheckPage() {
                   <Search className="h-3.5 w-3.5" />
                   SKU / Barcode / Name
                 </span>
-
                 <span
                   className={cn(
                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
@@ -754,7 +807,6 @@ export default function ProductCheckPage() {
                   Test Tools Ready
                 </span>
               </div>
-
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -770,7 +822,6 @@ export default function ProductCheckPage() {
                   )}
                   {theme === "dark" ? "Day" : "Night"}
                 </button>
-
                 <button
                   type="button"
                   onClick={() => handleSearch()}
@@ -782,18 +833,15 @@ export default function ProductCheckPage() {
                 </button>
               </div>
             </div>
-
             <SummaryBar theme={theme} products={products} />
           </section>
-
           <section className="mb-3">
             <form
               onSubmit={(e) => handleSearch(e)}
-              className="grid gap-3 xl:grid-cols-[1fr_auto] xl:items-center"
+              className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"
             >
               <div className="relative">
                 <Search className={cn("absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2", t.textSubtle)} />
-
                 <Input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
@@ -801,7 +849,18 @@ export default function ProductCheckPage() {
                   className={cn("h-10 rounded-xl pl-10 text-[12px]", t.input)}
                 />
               </div>
-
+              <button
+                type="button"
+                onClick={() => setScannerOpen(true)}
+                disabled={loading}
+                className={cn(
+                  "rounded-xl border px-4 py-2.5 text-[12px] font-black",
+                  t.btn
+                )}
+              >
+                <Camera className="mr-2 inline h-4 w-4" />
+                Camera Scan
+              </button>
               <button
                 type="submit"
                 disabled={loading}
@@ -811,7 +870,6 @@ export default function ProductCheckPage() {
                 {loading ? "Searching..." : "Search"}
               </button>
             </form>
-
             <div className="mt-3 flex flex-wrap gap-2">
               {[
                 { label: "Test SKU", value: "SKU-1001" },
@@ -831,7 +889,6 @@ export default function ProductCheckPage() {
               ))}
             </div>
           </section>
-
           <section>
             {loading ? (
               <div className="p-10 text-center">
@@ -841,11 +898,9 @@ export default function ProductCheckPage() {
             ) : products.length === 0 ? (
               <div className="p-10 text-center">
                 <PackageSearch className={cn("mx-auto mb-4 h-12 w-12", t.textMuted)} />
-
                 <div className={cn("text-xl font-black", t.text)}>
                   Product result မရှိသေးပါ
                 </div>
-
                 <div className={cn("mx-auto mt-2 max-w-xl text-sm", t.textMuted)}>
                   SKU / Barcode / Product Name ထည့်ပြီး search နှိပ်ပါ။
                 </div>
