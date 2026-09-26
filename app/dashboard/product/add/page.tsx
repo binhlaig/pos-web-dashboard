@@ -1900,6 +1900,11 @@ export default function ProductCreatePage() {
   const [cropping, setCropping] = useState(false);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [productCameraOpen, setProductCameraOpen] = useState(false);
+  const [bulkBarcodeRowId, setBulkBarcodeRowId] = useState<string | null>(null);
+  const [bulkImageRowId, setBulkImageRowId] = useState<string | null>(null);
+  const [bulkImageProcessingIds, setBulkImageProcessingIds] = useState<
+    Set<string>
+  >(new Set());
 
   const [suggestion, setSuggestion] = useState<AISuggestion | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -2077,8 +2082,14 @@ export default function ProductCreatePage() {
   }
 
   function handleBarcodeScan(barcode: string) {
-    setField("barcode", barcode);
+    if (bulkBarcodeRowId) {
+      setBulkField(bulkBarcodeRowId, "barcode", barcode);
+    } else {
+      setField("barcode", barcode);
+    }
+
     setBarcodeScannerOpen(false);
+    setBulkBarcodeRowId(null);
     toast.success(`Barcode ${barcode} ထည့်ပြီးပါပြီ ✅`);
   }
 
@@ -2195,30 +2206,67 @@ export default function ProductCreatePage() {
     );
   }
 
-  function applyBulkImage(rowId: string, file?: File | null) {
+  async function applyBulkImage(rowId: string, file?: File | null) {
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
+    const looksLikeImage =
+      file.type.startsWith("image/") ||
+      /\.(heic|heif|png|webp|gif|jpe?g)$/i.test(file.name);
+
+    if (!looksLikeImage) {
       toast.error("Image file ပဲရွေးပါ");
       return;
     }
 
-    setBulkRows((prev) =>
-      prev.map((row) => {
-        if (row.rowId !== rowId) return row;
-
-        if (row.image_preview) URL.revokeObjectURL(row.image_preview);
-
-        return {
-          ...row,
-          image_file: file,
-          image_preview: URL.createObjectURL(file),
-          image_path: "",
-          status: "idle",
-          error: null,
-        };
-      }),
+    const toastId = toast.loading(
+      isHeicImage(file)
+        ? "Bulk HEIC image ကို JPEG ပြောင်းနေပါသည်..."
+        : "Bulk image ကိုပြင်ဆင်နေပါသည်...",
     );
+
+    setBulkImageProcessingIds((current) => {
+      const next = new Set(current);
+      next.add(rowId);
+      return next;
+    });
+
+    try {
+      const normalizedFile = await normalizeImageForUpload(file);
+
+      setBulkRows((prev) =>
+        prev.map((row) => {
+          if (row.rowId !== rowId) return row;
+
+          if (row.image_preview) URL.revokeObjectURL(row.image_preview);
+
+          return {
+            ...row,
+            image_file: normalizedFile,
+            image_preview: URL.createObjectURL(normalizedFile),
+            image_path: "",
+            status: "idle",
+            error: null,
+          };
+        }),
+      );
+
+      toast.success(
+        `Image ready (${Math.max(1, Math.round(normalizedFile.size / 1024))} KB) ✅`,
+        { id: toastId },
+      );
+    } catch (error) {
+      console.error("Bulk product image processing error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Bulk image ပြင်ဆင်မရပါ",
+        { id: toastId },
+      );
+    } finally {
+      setBulkImageProcessingIds((current) => {
+        const next = new Set(current);
+        next.delete(rowId);
+        return next;
+      });
+    }
   }
 
   function clearBulkImage(rowId: string) {
@@ -2238,6 +2286,22 @@ export default function ProductCreatePage() {
         };
       }),
     );
+  }
+
+  function generateBulkBarcode(rowId: string) {
+    setBulkRows((prev) =>
+      prev.map((row) =>
+        row.rowId === rowId
+          ? {
+              ...row,
+              barcode: generateBarcodeString(row.sku || row.product_name),
+              status: "idle",
+              error: null,
+            }
+          : row,
+      ),
+    );
+    toast.success("Bulk row EAN-13 barcode generated ✅");
   }
 
   function localAIFillBulkRow(rowId: string) {
@@ -2448,6 +2512,11 @@ export default function ProductCreatePage() {
   }
 
   async function submitBulk() {
+    if (bulkImageProcessingIds.size > 0) {
+      toast.info("Bulk images ပြင်ဆင်ပြီးအောင် ခဏစောင့်ပါ");
+      return;
+    }
+
     if (status === "loading") {
       toast("Checking login...");
       return;
@@ -2774,7 +2843,10 @@ export default function ProductCreatePage() {
           <ProductBarcodeScanner
             theme={theme}
             onScan={handleBarcodeScan}
-            onClose={() => setBarcodeScannerOpen(false)}
+            onClose={() => {
+              setBarcodeScannerOpen(false);
+              setBulkBarcodeRowId(null);
+            }}
           />
         ) : null}
       </AnimatePresence>
@@ -2783,14 +2855,35 @@ export default function ProductCreatePage() {
         {productCameraOpen ? (
           <ProductCameraCapture
             onCapture={(file) => {
+              const targetRowId = bulkImageRowId;
               setProductCameraOpen(false);
-              void applyImage(file);
+              setBulkImageRowId(null);
+
+              if (targetRowId) {
+                void applyBulkImage(targetRowId, file);
+              } else {
+                void applyImage(file);
+              }
             }}
             onFallback={() => {
+              const targetRowId = bulkImageRowId;
               setProductCameraOpen(false);
-              window.setTimeout(() => cameraImageRef.current?.click(), 50);
+              setBulkImageRowId(null);
+
+              window.setTimeout(() => {
+                if (targetRowId) {
+                  document
+                    .getElementById(`bulk-camera-${targetRowId}`)
+                    ?.click();
+                } else {
+                  cameraImageRef.current?.click();
+                }
+              }, 50);
             }}
-            onClose={() => setProductCameraOpen(false)}
+            onClose={() => {
+              setProductCameraOpen(false);
+              setBulkImageRowId(null);
+            }}
           />
         ) : null}
       </AnimatePresence>
@@ -3764,18 +3857,20 @@ export default function ProductCreatePage() {
                 <button
                   type="button"
                   onClick={submitBulk}
-                  disabled={bulkSaving}
+                  disabled={bulkSaving || bulkImageProcessingIds.size > 0}
                   className={cn(
                     "flex h-10 items-center gap-2 rounded-xl px-5 text-[13px] font-bold transition-all",
                     t.btnPrimary,
                   )}
                 >
-                  {bulkSaving ? (
+                  {bulkSaving || bulkImageProcessingIds.size > 0 ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <UploadCloud className="h-4 w-4" />
                   )}
-                  Submit All
+                  {bulkImageProcessingIds.size > 0
+                    ? "Preparing Images..."
+                    : "Submit All"}
                 </button>
               </div>
             </div>
@@ -3867,6 +3962,9 @@ export default function ProductCreatePage() {
                   {bulkRows.map((row, index) => {
                     const imagePreview =
                       row.image_preview || buildImagePreviewUrl(row.image_path);
+                    const imageProcessing = bulkImageProcessingIds.has(
+                      row.rowId,
+                    );
 
                     return (
                       <tr key={row.rowId}>
@@ -3911,7 +4009,14 @@ export default function ProductCreatePage() {
                                 t.previewCard,
                               )}
                             >
-                              {imagePreview ? (
+                              {imageProcessing ? (
+                                <Loader2
+                                  className={cn(
+                                    "h-5 w-5 animate-spin",
+                                    t.textMuted,
+                                  )}
+                                />
+                              ) : imagePreview ? (
                                 <img
                                   src={imagePreview}
                                   alt="product"
@@ -3925,29 +4030,63 @@ export default function ProductCreatePage() {
                             </div>
 
                             <div className="min-w-0 flex-1">
-                              <label
-                                className={cn(
-                                  "flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-[11px] font-bold transition-all",
-                                  t.btn,
-                                )}
-                              >
-                                <Upload className="h-4 w-4" />
-                                {row.image_file
-                                  ? "Change Image"
-                                  : "Choose Image"}
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <label
+                                  className={cn(
+                                    "flex h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl border px-2 text-[10px] font-bold transition-all",
+                                    imageProcessing &&
+                                      "pointer-events-none opacity-50",
+                                    t.btn,
+                                  )}
+                                >
+                                  <Upload className="h-3.5 w-3.5" />
+                                  {row.image_file ? "Change" : "Choose"}
+                                  <input
+                                    type="file"
+                                    hidden
+                                    accept="image/*,.heic,.heif"
+                                    disabled={imageProcessing}
+                                    onChange={(e) => {
+                                      void applyBulkImage(
+                                        row.rowId,
+                                        e.target.files?.[0] || null,
+                                      );
+                                      e.currentTarget.value = "";
+                                    }}
+                                  />
+                                </label>
+
+                                <button
+                                  type="button"
+                                  disabled={imageProcessing}
+                                  onClick={() => {
+                                    setBulkImageRowId(row.rowId);
+                                    setProductCameraOpen(true);
+                                  }}
+                                  className={cn(
+                                    "flex h-11 items-center justify-center gap-1.5 rounded-xl px-2 text-[10px] font-bold transition-all disabled:opacity-50",
+                                    t.btnPrimary,
+                                  )}
+                                >
+                                  <Camera className="h-3.5 w-3.5" />
+                                  Camera
+                                </button>
+
                                 <input
+                                  id={`bulk-camera-${row.rowId}`}
                                   type="file"
                                   hidden
                                   accept="image/*"
+                                  capture="environment"
                                   onChange={(e) => {
-                                    applyBulkImage(
+                                    void applyBulkImage(
                                       row.rowId,
                                       e.target.files?.[0] || null,
                                     );
                                     e.currentTarget.value = "";
                                   }}
                                 />
-                              </label>
+                              </div>
 
                               {row.image_file ? (
                                 <div
@@ -3956,7 +4095,12 @@ export default function ProductCreatePage() {
                                     t.textSubtle,
                                   )}
                                 >
-                                  {row.image_file.name}
+                                  {row.image_file.name} ·{" "}
+                                  {Math.max(
+                                    1,
+                                    Math.round(row.image_file.size / 1024),
+                                  )}{" "}
+                                  KB
                                 </div>
                               ) : (
                                 <Input
@@ -3981,8 +4125,9 @@ export default function ProductCreatePage() {
                               <button
                                 type="button"
                                 onClick={() => clearBulkImage(row.rowId)}
+                                disabled={imageProcessing}
                                 className={cn(
-                                  "grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition-all",
+                                  "grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition-all disabled:opacity-50",
                                   theme === "dark"
                                     ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
                                     : "border-rose-200 bg-rose-50 text-rose-600",
@@ -4063,16 +4208,57 @@ export default function ProductCreatePage() {
                         </td>
 
                         <td data-label="Barcode" className="px-3 py-3 align-top">
-                          <Input
-                            value={row.barcode}
-                            onChange={(e) =>
-                              setBulkField(row.rowId, "barcode", e.target.value)
-                            }
-                            className={cn(
-                              "h-10 min-w-[155px] rounded-xl",
-                              t.input,
-                            )}
-                          />
+                          <div className="min-w-[250px] space-y-1.5">
+                            <Input
+                              value={row.barcode}
+                              onChange={(e) =>
+                                setBulkField(
+                                  row.rowId,
+                                  "barcode",
+                                  e.target.value,
+                                )
+                              }
+                              inputMode="numeric"
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder="EAN / UPC / Code 128"
+                              className={cn(
+                                "barcode-mobile-input h-11 rounded-xl font-mono text-[13px]",
+                                t.input,
+                              )}
+                            />
+
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => generateBulkBarcode(row.rowId)}
+                                className={cn(
+                                  "flex h-10 items-center justify-center gap-1.5 rounded-xl border px-2 text-[10px] font-bold",
+                                  t.btn,
+                                )}
+                                title="Generate valid EAN-13"
+                              >
+                                <Wand2 className="h-3.5 w-3.5" />
+                                Generate
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBulkBarcodeRowId(row.rowId);
+                                  setBarcodeScannerOpen(true);
+                                }}
+                                className={cn(
+                                  "flex h-10 items-center justify-center gap-1.5 rounded-xl px-2 text-[10px] font-bold",
+                                  t.btnPrimary,
+                                )}
+                                title="Scan product barcode"
+                              >
+                                <ScanLine className="h-3.5 w-3.5" />
+                                Scan
+                              </button>
+                            </div>
+                          </div>
                         </td>
 
                         <td data-label="Category" className="px-3 py-3 align-top">
