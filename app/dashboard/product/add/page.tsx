@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import JsBarcode from "jsbarcode";
+import { useZxing } from "react-zxing";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +48,8 @@ import {
   Trash2,
   UploadCloud,
   Plus,
+  Camera,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -948,10 +951,24 @@ function generateSku(name: string) {
 }
 
 function generateBarcodeString(seed = "") {
-  const base = String(Date.now()).slice(-9);
-  const extra = String(Math.floor(100 + Math.random() * 900));
-  const cleaned = seed.replace(/\D/g, "").slice(0, 4);
-  return `${cleaned}${base}${extra}`.slice(0, 13);
+  // 20–29 prefixes are commonly used for internal/store EAN-13 numbers.
+  // This creates 12 digits first, then calculates the real EAN-13 check digit.
+  const seedDigits = seed.replace(/\D/g, "").slice(-3);
+  const entropy = `${seedDigits}${Date.now()}${Math.floor(
+    Math.random() * 10000,
+  )}`;
+  const firstTwelve = `20${entropy.slice(-10).padStart(10, "0")}`;
+
+  const weightedTotal = firstTwelve
+    .split("")
+    .reduce(
+      (total, digit, index) =>
+        total + Number(digit) * (index % 2 === 0 ? 1 : 3),
+      0,
+    );
+  const checkDigit = (10 - (weightedTotal % 10)) % 10;
+
+  return `${firstTwelve}${checkDigit}`;
 }
 
 function inferCategory(name: string) {
@@ -1404,6 +1421,121 @@ function ProductModuleFields({
   );
 }
 
+function ProductBarcodeScanner({
+  theme,
+  onScan,
+  onClose,
+}: {
+  theme: Theme;
+  onScan: (barcode: string) => void;
+  onClose: () => void;
+}) {
+  const t = tk(theme);
+  const scanLockedRef = useRef(false);
+  const [paused, setPaused] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+
+  const { ref } = useZxing({
+    paused,
+    formats: ["retail_codes", "code_128", "qr_code"],
+    constraints: {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    },
+    trySkew: true,
+    timeBetweenDecodingAttempts: 300,
+    onDecodeResult(result) {
+      const barcode = result.rawValue?.trim();
+      if (!barcode || scanLockedRef.current) return;
+
+      scanLockedRef.current = true;
+      setPaused(true);
+
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate(100);
+      }
+
+      onScan(barcode);
+    },
+    onError(error) {
+      console.error("Product barcode camera error:", error);
+      setCameraError(
+        "Camera ဖွင့်မရပါ။ Safari/Chrome Settings မှ Camera permission ကို Allow လုပ်ပါ။",
+      );
+    },
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="barcode-scanner-screen fixed inset-0 z-[100] flex flex-col bg-black"
+    >
+      <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white sm:px-6">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-black">
+            <Camera className="h-5 w-5 text-emerald-400" />
+            Existing Product Barcode Scan
+          </div>
+          <p className="mt-1 truncate text-xs text-white/60">
+            Product ပေါ်က barcode ကို frame အတွင်း အလျားလိုက်ထားပါ
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 hover:bg-white/20"
+          aria-label="Close barcode scanner"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </header>
+
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <video
+          ref={ref}
+          autoPlay
+          muted
+          playsInline
+          className="h-full w-full object-cover"
+        />
+
+        <div className="pointer-events-none absolute inset-0 bg-black/10" />
+        <div className="barcode-scan-frame pointer-events-none absolute left-1/2 top-1/2 h-40 w-[88%] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border-[3px] border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.52),0_0_35px_rgba(52,211,153,0.35)]">
+          <motion.div
+            animate={{ y: [14, 142, 14] }}
+            transition={{ duration: 2.1, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute left-5 right-5 top-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_12px_rgba(239,68,68,1)]"
+          />
+        </div>
+
+        <div className="absolute inset-x-4 bottom-6 flex justify-center">
+          <div className="rounded-full border border-white/15 bg-black/60 px-4 py-2 text-center text-xs font-bold text-white backdrop-blur-xl">
+            EAN-13 · EAN-8 · UPC · CODE 128 · QR
+          </div>
+        </div>
+      </div>
+
+      {cameraError ? (
+        <div className="border-t border-rose-400/20 bg-rose-600 px-4 py-3 text-center text-sm font-bold text-white">
+          <AlertCircle className="mr-2 inline h-4 w-4" />
+          {cameraError}
+        </div>
+      ) : (
+        <div className={cn("border-t border-white/10 bg-black px-4 py-3 text-center text-xs font-bold text-white/70", t.textMuted)}>
+          Scan အောင်မြင်လျှင် barcode input ထဲ အလိုအလျောက်ထည့်ပေးပါမည်။
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 export default function ProductCreatePage() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -1465,6 +1597,7 @@ export default function ProductCreatePage() {
   const [catLoading, setCatLoading] = useState(false);
   const [aiFilling, setAiFilling] = useState(false);
   const [cropping, setCropping] = useState(false);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
 
   const [suggestion, setSuggestion] = useState<AISuggestion | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -1610,7 +1743,13 @@ export default function ProductCreatePage() {
   function generateBarcodeNow() {
     const bc = generateBarcodeString(form.sku || form.product_name);
     setField("barcode", bc);
-    toast.success("Barcode generated ✅");
+    toast.success("Valid EAN-13 barcode generated ✅");
+  }
+
+  function handleBarcodeScan(barcode: string) {
+    setField("barcode", barcode);
+    setBarcodeScannerOpen(false);
+    toast.success(`Barcode ${barcode} ထည့်ပြီးပါပြီ ✅`);
   }
 
   async function loadCategories() {
@@ -2216,6 +2355,48 @@ export default function ProductCreatePage() {
   return (
     <div className={cn("product-create-ipad relative min-h-full py-5", t.root)}>
       <style jsx global>{`
+        .barcode-scanner-screen {
+          height: 100vh;
+          height: 100dvh;
+          padding-top: env(safe-area-inset-top);
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+        .barcode-mobile-input {
+          font-size: 16px !important;
+        }
+        @media (min-width: 768px) and (max-width: 1279px) {
+          .barcode-action-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 10px;
+            align-items: end;
+          }
+          .barcode-action-grid button {
+            min-height: 48px;
+          }
+          .barcode-scan-frame {
+            width: min(78vw, 760px);
+            height: 190px;
+          }
+        }
+        @media (max-width: 767px) {
+          .barcode-action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .barcode-action-grid .barcode-field-wrap {
+            grid-column: 1 / -1;
+          }
+          .barcode-action-grid button {
+            min-height: 48px;
+            width: 100%;
+          }
+          .barcode-scan-frame {
+            width: 88vw;
+            height: 160px;
+          }
+        }
         @media (min-width: 768px) and (max-width: 1279px) and (orientation: landscape) {
           .product-create-ipad { padding: 12px; }
           .product-create-ipad > .space-y-5 > :not(:first-child) { margin-top: 12px; }
@@ -2255,6 +2436,17 @@ export default function ProductCreatePage() {
           .product-create-ipad .bulk-table button { min-height: 44px; }
         }
       `}</style>
+
+      <AnimatePresence>
+        {barcodeScannerOpen ? (
+          <ProductBarcodeScanner
+            theme={theme}
+            onScan={handleBarcodeScan}
+            onClose={() => setBarcodeScannerOpen(false)}
+          />
+        ) : null}
+      </AnimatePresence>
+
       <div className="mx-auto max-w-7xl space-y-5">
         <motion.div
           initial={{ opacity: 0, y: -14 }}
@@ -2413,7 +2605,7 @@ export default function ProductCreatePage() {
                       )}
                     >
                       <ScanLine className="h-4 w-4" />
-                      Barcode Generate
+                      AI Barcode Generate
                     </button>
 
                     <button
@@ -2700,22 +2892,54 @@ export default function ProductCreatePage() {
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-1.5">
-                      <Label
+                    <div className="barcode-action-grid md:col-span-2">
+                      <div className="barcode-field-wrap space-y-1.5">
+                        <Label
+                          className={cn(
+                            "text-[11px] font-bold uppercase tracking-wider",
+                            t.textSubtle,
+                          )}
+                        >
+                          Barcode
+                        </Label>
+
+                        <Input
+                          value={form.barcode}
+                          onChange={(e) => setField("barcode", e.target.value)}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          spellCheck={false}
+                          placeholder="8852121212333"
+                          className={cn(
+                            "barcode-mobile-input h-12 rounded-xl font-mono",
+                            t.input,
+                          )}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={generateBarcodeNow}
                         className={cn(
-                          "text-[11px] font-bold uppercase tracking-wider",
-                          t.textSubtle,
+                          "flex h-12 items-center justify-center gap-2 rounded-xl border px-3 text-[12px] font-bold transition-all",
+                          t.btn,
                         )}
                       >
-                        Barcode
-                      </Label>
+                        <Wand2 className="h-4 w-4" />
+                        AI Generate
+                      </button>
 
-                      <Input
-                        value={form.barcode}
-                        onChange={(e) => setField("barcode", e.target.value)}
-                        placeholder="8852121212333"
-                        className={cn("h-10 rounded-xl", t.input)}
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setBarcodeScannerOpen(true)}
+                        className={cn(
+                          "flex h-12 items-center justify-center gap-2 rounded-xl px-3 text-[12px] font-bold transition-all",
+                          t.btnPrimary,
+                        )}
+                      >
+                        <Camera className="h-4 w-4" />
+                        Camera Scan
+                      </button>
                     </div>
 
                     <div className="space-y-1.5">
