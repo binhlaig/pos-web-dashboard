@@ -1074,6 +1074,85 @@ function localAIFill(productName: string): AISuggestion {
   };
 }
 
+function isHeicImage(file: File) {
+  return (
+    /image\/(heic|heif)/i.test(file.type) ||
+    /\.(heic|heif)$/i.test(file.name)
+  );
+}
+
+async function normalizeImageForUpload(file: File): Promise<File> {
+  if (file.size > 30 * 1024 * 1024) {
+    throw new Error("Image size 30MB ထက်မကျော်ရပါ");
+  }
+
+  let sourceBlob: Blob = file;
+
+  // iPad/iPhone photo library က HEIC/HEIF ပြန်ပေးနိုင်သောကြောင့်
+  // backend upload မလုပ်မီ browser ပေါ်မှာ JPEG ပြောင်းမည်။
+  if (isHeicImage(file)) {
+    const { default: heic2any } = await import("heic2any");
+    const converted = await heic2any({
+      blob: file,
+      toType: "image/jpeg",
+      quality: 0.88,
+    });
+    sourceBlob = Array.isArray(converted) ? converted[0] : converted;
+  }
+
+  const objectUrl = URL.createObjectURL(sourceBlob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("Image decode မလုပ်နိုင်ပါ"));
+      element.src = objectUrl;
+    });
+
+    // Product image အတွက် 1200px လုံလောက်ပြီး Spring multipart limit ကို
+    // မကျော်လွယ်အောင် iPad 12MP/48MP photo ကို လျှော့မည်။
+    const maxSide = 1200;
+    const originalWidth = image.naturalWidth || image.width;
+    const originalHeight = image.naturalHeight || image.height;
+
+    if (!originalWidth || !originalHeight) {
+      throw new Error("Image width/height မမှန်ပါ");
+    }
+
+    const scale = Math.min(1, maxSide / Math.max(originalWidth, originalHeight));
+    const targetWidth = Math.max(1, Math.round(originalWidth * scale));
+    const targetHeight = Math.max(1, Math.round(originalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas unavailable");
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, targetWidth, targetHeight);
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    const jpegBlob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.78),
+    );
+
+    if (!jpegBlob) throw new Error("JPEG conversion failed");
+
+    const cleanName =
+      file.name.replace(/\.(heic|heif|png|webp|jpe?g)$/i, "") ||
+      `ipad-product-${Date.now()}`;
+
+    return new File([jpegBlob], `${cleanName}.jpg`, {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 async function cropImageToSquare(file: File): Promise<File> {
   const dataUrl = await new Promise<string>((res, rej) => {
     const r = new FileReader();
@@ -1421,6 +1500,227 @@ function ProductModuleFields({
   );
 }
 
+function ProductCameraCapture({
+  onCapture,
+  onFallback,
+  onClose,
+}: {
+  onCapture: (file: File) => void;
+  onFallback: () => void;
+  onClose: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">(
+    "environment",
+  );
+  const [cameraStarting, setCameraStarting] = useState(true);
+  const [cameraError, setCameraError] = useState("");
+
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }
+
+  async function startCamera(mode: "environment" | "user") {
+    stopCamera();
+    setCameraStarting(true);
+    setCameraError("");
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("ဒီ browser မှာ live camera API မရှိပါ");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: mode },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (error) {
+      console.error("Product photo camera error:", error);
+      setCameraError(
+        window.isSecureContext
+          ? "Camera permission ကို Allow လုပ်ပါ။ မရပါက Device Camera ကိုသုံးပါ။"
+          : "Live camera အတွက် HTTPS လိုအပ်ပါသည်။ Device Camera ကိုသုံးနိုင်ပါသည်။",
+      );
+    } finally {
+      setCameraStarting(false);
+    }
+  }
+
+  useEffect(() => {
+    void startCamera(facingMode);
+    return stopCamera;
+    // facingMode ပြောင်းတိုင်း camera stream အသစ်စမည်။
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facingMode]);
+
+  function switchCamera() {
+    setFacingMode((current) =>
+      current === "environment" ? "user" : "environment",
+    );
+  }
+
+  function takePhoto() {
+    const video = videoRef.current;
+
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      toast.error("Camera အဆင်သင့်မဖြစ်သေးပါ");
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      toast.error("Photo capture မလုပ်နိုင်ပါ");
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          toast.error("Photo capture မလုပ်နိုင်ပါ");
+          return;
+        }
+
+        const file = new File([blob], `product-camera-${Date.now()}.jpg`, {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        });
+
+        stopCamera();
+        onCapture(file);
+      },
+      "image/jpeg",
+      0.9,
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="product-camera-screen fixed inset-0 z-[110] flex flex-col bg-black"
+    >
+      <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white sm:px-6">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-black">
+            <Camera className="h-5 w-5 text-blue-400" />
+            Product Photo Camera
+          </div>
+          <p className="mt-1 text-xs text-white/60">
+            iPad · Android · Windows tablet
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            stopCamera();
+            onClose();
+          }}
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/10 hover:bg-white/20"
+          aria-label="Close product camera"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </header>
+
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className={cn(
+            "h-full w-full object-contain",
+            facingMode === "user" && "-scale-x-100",
+          )}
+        />
+
+        {cameraStarting ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white">
+            <div className="text-center">
+              <Loader2 className="mx-auto h-9 w-9 animate-spin text-blue-400" />
+              <p className="mt-3 text-sm font-bold">Camera starting...</p>
+            </div>
+          </div>
+        ) : null}
+
+        {cameraError ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6 text-white">
+            <div className="max-w-md text-center">
+              <AlertCircle className="mx-auto h-10 w-10 text-amber-400" />
+              <p className="mt-4 text-sm font-bold leading-6">{cameraError}</p>
+              <button
+                type="button"
+                onClick={() => void startCamera(facingMode)}
+                className="mt-4 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold"
+              >
+                <RefreshCw className="mr-2 inline h-4 w-4" />
+                Try Again
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <footer className="grid grid-cols-3 items-center gap-3 border-t border-white/10 bg-black px-4 py-4 text-white sm:px-6">
+        <button
+          type="button"
+          onClick={switchCamera}
+          className="flex min-h-12 items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold hover:bg-white/20"
+        >
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Switch
+        </button>
+
+        <button
+          type="button"
+          onClick={takePhoto}
+          disabled={cameraStarting || Boolean(cameraError)}
+          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-blue-600 shadow-[0_0_0_5px_rgba(255,255,255,0.2)] disabled:opacity-40"
+          aria-label="Take product photo"
+        >
+          <Camera className="h-7 w-7" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            stopCamera();
+            onFallback();
+          }}
+          className="flex min-h-12 items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold hover:bg-white/20"
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          Device
+        </button>
+      </footer>
+    </motion.div>
+  );
+}
+
 function ProductBarcodeScanner({
   theme,
   onScan,
@@ -1583,6 +1883,7 @@ export default function ProductCreatePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [imageProcessing, setImageProcessing] = useState(false);
 
   const [categoriesByModule, setCategoriesByModule] =
     useState<Record<ProductBusinessModule, CategoryOption[]>>(
@@ -1598,12 +1899,14 @@ export default function ProductCreatePage() {
   const [aiFilling, setAiFilling] = useState(false);
   const [cropping, setCropping] = useState(false);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [productCameraOpen, setProductCameraOpen] = useState(false);
 
   const [suggestion, setSuggestion] = useState<AISuggestion | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraImageRef = useRef<HTMLInputElement>(null);
   const barcodeSvgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -1672,14 +1975,41 @@ export default function ProductCreatePage() {
     setShowReasoning(false);
   }
 
-  function applyImage(file: File) {
-    if (!file.type.startsWith("image/")) {
+  async function applyImage(file: File) {
+    const looksLikeImage =
+      file.type.startsWith("image/") ||
+      /\.(heic|heif|png|webp|gif|jpe?g)$/i.test(file.name);
+
+    if (!looksLikeImage) {
       toast.error("Image file ပဲရွေးပါ");
       return;
     }
 
-    setImageFile(file);
-    revokeAndSetPreview(URL.createObjectURL(file));
+    const toastId = toast.loading(
+      isHeicImage(file)
+        ? "iPad HEIC image ကို JPEG ပြောင်းနေပါသည်..."
+        : "Image ကို upload အတွက်ပြင်ဆင်နေပါသည်...",
+    );
+
+    try {
+      setImageProcessing(true);
+      const normalizedFile = await normalizeImageForUpload(file);
+
+      setImageFile(normalizedFile);
+      revokeAndSetPreview(URL.createObjectURL(normalizedFile));
+
+      toast.success(
+        `Image ready (${Math.max(1, Math.round(normalizedFile.size / 1024))} KB) ✅`,
+        { id: toastId },
+      );
+    } catch (error) {
+      console.error("Product image processing error:", error);
+      const message =
+        error instanceof Error ? error.message : "Image ပြင်ဆင်မရပါ";
+      toast.error(message, { id: toastId });
+    } finally {
+      setImageProcessing(false);
+    }
   }
 
   async function autoFill() {
@@ -1840,11 +2170,12 @@ export default function ProductCreatePage() {
       setCropping(true);
 
       const cropped = await cropImageToSquare(imageFile);
-      applyImage(cropped);
+      await applyImage(cropped);
 
       toast.success("Crop done ✅");
-    } catch {
-      toast.error("Crop failed");
+    } catch (error) {
+      console.error("Image crop error:", error);
+      toast.error("Image crop မလုပ်နိုင်ပါ");
     } finally {
       setCropping(false);
     }
@@ -2355,7 +2686,8 @@ export default function ProductCreatePage() {
   return (
     <div className={cn("product-create-ipad relative min-h-full py-5", t.root)}>
       <style jsx global>{`
-        .barcode-scanner-screen {
+        .barcode-scanner-screen,
+        .product-camera-screen {
           height: 100vh;
           height: 100dvh;
           padding-top: env(safe-area-inset-top);
@@ -2443,6 +2775,22 @@ export default function ProductCreatePage() {
             theme={theme}
             onScan={handleBarcodeScan}
             onClose={() => setBarcodeScannerOpen(false)}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {productCameraOpen ? (
+          <ProductCameraCapture
+            onCapture={(file) => {
+              setProductCameraOpen(false);
+              void applyImage(file);
+            }}
+            onFallback={() => {
+              setProductCameraOpen(false);
+              window.setTimeout(() => cameraImageRef.current?.click(), 50);
+            }}
+            onClose={() => setProductCameraOpen(false)}
           />
         ) : null}
       </AnimatePresence>
@@ -3003,7 +3351,7 @@ export default function ProductCreatePage() {
                     <button
                       type="button"
                       onClick={resetForm}
-                      disabled={loading}
+                      disabled={loading || imageProcessing}
                       className={cn(
                         "flex h-10 items-center rounded-xl border px-5 text-[13px] font-semibold transition-all",
                         t.btn,
@@ -3014,19 +3362,23 @@ export default function ProductCreatePage() {
 
                     <button
                       type="submit"
-                      disabled={loading}
+                      disabled={loading || imageProcessing}
                       className={cn(
                         "flex h-10 items-center gap-2 rounded-xl px-5 text-[13px] font-bold transition-all",
                         t.btnPrimary,
                       )}
                     >
-                      {loading ? (
+                      {loading || imageProcessing ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <Package2 className="h-4 w-4" />
                       )}
 
-                      {loading ? "Creating..." : "Create Product"}
+                      {imageProcessing
+                        ? "Preparing Image..."
+                        : loading
+                          ? "Creating..."
+                          : "Create Product"}
                     </button>
                   </div>
                 </form>
@@ -3039,7 +3391,39 @@ export default function ProductCreatePage() {
                   </div>
 
                   <div className={cn("mb-4 text-[12px]", t.textMuted)}>
-                    drag & drop · square crop
+                    iPad camera · HEIC to JPEG · resize · square crop
+                  </div>
+
+                  <div className="mb-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
+                      disabled={imageProcessing}
+                      className={cn(
+                        "flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-[12px] font-bold transition-all disabled:opacity-50",
+                        t.btn,
+                      )}
+                    >
+                      <Upload className="h-4 w-4" />
+                      Choose Photo
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setProductCameraOpen(true)}
+                      disabled={imageProcessing}
+                      className={cn(
+                        "flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-[12px] font-bold transition-all disabled:opacity-50",
+                        t.btnPrimary,
+                      )}
+                    >
+                      {imageProcessing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Camera className="h-4 w-4" />
+                      )}
+                      Open Camera
+                    </button>
                   </div>
 
                   <div
@@ -3053,7 +3437,7 @@ export default function ProductCreatePage() {
                       setDragOver(false);
 
                       const f = e.dataTransfer.files?.[0];
-                      if (f) applyImage(f);
+                      if (f) void applyImage(f);
                     }}
                     className={cn(
                       "flex min-h-[100px] cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-6 text-center transition-all",
@@ -3066,10 +3450,24 @@ export default function ProductCreatePage() {
                       ref={fileRef}
                       type="file"
                       hidden
-                      accept="image/*"
+                      accept="image/*,.heic,.heif"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
-                        if (f) applyImage(f);
+                        if (f) void applyImage(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+
+                    <input
+                      ref={cameraImageRef}
+                      type="file"
+                      hidden
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void applyImage(f);
+                        e.currentTarget.value = "";
                       }}
                     />
 
@@ -3079,16 +3477,25 @@ export default function ProductCreatePage() {
                         t.soft,
                       )}
                     >
-                      <Upload className={cn("h-5 w-5", t.textMuted)} />
+                        {imageProcessing ? (
+                          <Loader2
+                            className={cn(
+                              "h-5 w-5 animate-spin",
+                              t.textMuted,
+                            )}
+                          />
+                        ) : (
+                          <Upload className={cn("h-5 w-5", t.textMuted)} />
+                        )}
                     </div>
 
                     <div>
                       <div className={cn("text-[13px] font-semibold", t.text)}>
-                        Drop image here
+                        {imageProcessing ? "Processing image..." : "Drop image here"}
                       </div>
 
                       <div className={cn("text-[11px]", t.textSubtle)}>
-                        or click to choose
+                        JPEG · PNG · WEBP · HEIC/HEIF
                       </div>
                     </div>
                   </div>
@@ -3097,7 +3504,7 @@ export default function ProductCreatePage() {
                     <button
                       type="button"
                       onClick={cropImage}
-                      disabled={!imageFile || cropping}
+                      disabled={!imageFile || cropping || imageProcessing}
                       className={cn(
                         "flex flex-1 items-center justify-center gap-2 rounded-xl border py-2 text-[12px] font-semibold transition-all",
                         t.btn,
@@ -3113,8 +3520,8 @@ export default function ProductCreatePage() {
 
                     <button
                       type="button"
-                      onClick={() => imageFile && applyImage(imageFile)}
-                      disabled={!imageFile}
+                      onClick={() => imageFile && void applyImage(imageFile)}
+                      disabled={!imageFile || imageProcessing}
                       className={cn(
                         "flex items-center justify-center rounded-xl border px-3 py-2 transition-all",
                         t.btn,
