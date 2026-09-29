@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import JsBarcode from "jsbarcode";
+import { createProductEditor, productEditData, readProductResponse, validateAddition } from "@/lib/product-edit";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -588,7 +589,24 @@ export default function ProductEditPage() {
   // auth
   const accessToken = String((session as any)?.accessToken ?? "").trim();
   const tokenType   = normalizeTokenType((session as any)?.tokenType);
-  const apiBase     = useMemo(() => (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, ""), []);
+  const apiBase     = useMemo(() => (process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "/backend").replace(/\/+$/, ""), []);
+  const authorization = accessToken.startsWith(`${tokenType} `) ? accessToken : `${tokenType} ${accessToken}`;
+  const editorRef = useRef<ReturnType<typeof createProductEditor> | null>(null);
+  const submitting = useRef(false);
+  const [stockToAdd, setStockToAdd] = useState("0");
+  const [stockPending, setStockPending] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const editor = createProductEditor(`${apiBase}/api/products/${productId}`, sessionStorage);
+      const pending = editor.pending();
+      editorRef.current = editor;
+      setStockPending(!!pending);
+      setStockToAdd(String(pending?.quantity ?? 0));
+    } catch {
+      setSaveError("Cannot restore pending stock addition. Enable browser session storage before saving.");
+    }
+  }, [apiBase, productId]);
 
   // Read business_type directly from the authenticated user session.
   const sessionBusinessType = useMemo(
@@ -650,7 +668,7 @@ export default function ProductEditPage() {
     const keys = Object.keys(form) as (keyof ProductForm)[];
     return new Set(keys.filter((k) => form[k] !== origForm[k]));
   }, [form, origForm]);
-  const isDirty = dirtyFields.size > 0 || imageFile !== null;
+  const isDirty = dirtyFields.size > 0 || imageFile !== null || stockToAdd !== "0" || stockPending;
 
   // ── fetch product ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -660,16 +678,10 @@ export default function ProductEditPage() {
       setFetchError(null);
       try {
         const res = await fetch(`${apiBase}/api/products/${productId}`, {
-          headers: { Authorization: `${tokenType} ${accessToken}`, Accept: "application/json" },
+          headers: { Authorization: authorization, Accept: "application/json" },
           cache: "no-store",
         });
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          setFetchError(txt || `Error ${res.status}`);
-          return;
-        }
-        const raw = await res.json();
-        const p   = raw?.data ?? raw;
+        const p = await readProductResponse(res);
         const populated: ProductForm = {
           sku:                    String(p?.sku ?? ""),
           product_name:           String(p?.productName ?? p?.product_name ?? p?.name ?? ""),
@@ -731,6 +743,8 @@ export default function ProductEditPage() {
     setPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
   }
   function resetToOriginal() {
+    if (submitting.current) return;
+    if (!stockPending) setStockToAdd("0");
     setForm(origForm);
     setImageFile(null);
     revokeAndSetPreview(null);
@@ -839,51 +853,55 @@ export default function ProductEditPage() {
     if (!form.sku.trim() || !form.product_name.trim() || !form.product_price.trim()) {
       toast.error("SKU, Product Name, Price ကို ထည့်ပေးပါ"); return;
     }
-    const price    = Number(form.product_price);
-    const qty      = Number(form.product_quantity_amount || 0);
+    if (submitting.current || fetching || fetchError || !isDirty || !editorRef.current) return;
+    const price = Number(form.product_price);
     const discount = Number(form.product_discount || 0);
-    if (isNaN(price))    { toast.error("Price သည် number ဖြစ်ရပါမယ်"); return; }
-    if (isNaN(qty))      { toast.error("Quantity သည် number ဖြစ်ရပါမယ်"); return; }
-    if (isNaN(discount)) { toast.error("Discount သည် number ဖြစ်ရပါမယ်"); return; }
+    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(discount) || discount < 0) {
+      toast.error("Price and discount must be finite, non-negative numbers."); return;
+    }
+    let quantity: number;
+    try { quantity = validateAddition(stockToAdd); }
+    catch (error) { toast.error((error as Error).message); return; }
 
+    submitting.current = true;
     setLoading(true);
+    setSaveError(null);
     const tid = toast.loading("Updating product...");
     try {
-      const fd = new FormData();
-      fd.append("sku",                     form.sku.trim());
-      fd.append("product_name",            form.product_name.trim());
-      fd.append("product_price",           String(price));
-      fd.append("product_quantity_amount", String(qty));
-      fd.append("product_discount",        String(discount));
-      if (form.barcode.trim())      fd.append("barcode",       form.barcode.trim());
-      if (form.category.trim())     fd.append("category",      form.category.trim());
-      if (form.product_type.trim()) fd.append("product_type",  form.product_type.trim());
-      if (form.note.trim())         fd.append("note",          form.note.trim());
-      if (imageFile)                fd.append("image",         imageFile);
-
-      const res = await fetch(`${apiBase}/api/products/${productId}`, {
-        method: "PUT",
-        headers: { Authorization: `${tokenType} ${accessToken}` },
-        body: fd,
+      await editorRef.current.save({
+        authorization,
+        data: productEditData(form, imageFile),
+        quantity,
+        onProductSaved(product) {
+          setOrigForm({ ...form });
+          setImageFile(null);
+          revokeAndSetPreview(null);
+          if (product?.imagePath || product?.image_path) {
+            setServerImage(buildImageUrl(product.imagePath ?? product.image_path));
+          }
+        },
+        onStockPending(request) {
+          setStockPending(true);
+          setStockToAdd(String(request.quantity));
+        },
+        onStockSaved(product) {
+          setStockPending(false);
+          setStockToAdd("0");
+          const remaining = String(product?.remainingStock ?? product?.product_quantity_amount ?? form.product_quantity_amount);
+          setForm(current => ({ ...current, product_quantity_amount: remaining }));
+          setOrigForm(current => ({ ...current, product_quantity_amount: remaining }));
+        },
       });
-      const text = await res.text().catch(() => "");
-      let json: any = null;
-      try { json = text ? JSON.parse(text) : null; } catch { /* ok */ }
-      if (!res.ok) {
-        toast.error(String(json?.message ?? json?.error ?? text ?? `Failed (${res.status})`), { id: tid });
-        return;
-      }
-      toast.success(`Updated: ${json?.product_name ?? form.product_name}`, { id: tid });
-      // refresh snapshot
-      const next = { ...form };
-      setOrigForm(next);
-      setImageFile(null);
-      revokeAndSetPreview(null);
-      if (json?.imagePath || json?.image_path) setServerImage(buildImageUrl(json.imagePath ?? json.image_path));
+      toast.success("Updated: " + form.product_name, { id: tid });
       router.push("/dashboard/product");
-    } catch {
-      toast.error("Server error ဖြစ်နေတယ်", { id: tid });
-    } finally { setLoading(false); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Network request failed. Retry Save Changes.";
+      setSaveError(message);
+      toast.error(message, { id: tid });
+    } finally {
+      submitting.current = false;
+      setLoading(false);
+    }
   }
 
   // ── delete ─────────────────────────────────────────────────────────────────
@@ -1119,6 +1137,8 @@ export default function ProductEditPage() {
 
                 {/* ── form fields ── */}
                 <form onSubmit={handleSubmit} noValidate className="space-y-4">
+                  {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
+                  <fieldset disabled={loading} className="space-y-4">
 
                   {/* helper: field wrapper that highlights if dirty */}
                   {/* SKU + Name */}
@@ -1146,16 +1166,26 @@ export default function ProductEditPage() {
                       <div key={key} className="space-y-1.5">
                         <Label className={cn("text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5",
                           dirtyFields.has(key) ? (theme === "dark" ? "text-[#d4a352]" : "text-blue-600") : t.textSubtle)}>
-                          {key === "product_price" ? "Price (MMK)" : key === "product_quantity_amount" ? "Stock" : "Discount"}
+                          {key === "product_price" ? "Price (MMK)" : key === "product_quantity_amount" ? "Current stock (read-only)" : "Discount"}
                           {dirtyFields.has(key) && <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-black text-amber-400">CHANGED</span>}
                         </Label>
-                        <Input type="number" min="0" step={key === "product_quantity_amount" ? "1" : "0.01"}
+                        <Input type="number" min="0" step="0.01" readOnly={key === "product_quantity_amount"}
                           value={form[key]}
                           onChange={(e) => setField(key, e.target.value)}
                           className={cn("h-10 rounded-xl transition-all", dirtyFields.has(key) ? t.changedField : t.input)}
                         />
                       </div>
                     ))}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="stock-to-add">Stock to add</Label>
+                    <Input id="stock-to-add" type="number" min="0" max="9999999999.99" step="0.01"
+                      value={stockToAdd} disabled={loading || stockPending}
+                      onChange={e => setStockToAdd(e.target.value)} className={cn("h-10 rounded-xl", t.input)} />
+                    <p className={cn("text-xs", t.textSubtle)}>
+                      {stockPending ? "Pending stock addition: Save Changes retries the same addition safely." : "Leave 0 to keep stock unchanged. This amount is added to current stock."}
+                    </p>
                   </div>
 
                   {/* Business Type */}
@@ -1248,7 +1278,7 @@ export default function ProductEditPage() {
                           <RotateCcw className="h-4 w-4" /> Discard
                         </button>
                       )}
-                      <button type="submit" disabled={loading || !isDirty}
+                      <button type="submit" disabled={loading || fetching || !!fetchError || status !== "authenticated" || !accessToken || !isDirty}
                         className={cn("flex h-10 items-center gap-2 rounded-xl px-5 text-[13px] font-bold transition-all",
                           isDirty ? t.btnPrimary : "opacity-40 cursor-not-allowed " + t.btnPrimary)}>
                         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1256,6 +1286,7 @@ export default function ProductEditPage() {
                       </button>
                     </div>
                   </div>
+                  </fieldset>
                 </form>
               </motion.div>
 
