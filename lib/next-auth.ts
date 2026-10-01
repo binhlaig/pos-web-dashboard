@@ -624,10 +624,11 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const BACKEND_BASE =
+        const BACKEND_BASE = (
           process.env.REMOTE_API_BASE_URL ||
           process.env.NEXT_PUBLIC_API_BASE_URL ||
-          "http://localhost:8080";
+          "http://localhost:8080"
+        ).replace(/\/+$/, "");
 
         try {
           const res = await fetch(

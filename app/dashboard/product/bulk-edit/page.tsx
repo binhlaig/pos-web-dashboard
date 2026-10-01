@@ -1,0 +1,3402 @@
+
+"use client";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createProductEditor, productEditData, readProductResponse, validateAddition } from "@/lib/product-edit";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useTheme } from "next-themes";
+import { motion, AnimatePresence } from "framer-motion";
+import JsBarcode from "jsbarcode";
+import { useZxing } from "react-zxing";
+
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import {
+  ArrowLeft,
+  Bot,
+  ScanLine,
+  Tag,
+  Upload,
+  Image as ImageIcon,
+  Crop,
+  RefreshCw,
+  Loader2,
+  Wand2,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  AlertCircle,
+  Package2,
+  Boxes,
+  CircleDollarSign,
+  Sparkles,
+  UserCircle2,
+  Store,
+  FileSpreadsheet,
+  ClipboardList,
+  Copy,
+  Trash2,
+  UploadCloud,
+  Plus,
+  Camera,
+  X,
+} from "lucide-react";
+
+import { cn } from "@/lib/utils";
+import { getLimitErrorMessage } from "@/lib/api-limit-error";
+import { toast } from "sonner";
+
+type Theme = "dark" | "light";
+
+type ProductBusinessModule = "SUPERMARKET" | "RESTAURANT" | "FASHION" | "FRUIT";
+
+type ProductForm = {
+  sku: string;
+  product_name: string;
+  product_price: string;
+  barcode: string;
+  category: string;
+  product_quantity_amount: string;
+  product_discount: string;
+  note: string;
+
+  /**
+   * Module-specific optional fields.
+   * Existing backend can ignore unsupported fields safely.
+   */
+  product_type: ProductBusinessModule | "";
+  brand: string;
+  color: string;
+  size: string;
+  gender: string;
+  season: string;
+  sale_type: "WEIGHT" | "PIECE" | "PACK" | "";
+  unit: "kg" | "g" | "viss" | "piece" | "pack" | "";
+  cost_price: string;
+  expiry_date: string;
+  supplier_name: string;
+  kitchen_item: boolean;
+};
+
+type CategoryOption = {
+  label: string;
+  value: string;
+};
+
+type ProductCreatorInfo = {
+  id: string;
+  username: string;
+  name: string;
+  email: string;
+  role: string;
+  shopId: string;
+  shopCode: string;
+  imageUrl: string;
+};
+
+type AISuggestion = {
+  sku: string;
+  category: string;
+  suggested_price: string;
+  note: string;
+  barcode: string;
+  reasoning: string;
+  confidence: "high" | "medium" | "low";
+  tags: string[];
+};
+
+type AddMode = "single" | "bulk";
+
+type BulkRow = ProductForm & {
+  rowId: string;
+  productId?: string;
+  currentStock?: string;
+  /**
+   * Paste/old data အတွက် image URL/path ကို ဆက်သုံးနိုင်အောင်ထားထားပါတယ်။
+   * File upload ရွေးထားရင် image_file ကို backend ဆီ FormData နဲ့ပို့ပါမယ်။
+   */
+  image_path: string;
+  image_file: File | null;
+  image_preview: string;
+  status: "idle" | "saving" | "success" | "error";
+  error?: string | null;
+  suggestion?: AISuggestion | null;
+};
+
+const INITIAL_FORM: ProductForm = {
+  sku: "",
+  product_name: "",
+  product_price: "",
+  barcode: "",
+  category: "",
+  product_quantity_amount: "0",
+  product_discount: "0",
+  note: "",
+  product_type: "",
+  brand: "",
+  color: "",
+  size: "",
+  gender: "",
+  season: "",
+  sale_type: "",
+  unit: "",
+  cost_price: "",
+  expiry_date: "",
+  supplier_name: "",
+  kitchen_item: false,
+};
+
+function makeBulkRow(initial?: Partial<BulkRow>): BulkRow {
+  return {
+    ...INITIAL_FORM,
+    rowId:
+      globalThis.crypto?.randomUUID?.() ||
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    image_path: "",
+    image_file: null,
+    image_preview: "",
+    status: "idle",
+    error: null,
+    suggestion: null,
+    ...initial,
+  };
+}
+
+function bulkRowsFromPaste(text: string): BulkRow[] {
+  return text
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.includes("\t")
+        ? line.split("\t").map((part) => part.trim())
+        : line.split(",").map((part) => part.trim());
+
+      const pastedModule = String(parts[6] || "")
+        .trim()
+        .toUpperCase();
+
+      return makeBulkRow({
+        sku: parts[0] || "",
+        product_name: parts[1] || "",
+        product_price: parts[2] || "0",
+        product_quantity_amount: parts[3] || "0",
+        barcode: parts[4] || "",
+        category: parts[5] || "OTHER",
+        product_type: pastedModule ? normalizeProductModule(pastedModule) : "",
+        product_discount: parts[7] || "0",
+        image_path: parts[8] || "",
+        note: parts[9] || "",
+        brand: parts[10] || "",
+        color: parts[11] || "",
+        size: parts[12] || "",
+        gender: parts[13] || "",
+        season: parts[14] || "",
+        sale_type: ["WEIGHT", "PIECE", "PACK"].includes(
+          String(parts[15] || "").toUpperCase(),
+        )
+          ? (String(parts[15]).toUpperCase() as ProductForm["sale_type"])
+          : "",
+        unit: ["kg", "g", "viss", "piece", "pack"].includes(
+          String(parts[16] || ""),
+        )
+          ? (String(parts[16]) as ProductForm["unit"])
+          : "",
+        cost_price: parts[17] || "",
+        expiry_date: parts[18] || "",
+        supplier_name: parts[19] || "",
+      });
+    });
+}
+
+async function copyBulkSample(module: ProductBusinessModule) {
+  const samples: Record<ProductBusinessModule, string> = {
+    SUPERMARKET:
+      "SKU-001, Coca Cola 500ml, 1200, 24, 955000000001, DRINK, SUPERMARKET, 0, /uploads/products/coca-cola.png, Cold drink",
+    RESTAURANT:
+      "SKU-002, Fried Rice, 3500, 10, 955000000002, FOOD, RESTAURANT, 0, /uploads/products/fried-rice.png, Main menu",
+    FASHION:
+      "SKU-003, Cotton Shirt, 15000, 8, 955000000003, SHIRT, FASHION, 0, /uploads/products/shirt.png, Variant shirt, BrandX, Black, M, UNISEX, Summer",
+    FRUIT:
+      "SKU-004, Apple, 8000, 25.5, 955000000004, FRUIT, FRUIT, 0, /uploads/products/apple.png, Fresh fruit, , , , , , WEIGHT, kg, 5000, 2026-06-30, Local supplier",
+  };
+
+  await navigator.clipboard?.writeText(samples[module]);
+}
+
+function buildImagePreviewUrl(path?: string | null) {
+  const raw = String(path || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  if (raw.startsWith("/")) return raw;
+  return `/${raw.replace(/^\/+/, "")}`;
+}
+
+const MODULE_CATEGORIES: Record<ProductBusinessModule, CategoryOption[]> = {
+  SUPERMARKET: [
+    { label: "Barcode Product", value: "BARCODE_PRODUCT" },
+    { label: "အကြော် / Fried", value: "FRIED" },
+    { label: "သစ်သီး / Fresh Fruit", value: "FRESH_FRUIT" },
+    { label: "ဖျော်ရည် / Juice", value: "JUICE" },
+    { label: "အသင့်စား / Ready Food", value: "READY_FOOD" },
+    { label: "Snack", value: "SNACK" },
+    { label: "Drink", value: "DRINK" },
+    { label: "Household", value: "HOUSEHOLD" },
+    { label: "Frozen", value: "FROZEN" },
+    { label: "Cosmetic", value: "COSMETIC" },
+    { label: "Other", value: "OTHER" },
+  ],
+  RESTAURANT: [
+    { label: "Food Menu", value: "FOOD" },
+    { label: "Drink Menu", value: "DRINK" },
+    { label: "Coffee / Tea", value: "COFFEE_TEA" },
+    { label: "Fried / Side Dish", value: "FRIED" },
+    { label: "Main Dish", value: "MAIN_DISH" },
+    { label: "Dessert", value: "DESSERT" },
+    { label: "Kitchen Raw Item", value: "KITCHEN_RAW" },
+    { label: "Other", value: "OTHER" },
+  ],
+  FASHION: [
+    { label: "Shirt", value: "SHIRT" },
+    { label: "Pants", value: "PANTS" },
+    { label: "Dress", value: "DRESS" },
+    { label: "Skirt", value: "SKIRT" },
+    { label: "Jacket", value: "JACKET" },
+    { label: "Shoes", value: "SHOES" },
+    { label: "Bag", value: "BAG" },
+    { label: "Accessory", value: "ACCESSORY" },
+    { label: "Other", value: "OTHER" },
+  ],
+  FRUIT: [
+    { label: "Fruit", value: "FRUIT" },
+    { label: "Vegetable", value: "VEGETABLE" },
+    { label: "Fresh Juice", value: "FRESH_JUICE" },
+    { label: "Fruit Pack", value: "FRUIT_PACK" },
+    { label: "Dry Fruit", value: "DRY_FRUIT" },
+    { label: "Other", value: "OTHER" },
+  ],
+};
+
+const FALLBACK_CATEGORIES: CategoryOption[] = MODULE_CATEGORIES.SUPERMARKET;
+
+function uniqueCategories(items: CategoryOption[]) {
+  const seen = new Set<string>();
+
+  return items
+    .map((item) => ({
+      label: String(item.label || item.value || "OTHER").trim(),
+      value: String(item.value || item.label || "OTHER")
+        .trim()
+        .toUpperCase(),
+    }))
+    .filter((item) => {
+      if (!item.value || seen.has(item.value)) return false;
+      seen.add(item.value);
+      return true;
+    });
+}
+
+function getCategoryOptions(
+  categoriesByModule: Record<ProductBusinessModule, CategoryOption[]>,
+  module: ProductBusinessModule,
+) {
+  const options = categoriesByModule[module]?.length
+    ? categoriesByModule[module]
+    : MODULE_CATEGORIES[module];
+
+  return uniqueCategories(options);
+}
+
+function getDefaultCategoryForModule(
+  module: ProductBusinessModule,
+  categoriesByModule: Record<
+    ProductBusinessModule,
+    CategoryOption[]
+  > = MODULE_CATEGORIES,
+) {
+  return getCategoryOptions(categoriesByModule, module)[0]?.value || "OTHER";
+}
+
+function isCategoryAllowedForModule(
+  category: string,
+  module: ProductBusinessModule,
+  categoriesByModule: Record<
+    ProductBusinessModule,
+    CategoryOption[]
+  > = MODULE_CATEGORIES,
+) {
+  const current = String(category || "")
+    .trim()
+    .toUpperCase();
+  if (!current) return false;
+
+  return getCategoryOptions(categoriesByModule, module).some(
+    (item) => item.value === current,
+  );
+}
+
+function normalizeCategoryForModule(
+  category: string,
+  module: ProductBusinessModule,
+  categoriesByModule: Record<
+    ProductBusinessModule,
+    CategoryOption[]
+  > = MODULE_CATEGORIES,
+) {
+  const current = String(category || "")
+    .trim()
+    .toUpperCase();
+  return isCategoryAllowedForModule(current, module, categoriesByModule)
+    ? current
+    : getDefaultCategoryForModule(module, categoriesByModule);
+}
+
+const CONFIDENCE_COLORS: Record<string, string> = {
+  high: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  medium: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  low: "bg-rose-500/10 text-rose-400 border-rose-500/20",
+};
+
+const PRODUCT_MODULES: {
+  value: ProductBusinessModule;
+  label: string;
+  description: string;
+  badge: string;
+}[] = [
+  {
+    value: "SUPERMARKET",
+    label: "Supermarket",
+    description: "Barcode, stock, retail product fields",
+    badge: "Normal barcode stock",
+  },
+  {
+    value: "RESTAURANT",
+    label: "Restaurant",
+    description: "Menu item, kitchen item, food/drink product fields",
+    badge: "Menu / Kitchen",
+  },
+  {
+    value: "FASHION",
+    label: "Fashion",
+    description: "Brand, color, size, gender, season fields",
+    badge: "Size / Color",
+  },
+  {
+    value: "FRUIT",
+    label: "Fruit",
+    description: "Weight, unit, cost, expiry, supplier fields",
+    badge: "Weight / Unit",
+  },
+];
+
+function normalizeProductModule(value: unknown): ProductBusinessModule {
+  const v = String(value || "")
+    .trim()
+    .toUpperCase();
+
+  if (v === "RESTAURANT") return "RESTAURANT";
+  if (v === "FASHION") return "FASHION";
+  if (v === "FRUIT") return "FRUIT";
+
+  return "SUPERMARKET";
+}
+
+function getSessionBusinessModule(session: unknown): ProductBusinessModule {
+  const user = ((session as any)?.user ?? {}) as any;
+  return normalizeProductModule(
+    user.businessType ??
+      user.business_type ??
+      user.shopBusinessType ??
+      user.shop_business_type,
+  );
+}
+
+function appendIfPresent(fd: FormData, keys: string[], value: unknown) {
+  if (value === null || value === undefined) return;
+
+  const normalized =
+    typeof value === "boolean" ? String(value) : String(value).trim();
+
+  if (!normalized) return;
+
+  keys.forEach((key) => fd.append(key, normalized));
+}
+
+function appendModuleFieldsToFormData(
+  fd: FormData,
+  source: ProductForm,
+  module: ProductBusinessModule,
+) {
+  const productType = source.product_type || module;
+
+  appendIfPresent(fd, ["businessType", "business_type"], module);
+  appendIfPresent(fd, ["productType", "product_type"], productType);
+
+  if (module === "RESTAURANT") {
+    appendIfPresent(fd, ["kitchenItem", "kitchen_item"], source.kitchen_item);
+  }
+
+  if (module === "FASHION") {
+    appendIfPresent(fd, ["brand"], source.brand);
+    appendIfPresent(fd, ["color", "colour"], source.color);
+    appendIfPresent(fd, ["size"], source.size);
+    appendIfPresent(fd, ["gender"], source.gender);
+    appendIfPresent(fd, ["season"], source.season);
+  }
+
+  if (module === "FRUIT") {
+    appendIfPresent(fd, ["saleType", "sale_type"], source.sale_type);
+    appendIfPresent(fd, ["unit"], source.unit);
+    appendIfPresent(fd, ["costPrice", "cost_price"], source.cost_price);
+    appendIfPresent(fd, ["expiryDate", "expiry_date"], source.expiry_date);
+    appendIfPresent(
+      fd,
+      ["supplierName", "supplier_name"],
+      source.supplier_name,
+    );
+  }
+}
+
+function FontImport() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;700;900&display=swap');
+
+      * { font-family: 'DM Sans', sans-serif; }
+      .serif { font-family: 'DM Serif Display', serif !important; }
+
+      @keyframes lantern-float {
+        0%,100% { transform: translateY(0px); }
+        50% { transform: translateY(-7px); }
+      }
+
+      @keyframes lantern-breathe {
+        0%,100% { opacity:.72; transform: scale(1); }
+        50% { opacity:1; transform: scale(1.06); }
+      }
+
+      @keyframes ember-rise {
+        0% { transform: translateY(0) translateX(0) scale(1); opacity:.55; }
+        50% { transform: translateY(-18px) translateX(5px) scale(1.1); opacity:.9; }
+        100% { transform: translateY(-36px) translateX(-2px) scale(.5); opacity:0; }
+      }
+    `}</style>
+  );
+}
+
+const tk = (theme: Theme) =>
+  theme === "dark"
+    ? {
+        root: "bg-transparent",
+        text: "text-white",
+        textMuted: "text-slate-400",
+        textSubtle: "text-slate-500",
+        card: "border-white/10 bg-[#293750] shadow-sm",
+        input:
+          "border-white/10 bg-[#33435f] text-white placeholder:text-slate-400 focus-visible:border-blue-500 focus-visible:ring-blue-500/20",
+        btn: "border-white/10 bg-[#33435f] text-slate-300 hover:bg-[#3b4d6d] hover:text-white",
+        btnPrimary:
+          "bg-blue-600 text-white hover:bg-blue-500 shadow-md shadow-blue-600/20",
+        pill: "border-white/10 bg-[#33435f] text-slate-300",
+        soft: "bg-[#33435f]",
+        previewCard: "border-white/10 bg-[#33435f]",
+        aiPanel: "border-blue-500/20 bg-blue-500/[0.06]",
+        imgDrop:
+          "border-white/[0.14] hover:border-blue-500 hover:bg-blue-500/[0.06]",
+        tag: "border-blue-500/25 bg-blue-500/10 text-blue-400",
+        glow1: "bg-transparent",
+        glow2: "bg-transparent",
+      }
+    : {
+        root: "bg-transparent",
+        text: "text-slate-900",
+        textMuted: "text-slate-500",
+        textSubtle: "text-slate-400",
+        card: "border-black/[0.08] bg-white shadow-sm",
+        input:
+          "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm focus-visible:border-blue-500 focus-visible:ring-blue-500/20",
+        btn: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 shadow-sm",
+        btnPrimary:
+          "bg-blue-600 text-white hover:bg-blue-500 shadow-md shadow-blue-600/20",
+        pill: "border-slate-200 bg-white text-slate-500 shadow-sm",
+        soft: "bg-slate-50",
+        previewCard: "border-slate-200 bg-slate-50",
+        aiPanel: "border-blue-200 bg-blue-50/60",
+        imgDrop: "border-slate-300 hover:border-blue-500 hover:bg-blue-50/60",
+        tag: "border-blue-200 bg-blue-100 text-blue-700",
+        glow1: "bg-transparent",
+        glow2: "bg-transparent",
+      };
+
+function LanternMark({
+  size = 34,
+  glow = false,
+}: {
+  size?: number;
+  glow?: boolean;
+}) {
+  const h = size * 1.5;
+
+  return (
+    <svg
+      width={size}
+      height={h}
+      viewBox="0 0 32 48"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <radialGradient id="lgGlowAddProductFixed" cx="50%" cy="48%" r="50%">
+          <stop offset="0%" stopColor="#fff7d6" stopOpacity="0.96" />
+          <stop offset="28%" stopColor="#fbbf24" stopOpacity="0.86" />
+          <stop offset="60%" stopColor="#f59e0b" stopOpacity="0.44" />
+          <stop offset="100%" stopColor="#d97706" stopOpacity="0" />
+        </radialGradient>
+
+        <linearGradient
+          id="lmMetalAddProductFixed"
+          x1="8"
+          y1="6"
+          x2="24"
+          y2="42"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor="#c58a3c" />
+          <stop offset="50%" stopColor="#a96b28" />
+          <stop offset="100%" stopColor="#8a551d" />
+        </linearGradient>
+
+        <linearGradient
+          id="lbBodyAddProductFixed"
+          x1="6"
+          y1="11"
+          x2="26"
+          y2="37"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor="#fffaf1" />
+          <stop offset="45%" stopColor="#f5e7cf" />
+          <stop offset="100%" stopColor="#ecd5ae" />
+        </linearGradient>
+      </defs>
+
+      <line
+        x1="16"
+        y1="0"
+        x2="16"
+        y2="6"
+        stroke={glow ? "#d6ae67" : "#9d6a2b"}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+
+      <rect
+        x="8"
+        y="6"
+        width="16"
+        height="5"
+        rx="2"
+        fill="url(#lmMetalAddProductFixed)"
+        stroke="#7b4a18"
+        strokeWidth="0.8"
+      />
+
+      <rect
+        x="6"
+        y="11"
+        width="20"
+        height="26"
+        rx="3"
+        fill={glow ? "#0e0908" : "url(#lbBodyAddProductFixed)"}
+        stroke="#a66b27"
+        strokeWidth="1"
+      />
+
+      {glow && (
+        <rect
+          x="6"
+          y="11"
+          width="20"
+          height="26"
+          rx="3"
+          fill="url(#lgGlowAddProductFixed)"
+        />
+      )}
+
+      {[11, 16, 21].map((x) => (
+        <line
+          key={x}
+          x1={x}
+          y1="11"
+          x2={x}
+          y2="37"
+          stroke={glow ? "#6b3e10" : "#b47b34"}
+          strokeWidth="1"
+          opacity="0.95"
+        />
+      ))}
+
+      {glow && (
+        <>
+          <motion.ellipse
+            cx="16"
+            cy="26"
+            rx="4"
+            ry="6"
+            fill="#f59e0b"
+            opacity="0.68"
+            animate={{
+              ry: [6, 7.1, 5.3, 6.7, 6],
+              cx: [16, 15.7, 16.3, 15.9, 16],
+            }}
+            transition={{
+              duration: 1.3,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+
+          <motion.ellipse
+            cx="16"
+            cy="27"
+            rx="2.5"
+            ry="4.2"
+            fill="#fde68a"
+            animate={{ ry: [4.2, 5, 3.6, 4.5, 4.2] }}
+            transition={{
+              duration: 0.95,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+        </>
+      )}
+
+      <rect
+        x="8"
+        y="37"
+        width="16"
+        height="5"
+        rx="2"
+        fill="url(#lmMetalAddProductFixed)"
+        stroke="#7b4a18"
+        strokeWidth="0.8"
+      />
+
+      <line
+        x1="16"
+        y1="42"
+        x2="16"
+        y2="47"
+        stroke="#8f5b24"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+
+      <circle cx="16" cy="47" r="1.5" fill="#8f5b24" />
+    </svg>
+  );
+}
+
+function LanternToggle({
+  dark,
+  onToggle,
+}: {
+  dark: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onToggle}
+      whileHover={{ y: -2, scale: 1.04 }}
+      whileTap={{ scale: 0.94 }}
+      className="relative flex flex-col items-center focus:outline-none"
+      style={{ width: 58 }}
+      aria-label={dark ? "Switch to day mode" : "Switch to night mode"}
+    >
+      {dark && (
+        <div
+          className="pointer-events-none absolute"
+          style={{
+            width: 76,
+            height: 76,
+            top: -6,
+            left: "50%",
+            transform: "translateX(-50%)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(ellipse at center, rgba(251,191,36,0.52) 0%, rgba(245,158,11,0.18) 52%, transparent 76%)",
+            filter: "blur(9px)",
+            animation: "lantern-breathe 2.8s ease-in-out infinite",
+          }}
+        />
+      )}
+
+      <div style={{ animation: "lantern-float 3s ease-in-out infinite" }}>
+        <LanternMark size={34} glow={dark} />
+      </div>
+
+      <span
+        style={{
+          marginTop: 5,
+          fontSize: 7,
+          fontWeight: 700,
+          letterSpacing: "0.2em",
+          color: dark ? "#c8892a" : "#9a6c2a",
+        }}
+      >
+        {dark ? "NIGHT" : "DAY"}
+      </span>
+    </motion.button>
+  );
+}
+
+function NightParticles() {
+  const particles = Array.from({ length: 26 }).map((_, i) => ({
+    id: i,
+    left: `${(i * 31 + 9) % 100}%`,
+    top: `${(i * 43 + 11) % 100}%`,
+    size: 1.5 + (i % 3),
+    delay: (i * 0.25) % 4,
+    duration: 2.8 + (i % 4) * 0.8,
+  }));
+
+  const embers = Array.from({ length: 10 }).map((_, i) => ({
+    id: i,
+    left: `${38 + (i % 5) * 5 - 10}%`,
+    delay: i * 0.4,
+    size: 3 + (i % 3),
+    dur: 3.5 + (i % 4) * 0.5,
+  }));
+
+  return (
+    <div className="pointer-events-none fixed inset-0 overflow-hidden">
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          className="absolute rounded-full bg-amber-100"
+          style={{
+            left: p.left,
+            top: p.top,
+            width: p.size,
+            height: p.size,
+          }}
+          animate={{
+            opacity: [0.08, 0.9, 0.08],
+            scale: [0.7, 1.4, 0.7],
+          }}
+          transition={{
+            duration: p.duration,
+            repeat: Infinity,
+            delay: p.delay,
+            ease: "easeInOut",
+          }}
+        />
+      ))}
+
+      {embers.map((e) => (
+        <div
+          key={e.id}
+          style={{
+            position: "absolute",
+            bottom: "56%",
+            left: e.left,
+            width: e.size,
+            height: e.size,
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, #ffe080 0%, #ff8820 60%, transparent 100%)",
+            boxShadow: "0 0 6px 2px rgba(255,160,40,0.6)",
+            animation: `ember-rise ${e.dur}s ${e.delay}s ease-out infinite`,
+            opacity: 0,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function normalizeTokenType(v: unknown) {
+  return (
+    String(v ?? "Bearer")
+      .replace(/\s+/g, " ")
+      .trim() || "Bearer"
+  );
+}
+
+function normalizeCreatorInfo(session: unknown): ProductCreatorInfo {
+  const user = ((session as any)?.user ?? {}) as any;
+
+  return {
+    id: String(user.id ?? user.userId ?? user.staffId ?? "").trim(),
+    username: String(user.username ?? user.name ?? user.email ?? "").trim(),
+    name: String(user.name ?? user.username ?? "").trim(),
+    email: String(user.email ?? "").trim(),
+    role: String(user.role ?? "").trim(),
+    shopId: user.shopId == null ? "" : String(user.shopId).trim(),
+    shopCode: String(user.shopCode ?? "").trim(),
+    imageUrl: String(
+      user.imageUrl ?? user.avatarUrl ?? user.image ?? "",
+    ).trim(),
+  };
+}
+
+function isNumericId(value: string) {
+  return /^\d+$/.test(String(value || "").trim());
+}
+
+/**
+ * createdByUserId ထဲကို number ဖြစ်မှ ပို့မယ်။
+ * "user3" လို string ဖြစ်ရင် username fields ထဲပဲပို့မယ်။
+ */
+function appendCreatorInfo(formData: FormData, creator: ProductCreatorInfo) {
+  const numericUserId = isNumericId(creator.id) ? creator.id : "";
+
+  const username =
+    creator.username ||
+    (!isNumericId(creator.id) ? creator.id : "") ||
+    creator.name ||
+    creator.email ||
+    "";
+
+  const displayName = creator.name || username;
+
+  const payload = {
+    id: numericUserId || null,
+    userId: numericUserId || null,
+    username: username || null,
+    name: displayName || null,
+    email: creator.email || null,
+    role: creator.role || null,
+    shopId: creator.shopId || null,
+    shopCode: creator.shopCode || null,
+    imageUrl: creator.imageUrl || null,
+  };
+
+  formData.append("createdBy", JSON.stringify(payload));
+  formData.append("created_by", JSON.stringify(payload));
+  formData.append("user_info", JSON.stringify(payload));
+  formData.append("owner", JSON.stringify(payload));
+
+  if (numericUserId) {
+    formData.append("createdByUserId", numericUserId);
+    formData.append("created_by_user_id", numericUserId);
+    formData.append("created_by_id", numericUserId);
+    formData.append("ownerId", numericUserId);
+    formData.append("owner_id", numericUserId);
+    formData.append("userId", numericUserId);
+    formData.append("user_id", numericUserId);
+  }
+
+  if (username) {
+    formData.append("createdByUsername", username);
+    formData.append("created_by_username", username);
+    formData.append("ownerUsername", username);
+    formData.append("owner_username", username);
+    formData.append("username", username);
+  }
+
+  if (displayName) {
+    formData.append("createdByName", displayName);
+    formData.append("created_by_name", displayName);
+  }
+
+  if (creator.email) {
+    formData.append("createdByEmail", creator.email);
+    formData.append("created_by_email", creator.email);
+  }
+
+  if (creator.role) {
+    formData.append("createdByRole", creator.role);
+    formData.append("created_by_role", creator.role);
+  }
+
+  if (creator.shopId) {
+    formData.append("shopId", creator.shopId);
+    formData.append("shop_id", creator.shopId);
+  }
+
+  if (creator.shopCode) {
+    formData.append("shopCode", creator.shopCode);
+    formData.append("shop_code", creator.shopCode);
+  }
+
+  if (creator.imageUrl) {
+    formData.append("createdByImageUrl", creator.imageUrl);
+    formData.append("created_by_image_url", creator.imageUrl);
+  }
+}
+
+function slugify(v: string) {
+  return v
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24);
+}
+
+function generateSku(name: string) {
+  return `${slugify(name).slice(0, 10) || "PRODUCT"}-${
+    1000 + Math.floor(Math.random() * 9000)
+  }`;
+}
+
+function generateBarcodeString(seed = "") {
+  // 20–29 prefixes are commonly used for internal/store EAN-13 numbers.
+  // This creates 12 digits first, then calculates the real EAN-13 check digit.
+  const seedDigits = seed.replace(/\D/g, "").slice(-3);
+  const entropy = `${seedDigits}${Date.now()}${Math.floor(
+    Math.random() * 10000,
+  )}`;
+  const firstTwelve = `20${entropy.slice(-10).padStart(10, "0")}`;
+
+  const weightedTotal = firstTwelve
+    .split("")
+    .reduce(
+      (total, digit, index) =>
+        total + Number(digit) * (index % 2 === 0 ? 1 : 3),
+      0,
+    );
+  const checkDigit = (10 - (weightedTotal % 10)) % 10;
+
+  return `${firstTwelve}${checkDigit}`;
+}
+
+function inferCategory(name: string) {
+  const n = name.toLowerCase();
+
+  if (
+    ["cola", "coffee", "tea", "juice", "water", "drink", "soda", "milk"].some(
+      (k) => n.includes(k),
+    )
+  ) {
+    return "DRINK";
+  }
+
+  if (
+    ["chip", "cracker", "cookie", "snack", "nuts", "candy", "chocolate"].some(
+      (k) => n.includes(k),
+    )
+  ) {
+    return "SNACK";
+  }
+
+  if (
+    ["rice", "bread", "noodle", "food", "egg", "meat", "oil", "sauce"].some(
+      (k) => n.includes(k),
+    )
+  ) {
+    return "FOOD";
+  }
+
+  if (
+    ["soap", "clean", "tissue", "detergent", "shampoo", "brush"].some((k) =>
+      n.includes(k),
+    )
+  ) {
+    return "HOUSEHOLD";
+  }
+
+  if (
+    ["ice cream", "frozen", "nugget", "dumpling"].some((k) => n.includes(k))
+  ) {
+    return "FROZEN";
+  }
+
+  if (
+    ["cream", "lotion", "powder", "lip", "cosmetic"].some((k) => n.includes(k))
+  ) {
+    return "COSMETIC";
+  }
+
+  return "OTHER";
+}
+
+function inferPrice(name: string, category: string) {
+  const n = name.toLowerCase();
+
+  if (n.includes("500ml") && category === "DRINK") return "700";
+  if (n.includes("330ml") && category === "DRINK") return "500";
+  if (n.includes("1l") && category === "DRINK") return "1200";
+  if (n.includes("2l") && category === "DRINK") return "2200";
+
+  if (category === "SNACK") return "500";
+  if (category === "FOOD") return "1500";
+  if (category === "HOUSEHOLD") return "2500";
+  if (category === "FROZEN") return "3500";
+  if (category === "COSMETIC") return "4000";
+
+  return "1000";
+}
+
+function localAIFill(productName: string): AISuggestion {
+  const trimmed = productName.trim();
+  const category = inferCategory(trimmed);
+  const sku = generateSku(trimmed);
+  const barcode = generateBarcodeString(sku);
+  const suggested_price = inferPrice(trimmed, category);
+
+  const tags = Array.from(new Set([category.toLowerCase(), "packaged"])).slice(
+    0,
+    5,
+  );
+
+  let confidence: AISuggestion["confidence"] = "medium";
+
+  if (
+    ["coca cola", "pepsi", "sprite", "fanta", "coffee mix", "lays"].some((k) =>
+      trimmed.toLowerCase().includes(k),
+    )
+  ) {
+    confidence = "high";
+  } else if (trimmed.length < 4) {
+    confidence = "low";
+  }
+
+  return {
+    sku,
+    category,
+    suggested_price,
+    barcode,
+    tags,
+    note: `${trimmed} is categorized as ${category.toLowerCase()} item for retail sale.`,
+    reasoning: `Local AI checked keywords in "${trimmed}". Detected category: ${category}. Estimated price based on common retail range.`,
+    confidence,
+  };
+}
+
+function isHeicImage(file: File) {
+  return (
+    /image\/(heic|heif)/i.test(file.type) ||
+    /\.(heic|heif)$/i.test(file.name)
+  );
+}
+
+async function normalizeImageForUpload(file: File): Promise<File> {
+  if (file.size > 30 * 1024 * 1024) {
+    throw new Error("Image size 30MB ထက်မကျော်ရပါ");
+  }
+
+  let sourceBlob: Blob = file;
+
+  // iPad/iPhone photo library က HEIC/HEIF ပြန်ပေးနိုင်သောကြောင့်
+  // backend upload မလုပ်မီ browser ပေါ်မှာ JPEG ပြောင်းမည်။
+  if (isHeicImage(file)) {
+    const { default: heic2any } = await import("heic2any");
+    const converted = await heic2any({
+      blob: file,
+      toType: "image/jpeg",
+      quality: 0.88,
+    });
+    sourceBlob = Array.isArray(converted) ? converted[0] : converted;
+  }
+
+  const objectUrl = URL.createObjectURL(sourceBlob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("Image decode မလုပ်နိုင်ပါ"));
+      element.src = objectUrl;
+    });
+
+    // Product image အတွက် 1200px လုံလောက်ပြီး Spring multipart limit ကို
+    // မကျော်လွယ်အောင် iPad 12MP/48MP photo ကို လျှော့မည်။
+    const maxSide = 1200;
+    const originalWidth = image.naturalWidth || image.width;
+    const originalHeight = image.naturalHeight || image.height;
+
+    if (!originalWidth || !originalHeight) {
+      throw new Error("Image width/height မမှန်ပါ");
+    }
+
+    const scale = Math.min(1, maxSide / Math.max(originalWidth, originalHeight));
+    const targetWidth = Math.max(1, Math.round(originalWidth * scale));
+    const targetHeight = Math.max(1, Math.round(originalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas unavailable");
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, targetWidth, targetHeight);
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    const jpegBlob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.78),
+    );
+
+    if (!jpegBlob) throw new Error("JPEG conversion failed");
+
+    const cleanName =
+      file.name.replace(/\.(heic|heif|png|webp|jpe?g)$/i, "") ||
+      `ipad-product-${Date.now()}`;
+
+    return new File([jpegBlob], `${cleanName}.jpg`, {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function cropImageToSquare(file: File): Promise<File> {
+  const dataUrl = await new Promise<string>((res, rej) => {
+    const r = new FileReader();
+
+    r.onload = () => res(String(r.result ?? ""));
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((res, rej) => {
+    const el = new Image();
+
+    el.onload = () => res(el);
+    el.onerror = rej;
+    el.src = dataUrl;
+  });
+
+  const size = Math.min(img.width, img.height);
+  const sx = Math.floor((img.width - size) / 2);
+  const sy = Math.floor((img.height - size) / 2);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas unavailable");
+
+  ctx.drawImage(img, sx, sy, size, size, 0, 0, size, size);
+
+  const blob = await new Promise<Blob | null>((res) =>
+    canvas.toBlob(res, "image/jpeg", 0.92),
+  );
+
+  if (!blob) throw new Error("Crop failed");
+
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + "-crop.jpg", {
+    type: "image/jpeg",
+  });
+}
+
+function ProductModuleFields({
+  module,
+  form,
+  setField,
+  t,
+}: {
+  module: ProductBusinessModule;
+  form: ProductForm;
+  setField: <K extends keyof ProductForm>(
+    key: K,
+    value: ProductForm[K],
+  ) => void;
+  t: ReturnType<typeof tk>;
+}) {
+  if (module === "RESTAURANT") {
+    return (
+      <div className={cn("rounded-2xl border p-4", t.aiPanel)}>
+        <div className={cn("mb-3 text-[13px] font-black", t.text)}>
+          Restaurant module fields
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label
+            className={cn(
+              "flex items-center gap-3 rounded-xl border p-3",
+              t.previewCard,
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={form.kitchen_item}
+              onChange={(event) =>
+                setField("kitchen_item", event.target.checked)
+              }
+            />
+            <span className={cn("text-[12px] font-bold", t.text)}>
+              Send this item to kitchen
+            </span>
+          </label>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Product Type
+            </Label>
+            <Select
+              value={form.product_type || module}
+              onValueChange={(v) =>
+                setField("product_type", v as ProductBusinessModule)
+              }
+            >
+              <SelectTrigger className={cn("h-10 rounded-xl", t.input)}>
+                <SelectValue placeholder="Select product type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="RESTAURANT">RESTAURANT</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (module === "FASHION") {
+    return (
+      <div className={cn("rounded-2xl border p-4", t.aiPanel)}>
+        <div className={cn("mb-3 text-[13px] font-black", t.text)}>
+          Fashion module fields
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Brand
+            </Label>
+            <Input
+              value={form.brand}
+              onChange={(e) => setField("brand", e.target.value)}
+              placeholder="e.g. Adidas"
+              className={cn("h-10 rounded-xl", t.input)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Color
+            </Label>
+            <Input
+              value={form.color}
+              onChange={(e) => setField("color", e.target.value)}
+              placeholder="Black / White"
+              className={cn("h-10 rounded-xl", t.input)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Size
+            </Label>
+            <Input
+              value={form.size}
+              onChange={(e) => setField("size", e.target.value)}
+              placeholder="S / M / L / XL"
+              className={cn("h-10 rounded-xl", t.input)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Gender
+            </Label>
+            <Select
+              value={form.gender}
+              onValueChange={(v) => setField("gender", v)}
+            >
+              <SelectTrigger className={cn("h-10 rounded-xl", t.input)}>
+                <SelectValue placeholder="Select gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="MEN">MEN</SelectItem>
+                <SelectItem value="WOMEN">WOMEN</SelectItem>
+                <SelectItem value="UNISEX">UNISEX</SelectItem>
+                <SelectItem value="KIDS">KIDS</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Season
+            </Label>
+            <Input
+              value={form.season}
+              onChange={(e) => setField("season", e.target.value)}
+              placeholder="Summer / Winter"
+              className={cn("h-10 rounded-xl", t.input)}
+            />
+          </div>
+        </div>
+
+        <p className={cn("mt-3 text-[11px] leading-5", t.textMuted)}>
+          Variant table backend မပြီးသေးရင် ဒီ fields တွေကို products table ထဲက
+          optional columns / JSON fields အနေနဲ့ သိမ်းနိုင်ပါတယ်။
+        </p>
+      </div>
+    );
+  }
+
+  if (module === "FRUIT") {
+    return (
+      <div className={cn("rounded-2xl border p-4", t.aiPanel)}>
+        <div className={cn("mb-3 text-[13px] font-black", t.text)}>
+          Fruit module fields
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Sale Type
+            </Label>
+            <Select
+              value={form.sale_type}
+              onValueChange={(v) =>
+                setField("sale_type", v as ProductForm["sale_type"])
+              }
+            >
+              <SelectTrigger className={cn("h-10 rounded-xl", t.input)}>
+                <SelectValue placeholder="WEIGHT / PIECE" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="WEIGHT">WEIGHT</SelectItem>
+                <SelectItem value="PIECE">PIECE</SelectItem>
+                <SelectItem value="PACK">PACK</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Unit
+            </Label>
+            <Select
+              value={form.unit}
+              onValueChange={(v) => setField("unit", v as ProductForm["unit"])}
+            >
+              <SelectTrigger className={cn("h-10 rounded-xl", t.input)}>
+                <SelectValue placeholder="kg / piece" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="kg">kg</SelectItem>
+                <SelectItem value="g">g</SelectItem>
+                <SelectItem value="viss">viss</SelectItem>
+                <SelectItem value="piece">piece</SelectItem>
+                <SelectItem value="pack">pack</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Cost Price
+            </Label>
+            <Input
+              type="number"
+              value={form.cost_price}
+              onChange={(e) => setField("cost_price", e.target.value)}
+              placeholder="Cost per unit"
+              className={cn("h-10 rounded-xl", t.input)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Expiry Date
+            </Label>
+            <Input
+              type="date"
+              value={form.expiry_date}
+              onChange={(e) => setField("expiry_date", e.target.value)}
+              className={cn("h-10 rounded-xl", t.input)}
+            />
+          </div>
+
+          <div className="space-y-1.5 md:col-span-2">
+            <Label
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider",
+                t.textSubtle,
+              )}
+            >
+              Supplier
+            </Label>
+            <Input
+              value={form.supplier_name}
+              onChange={(e) => setField("supplier_name", e.target.value)}
+              placeholder="Supplier name"
+              className={cn("h-10 rounded-xl", t.input)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("rounded-2xl border p-4", t.aiPanel)}>
+      <div className={cn("text-[13px] font-black", t.text)}>
+        Supermarket module
+      </div>
+      <p className={cn("mt-1 text-[11px] leading-5", t.textMuted)}>
+        Default barcode, price, stock, discount fields ကိုသုံးပါမယ်။
+      </p>
+    </div>
+  );
+}
+
+function ProductCameraCapture({
+  onCapture,
+  onFallback,
+  onClose,
+}: {
+  onCapture: (file: File) => void;
+  onFallback: () => void;
+  onClose: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">(
+    "environment",
+  );
+  const [cameraStarting, setCameraStarting] = useState(true);
+  const [cameraError, setCameraError] = useState("");
+
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }
+
+  async function startCamera(mode: "environment" | "user") {
+    stopCamera();
+    setCameraStarting(true);
+    setCameraError("");
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("ဒီ browser မှာ live camera API မရှိပါ");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: mode },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (error) {
+      console.error("Product photo camera error:", error);
+      setCameraError(
+        window.isSecureContext
+          ? "Camera permission ကို Allow လုပ်ပါ။ မရပါက Device Camera ကိုသုံးပါ။"
+          : "Live camera အတွက် HTTPS လိုအပ်ပါသည်။ Device Camera ကိုသုံးနိုင်ပါသည်။",
+      );
+    } finally {
+      setCameraStarting(false);
+    }
+  }
+
+  useEffect(() => {
+    void startCamera(facingMode);
+    return stopCamera;
+    // facingMode ပြောင်းတိုင်း camera stream အသစ်စမည်။
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facingMode]);
+
+  function switchCamera() {
+    setFacingMode((current) =>
+      current === "environment" ? "user" : "environment",
+    );
+  }
+
+  function takePhoto() {
+    const video = videoRef.current;
+
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      toast.error("Camera အဆင်သင့်မဖြစ်သေးပါ");
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      toast.error("Photo capture မလုပ်နိုင်ပါ");
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          toast.error("Photo capture မလုပ်နိုင်ပါ");
+          return;
+        }
+
+        const file = new File([blob], `product-camera-${Date.now()}.jpg`, {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        });
+
+        stopCamera();
+        onCapture(file);
+      },
+      "image/jpeg",
+      0.9,
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="product-camera-screen fixed inset-0 z-[110] flex flex-col bg-black"
+    >
+      <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white sm:px-6">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-black">
+            <Camera className="h-5 w-5 text-blue-400" />
+            Product Photo Camera
+          </div>
+          <p className="mt-1 text-xs text-white/60">
+            iPad · Android · Windows tablet
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            stopCamera();
+            onClose();
+          }}
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/10 hover:bg-white/20"
+          aria-label="Close product camera"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </header>
+
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className={cn(
+            "h-full w-full object-contain",
+            facingMode === "user" && "-scale-x-100",
+          )}
+        />
+
+        {cameraStarting ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white">
+            <div className="text-center">
+              <Loader2 className="mx-auto h-9 w-9 animate-spin text-blue-400" />
+              <p className="mt-3 text-sm font-bold">Camera starting...</p>
+            </div>
+          </div>
+        ) : null}
+
+        {cameraError ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6 text-white">
+            <div className="max-w-md text-center">
+              <AlertCircle className="mx-auto h-10 w-10 text-amber-400" />
+              <p className="mt-4 text-sm font-bold leading-6">{cameraError}</p>
+              <button
+                type="button"
+                onClick={() => void startCamera(facingMode)}
+                className="mt-4 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold"
+              >
+                <RefreshCw className="mr-2 inline h-4 w-4" />
+                Try Again
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <footer className="grid grid-cols-3 items-center gap-3 border-t border-white/10 bg-black px-4 py-4 text-white sm:px-6">
+        <button
+          type="button"
+          onClick={switchCamera}
+          className="flex min-h-12 items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold hover:bg-white/20"
+        >
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Switch
+        </button>
+
+        <button
+          type="button"
+          onClick={takePhoto}
+          disabled={cameraStarting || Boolean(cameraError)}
+          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-blue-600 shadow-[0_0_0_5px_rgba(255,255,255,0.2)] disabled:opacity-40"
+          aria-label="Take product photo"
+        >
+          <Camera className="h-7 w-7" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            stopCamera();
+            onFallback();
+          }}
+          className="flex min-h-12 items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold hover:bg-white/20"
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          Device
+        </button>
+      </footer>
+    </motion.div>
+  );
+}
+
+function ProductBarcodeScanner({
+  theme,
+  onScan,
+  onClose,
+}: {
+  theme: Theme;
+  onScan: (barcode: string) => void;
+  onClose: () => void;
+}) {
+  const t = tk(theme);
+  const scanLockedRef = useRef(false);
+  const [paused, setPaused] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+
+  const { ref } = useZxing({
+    paused,
+    formats: ["retail_codes", "code_128", "qr_code"],
+    constraints: {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    },
+    trySkew: true,
+    timeBetweenDecodingAttempts: 300,
+    onDecodeResult(result) {
+      const barcode = result.rawValue?.trim();
+      if (!barcode || scanLockedRef.current) return;
+
+      scanLockedRef.current = true;
+      setPaused(true);
+
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate(100);
+      }
+
+      onScan(barcode);
+    },
+    onError(error) {
+      console.error("Product barcode camera error:", error);
+      setCameraError(
+        "Camera ဖွင့်မရပါ။ Safari/Chrome Settings မှ Camera permission ကို Allow လုပ်ပါ။",
+      );
+    },
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="barcode-scanner-screen fixed inset-0 z-[100] flex flex-col bg-black"
+    >
+      <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white sm:px-6">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-black">
+            <Camera className="h-5 w-5 text-emerald-400" />
+            Existing Product Barcode Scan
+          </div>
+          <p className="mt-1 truncate text-xs text-white/60">
+            Product ပေါ်က barcode ကို frame အတွင်း အလျားလိုက်ထားပါ
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 hover:bg-white/20"
+          aria-label="Close barcode scanner"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </header>
+
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <video
+          ref={ref}
+          autoPlay
+          muted
+          playsInline
+          className="h-full w-full object-cover"
+        />
+
+        <div className="pointer-events-none absolute inset-0 bg-black/10" />
+        <div className="barcode-scan-frame pointer-events-none absolute left-1/2 top-1/2 h-40 w-[88%] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border-[3px] border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.52),0_0_35px_rgba(52,211,153,0.35)]">
+          <motion.div
+            animate={{ y: [14, 142, 14] }}
+            transition={{ duration: 2.1, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute left-5 right-5 top-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_12px_rgba(239,68,68,1)]"
+          />
+        </div>
+
+        <div className="absolute inset-x-4 bottom-6 flex justify-center">
+          <div className="rounded-full border border-white/15 bg-black/60 px-4 py-2 text-center text-xs font-bold text-white backdrop-blur-xl">
+            EAN-13 · EAN-8 · UPC · CODE 128 · QR
+          </div>
+        </div>
+      </div>
+
+      {cameraError ? (
+        <div className="border-t border-rose-400/20 bg-rose-600 px-4 py-3 text-center text-sm font-bold text-white">
+          <AlertCircle className="mr-2 inline h-4 w-4" />
+          {cameraError}
+        </div>
+      ) : (
+        <div className={cn("border-t border-white/10 bg-black px-4 py-3 text-center text-xs font-bold text-white/70", t.textMuted)}>
+          Scan အောင်မြင်လျှင် barcode input ထဲ အလိုအလျောက်ထည့်ပေးပါမည်။
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+export default function ProductBulkEditPage() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  const { resolvedTheme } = useTheme();
+  const theme: Theme = resolvedTheme === "dark" ? "dark" : "light";
+
+  const t = tk(theme);
+
+  const accessToken = String(
+    (session as any)?.accessToken ||
+      (session as any)?.access_token ||
+      (session as any)?.token ||
+      "",
+  ).trim();
+
+  const tokenType = normalizeTokenType((session as any)?.tokenType);
+  const creatorInfo = useMemo(() => normalizeCreatorInfo(session), [session]);
+  const sessionBusinessModule = useMemo(
+    () => getSessionBusinessModule(session),
+    [session],
+  );
+  const activeModuleMeta = useMemo(
+    () =>
+      PRODUCT_MODULES.find((item) => item.value === sessionBusinessModule) ??
+      PRODUCT_MODULES[0],
+    [sessionBusinessModule],
+  );
+
+  const apiBase = "";
+
+  const [form, setForm] = useState<ProductForm>(INITIAL_FORM);
+  const [productModule, setProductModule] =
+    useState<ProductBusinessModule>("SUPERMARKET");
+  const [mode, setMode] = useState<AddMode>("bulk");
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [rowsLoading, setRowsLoading] = useState(true);
+  const savingRef = useRef(false);
+  const editorsRef = useRef(new Map<string, ReturnType<typeof createProductEditor>>());
+  useEffect(() => {
+    if (status !== "authenticated" || !accessToken) return;
+    let cancelled = false;
+    async function loadSelected() {
+      try {
+        const selected = JSON.parse(sessionStorage.getItem("pos-product-bulk-edit-selection") || "[]");
+        if (!Array.isArray(selected) || !selected.length || selected.some(id => typeof id !== "string" || !id)) throw new Error("Product list မှာ products ရွေးပြီး Edit Selected နှိပ်ပါ။");
+        const rows: BulkRow[] = [];
+        for (const id of [...new Set<string>(selected)]) {
+          const p = await readProductResponse(await fetch(`/backend/api/products/${encodeURIComponent(id)}`, { headers: { Authorization: `${tokenType} ${accessToken}` }, cache: "no-store" }));
+          const url = `/backend/api/products/${encodeURIComponent(id)}`;
+          const editor = createProductEditor(url, sessionStorage);
+          editorsRef.current.set(id, editor);
+          const row = makeBulkRow({ productId: id, rowId: id });
+          for (const key of Object.keys(INITIAL_FORM) as (keyof ProductForm)[]) {
+            const camel = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+            const value = p?.[key] ?? p?.[camel];
+            if (value !== undefined && value !== null) (row as any)[key] = key === "kitchen_item" ? value === true || value === "true" : String(value);
+          }
+          row.currentStock = String(p?.productQuantityAmount ?? p?.product_quantity_amount ?? p?.quantity ?? 0);
+          row.product_quantity_amount = String(editor.pending()?.quantity ?? 0);
+          row.image_path = String(p?.imagePath ?? p?.image_path ?? p?.product_image ?? "");
+          rows.push(row);
+        }
+        if (!cancelled) { setBulkRows(rows); setLoadError(null); }
+      } catch (error) { if (!cancelled) setLoadError(error instanceof Error ? error.message : "Load failed"); }
+      finally { if (!cancelled) setRowsLoading(false); }
+    }
+    void loadSelected();
+    return () => { cancelled = true; };
+  }, [status, accessToken, tokenType]);
+  const [bulkPaste, setBulkPaste] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkAiFilling, setBulkAiFilling] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [imageProcessing, setImageProcessing] = useState(false);
+
+  const [categoriesByModule, setCategoriesByModule] =
+    useState<Record<ProductBusinessModule, CategoryOption[]>>(
+      MODULE_CATEGORIES,
+    );
+
+  const activeCategories = useMemo(
+    () => getCategoryOptions(categoriesByModule, productModule),
+    [categoriesByModule, productModule],
+  );
+
+  const [catLoading, setCatLoading] = useState(false);
+  const [aiFilling, setAiFilling] = useState(false);
+  const [cropping, setCropping] = useState(false);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [productCameraOpen, setProductCameraOpen] = useState(false);
+  const [bulkBarcodeRowId, setBulkBarcodeRowId] = useState<string | null>(null);
+  const [bulkImageRowId, setBulkImageRowId] = useState<string | null>(null);
+  const [bulkImageProcessingIds, setBulkImageProcessingIds] = useState<
+    Set<string>
+  >(new Set());
+
+  const [suggestion, setSuggestion] = useState<AISuggestion | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [showReasoning, setShowReasoning] = useState(false);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraImageRef = useRef<HTMLInputElement>(null);
+  const barcodeSvgRef = useRef<SVGSVGElement>(null);
+
+  useEffect(() => {
+    if (!barcodeSvgRef.current || !form.barcode.trim()) return;
+
+    try {
+      JsBarcode(barcodeSvgRef.current, form.barcode.trim(), {
+        format: "CODE128",
+        displayValue: true,
+        fontSize: 12,
+        height: 55,
+        margin: 6,
+      });
+    } catch {}
+  }, [form.barcode]);
+
+  useEffect(() => {
+    setProductModule(sessionBusinessModule);
+    setForm((prev) => ({
+      ...prev,
+      product_type: sessionBusinessModule,
+      category: normalizeCategoryForModule(
+        prev.category,
+        sessionBusinessModule,
+        categoriesByModule,
+      ),
+    }));
+  }, [sessionBusinessModule, categoriesByModule]);
+
+  useEffect(() => {
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
+
+  useEffect(() => {
+    return () => {
+      bulkRows.forEach((row) => {
+        if (row.image_preview) URL.revokeObjectURL(row.image_preview);
+      });
+    };
+    // component unmount cleanup only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function setField<K extends keyof ProductForm>(
+    key: K,
+    value: ProductForm[K],
+  ) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function revokeAndSetPreview(url: string | null) {
+    setPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+  }
+
+  function resetForm() {
+    setForm({ ...INITIAL_FORM, product_type: productModule });
+    setImageFile(null);
+    revokeAndSetPreview(null);
+    setSuggestion(null);
+    setAiError(null);
+    setShowReasoning(false);
+  }
+
+  async function applyImage(file: File) {
+    const looksLikeImage =
+      file.type.startsWith("image/") ||
+      /\.(heic|heif|png|webp|gif|jpe?g)$/i.test(file.name);
+
+    if (!looksLikeImage) {
+      toast.error("Image file ပဲရွေးပါ");
+      return;
+    }
+
+    const toastId = toast.loading(
+      isHeicImage(file)
+        ? "iPad HEIC image ကို JPEG ပြောင်းနေပါသည်..."
+        : "Image ကို upload အတွက်ပြင်ဆင်နေပါသည်...",
+    );
+
+    try {
+      setImageProcessing(true);
+      const normalizedFile = await normalizeImageForUpload(file);
+
+      setImageFile(normalizedFile);
+      revokeAndSetPreview(URL.createObjectURL(normalizedFile));
+
+      toast.success(
+        `Image ready (${Math.max(1, Math.round(normalizedFile.size / 1024))} KB) ✅`,
+        { id: toastId },
+      );
+    } catch (error) {
+      console.error("Product image processing error:", error);
+      const message =
+        error instanceof Error ? error.message : "Image ပြင်ဆင်မရပါ";
+      toast.error(message, { id: toastId });
+    } finally {
+      setImageProcessing(false);
+    }
+  }
+
+  async function autoFill() {
+    if (!form.product_name.trim()) {
+      toast.error("Product name ကို အရင်ထည့်ပါ");
+      return;
+    }
+
+    setAiFilling(true);
+    setSuggestion(null);
+    setAiError(null);
+
+    const tid = toast.loading("Local AI analyzing...");
+
+    try {
+      await new Promise((r) => setTimeout(r, 450));
+
+      const s = localAIFill(form.product_name.trim());
+
+      setForm((prev) => ({
+        ...prev,
+        sku: prev.sku.trim() || s.sku,
+        barcode: prev.barcode.trim() || s.barcode,
+        category:
+          prev.category ||
+          normalizeCategoryForModule(
+            s.category,
+            productModule,
+            categoriesByModule,
+          ),
+        product_price: prev.product_price.trim() || s.suggested_price,
+        note: prev.note.trim() || s.note,
+      }));
+
+      setSuggestion(s);
+      toast.success("Local AI fill done ✅", { id: tid });
+    } catch (err: any) {
+      const msg = err?.message ?? "Local AI error ဖြစ်တယ်";
+      setAiError(msg);
+      toast.error(msg, { id: tid });
+    } finally {
+      setAiFilling(false);
+    }
+  }
+
+  function applyAIAll() {
+    if (!suggestion) return;
+
+    setForm((prev) => ({
+      ...prev,
+      sku: suggestion.sku,
+      barcode: suggestion.barcode,
+      category: suggestion.category,
+      product_price: suggestion.suggested_price,
+      note: suggestion.note,
+    }));
+
+    toast.success("AI suggestion apply လုပ်ပြီး ✅");
+  }
+
+  function generateBarcodeNow() {
+    const bc = generateBarcodeString(form.sku || form.product_name);
+    setField("barcode", bc);
+    toast.success("Valid EAN-13 barcode generated ✅");
+  }
+
+  function handleBarcodeScan(barcode: string) {
+    if (bulkBarcodeRowId) {
+      setBulkField(bulkBarcodeRowId, "barcode", barcode);
+    } else {
+      setField("barcode", barcode);
+    }
+
+    setBarcodeScannerOpen(false);
+    setBulkBarcodeRowId(null);
+    toast.success(`Barcode ${barcode} ထည့်ပြီးပါပြီ ✅`);
+  }
+
+  async function loadCategories() {
+    setCatLoading(true);
+
+    try {
+      const res = await fetch(`/backend/api/categories`, {
+        headers: accessToken
+          ? { Authorization: `${tokenType} ${accessToken}` }
+          : {},
+        cache: "no-store",
+      });
+
+      if (!res.ok) throw new Error();
+
+      const data = await res.json();
+      const rows = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.categories)
+          ? data.categories
+          : Array.isArray(data?.data)
+            ? data.data
+            : [];
+
+      const next: Record<ProductBusinessModule, CategoryOption[]> = {
+        SUPERMARKET: [...MODULE_CATEGORIES.SUPERMARKET],
+        RESTAURANT: [...MODULE_CATEGORIES.RESTAURANT],
+        FASHION: [...MODULE_CATEGORIES.FASHION],
+        FRUIT: [...MODULE_CATEGORIES.FRUIT],
+      };
+
+      rows.forEach((item: any) => {
+        const module = normalizeProductModule(
+          item.businessType ??
+            item.business_type ??
+            item.module ??
+            item.productType ??
+            item.product_type ??
+            productModule,
+        );
+
+        const value = String(
+          item.value ?? item.name ?? item.category ?? item.label ?? "",
+        )
+          .trim()
+          .toUpperCase();
+
+        if (!value) return;
+
+        next[module].push({
+          label: String(item.label ?? item.name ?? item.category ?? value),
+          value,
+        });
+      });
+
+      setCategoriesByModule({
+        SUPERMARKET: uniqueCategories(next.SUPERMARKET),
+        RESTAURANT: uniqueCategories(next.RESTAURANT),
+        FASHION: uniqueCategories(next.FASHION),
+        FRUIT: uniqueCategories(next.FRUIT),
+      });
+
+      setForm((prev) => ({
+        ...prev,
+        category: normalizeCategoryForModule(
+          prev.category,
+          productModule,
+          next,
+        ),
+      }));
+
+      toast.success("Module category list updated ✅");
+    } catch {
+      toast.error("Category API မရလို့ module default categories သုံးထားပါ");
+      setCategoriesByModule(MODULE_CATEGORIES);
+    } finally {
+      setCatLoading(false);
+    }
+  }
+
+  async function cropImage() {
+    if (!imageFile) {
+      toast.error("Image မရှိသေးပါ");
+      return;
+    }
+
+    try {
+      setCropping(true);
+
+      const cropped = await cropImageToSquare(imageFile);
+      await applyImage(cropped);
+
+      toast.success("Crop done ✅");
+    } catch (error) {
+      console.error("Image crop error:", error);
+      toast.error("Image crop မလုပ်နိုင်ပါ");
+    } finally {
+      setCropping(false);
+    }
+  }
+
+  function setBulkField<K extends keyof BulkRow>(
+    rowId: string,
+    key: K,
+    value: BulkRow[K],
+  ) {
+    setBulkRows((prev) =>
+      prev.map((row) =>
+        row.rowId === rowId
+          ? { ...row, [key]: value, status: "idle", error: null }
+          : row,
+      ),
+    );
+  }
+
+  async function applyBulkImage(rowId: string, file?: File | null) {
+    if (!file) return;
+
+    const looksLikeImage =
+      file.type.startsWith("image/") ||
+      /\.(heic|heif|png|webp|gif|jpe?g)$/i.test(file.name);
+
+    if (!looksLikeImage) {
+      toast.error("Image file ပဲရွေးပါ");
+      return;
+    }
+
+    const toastId = toast.loading(
+      isHeicImage(file)
+        ? "Bulk HEIC image ကို JPEG ပြောင်းနေပါသည်..."
+        : "Bulk image ကိုပြင်ဆင်နေပါသည်...",
+    );
+
+    setBulkImageProcessingIds((current) => {
+      const next = new Set(current);
+      next.add(rowId);
+      return next;
+    });
+
+    try {
+      const normalizedFile = await normalizeImageForUpload(file);
+
+      setBulkRows((prev) =>
+        prev.map((row) => {
+          if (row.rowId !== rowId) return row;
+
+          if (row.image_preview) URL.revokeObjectURL(row.image_preview);
+
+          return {
+            ...row,
+            image_file: normalizedFile,
+            image_preview: URL.createObjectURL(normalizedFile),
+            image_path: "",
+            status: "idle",
+            error: null,
+          };
+        }),
+      );
+
+      toast.success(
+        `Image ready (${Math.max(1, Math.round(normalizedFile.size / 1024))} KB) ✅`,
+        { id: toastId },
+      );
+    } catch (error) {
+      console.error("Bulk product image processing error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Bulk image ပြင်ဆင်မရပါ",
+        { id: toastId },
+      );
+    } finally {
+      setBulkImageProcessingIds((current) => {
+        const next = new Set(current);
+        next.delete(rowId);
+        return next;
+      });
+    }
+  }
+
+  function clearBulkImage(rowId: string) {
+    setBulkRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+
+        if (row.image_preview) URL.revokeObjectURL(row.image_preview);
+
+        return {
+          ...row,
+          image_file: null,
+          image_preview: "",
+          image_path: "",
+          status: "idle",
+          error: null,
+        };
+      }),
+    );
+  }
+
+  function generateBulkBarcode(rowId: string) {
+    setBulkRows((prev) =>
+      prev.map((row) =>
+        row.rowId === rowId
+          ? {
+              ...row,
+              barcode: generateBarcodeString(row.sku || row.product_name),
+              status: "idle",
+              error: null,
+            }
+          : row,
+      ),
+    );
+    toast.success("Bulk row EAN-13 barcode generated ✅");
+  }
+
+  function localAIFillBulkRow(rowId: string) {
+    setBulkRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        if (!row.product_name.trim()) {
+          return {
+            ...row,
+            status: "error",
+            error: "Product name လိုအပ်ပါတယ်။",
+          };
+        }
+
+        const s = localAIFill(row.product_name.trim());
+
+        return {
+          ...row,
+          sku: row.sku.trim() || s.sku,
+          barcode: row.barcode.trim() || s.barcode,
+          category:
+            row.category ||
+            normalizeCategoryForModule(
+              s.category,
+              productModule,
+              categoriesByModule,
+            ),
+          product_price: row.product_price.trim() || s.suggested_price,
+          note: row.note.trim() || s.note,
+          suggestion: s,
+          status: "idle",
+          error: null,
+        };
+      }),
+    );
+  }
+
+  async function localAIFillAllBulkRows() {
+    setBulkAiFilling(true);
+
+    try {
+      await new Promise((r) => setTimeout(r, 350));
+
+      setBulkRows((prev) =>
+        prev.map((row) => {
+          if (!row.product_name.trim()) return row;
+
+          const s = localAIFill(row.product_name.trim());
+
+          return {
+            ...row,
+            sku: row.sku.trim() || s.sku,
+            barcode: row.barcode.trim() || s.barcode,
+            category:
+              row.category ||
+              normalizeCategoryForModule(
+                s.category,
+                productModule,
+                categoriesByModule,
+              ),
+            product_price: row.product_price.trim() || s.suggested_price,
+            note: row.note.trim() || s.note,
+            suggestion: s,
+            status: "idle",
+            error: null,
+          };
+        }),
+      );
+
+      toast.success("Bulk rows AI fill done ✅");
+    } finally {
+      setBulkAiFilling(false);
+    }
+  }
+
+  function applyBulkPaste() {
+    const rows = bulkRowsFromPaste(bulkPaste).map((row) => ({
+      ...row,
+      product_type: productModule,
+      category: normalizeCategoryForModule(
+        row.category,
+        productModule,
+        categoriesByModule,
+      ),
+    }));
+
+    if (!rows.length) {
+      toast.error("Paste data မတွေ့ပါ။");
+      return;
+    }
+
+    setBulkRows((prev) => {
+      prev.forEach((row) => {
+        if (row.image_preview) URL.revokeObjectURL(row.image_preview);
+      });
+      return rows;
+    });
+    setBulkPaste("");
+    toast.success(`${rows.length} rows imported ✅`);
+  }
+
+  async function submitBulk() {
+    if (savingRef.current || rowsLoading || loadError || bulkImageProcessingIds.size) return;
+    if (status !== "authenticated" || !accessToken) { toast.error("Login ပြန်ဝင်ပါ။"); return; }
+    if (!bulkRows.length) return;
+    savingRef.current = true; setBulkSaving(true);
+    const rows = [...bulkRows]; let success = 0;
+    const tid = toast.loading(`Saving ${rows.length} products...`);
+    const failedIds = new Set<string>();
+    try {
+      for (const row of rows) {
+        setBulkRows(prev => prev.map(item => item.rowId === row.rowId ? { ...item, status: "saving", error: null } : item));
+        try {
+          if (!row.productId || !row.sku.trim() || !row.product_name.trim() || !row.product_price.trim()) throw new Error("Product ID, SKU, Name, Price လိုအပ်ပါသည်။");
+          if (!Number.isFinite(Number(row.product_price)) || Number(row.product_price) < 0) throw new Error("Price must be a non-negative number.");
+          if (!Number.isFinite(Number(row.product_discount)) || Number(row.product_discount) < 0) throw new Error("Discount must be a non-negative number.");
+          const quantity = validateAddition(row.product_quantity_amount);
+          const editor = editorsRef.current.get(row.productId);
+          if (!editor) throw new Error("Reload selected products before saving.");
+          const strings = Object.fromEntries(Object.entries(row).filter(([,value]) => typeof value === "string")) as Record<string,string>;
+          const data = productEditData(strings, row.image_file);
+          appendModuleFieldsToFormData(data, row, productModule);
+          await editor.save({ authorization: `${tokenType} ${accessToken}`, data, quantity,
+            onProductSaved() {}, onStockPending() {}, onStockSaved() {} });
+          success++;
+          setBulkRows(prev => prev.map(item => item.rowId === row.rowId ? { ...item, status: "success", product_quantity_amount: "0", error: null } : item));
+        } catch (error) {
+          failedIds.add(row.rowId);
+          setBulkRows(prev => prev.map(item => item.rowId === row.rowId ? { ...item, status: "error", error: error instanceof Error ? error.message : "Save failed" } : item));
+        }
+      }
+      window.dispatchEvent(new Event("pos-products-stock-refresh"));
+      if (failedIds.size) {
+        setBulkRows(prev => prev.filter(row => failedIds.has(row.rowId)));
+        toast.error(`${success} saved, ${failedIds.size} failed. Failed rows ကို ပြင်ပြီး Save All ပြန်နှိပ်ပါ။`, { id: tid });
+      } else {
+        toast.success(`${success} products updated`, { id: tid });
+        sessionStorage.removeItem("pos-product-bulk-edit-selection");
+        router.push("/dashboard/product"); router.refresh();
+      }
+    } finally { savingRef.current = false; setBulkSaving(false); }
+  }
+
+  return (
+    <div className={cn("product-create-ipad relative min-h-full py-5", t.root)}>
+      <style jsx global>{`
+        .barcode-scanner-screen,
+        .product-camera-screen {
+          height: 100vh;
+          height: 100dvh;
+          padding-top: env(safe-area-inset-top);
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+        .barcode-mobile-input {
+          font-size: 16px !important;
+        }
+        @media (min-width: 768px) and (max-width: 1279px) {
+          .barcode-action-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 10px;
+            align-items: end;
+          }
+          .barcode-action-grid button {
+            min-height: 48px;
+          }
+          .barcode-scan-frame {
+            width: min(78vw, 760px);
+            height: 190px;
+          }
+        }
+        @media (max-width: 767px) {
+          .barcode-action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .barcode-action-grid .barcode-field-wrap {
+            grid-column: 1 / -1;
+          }
+          .barcode-action-grid button {
+            min-height: 48px;
+            width: 100%;
+          }
+          .barcode-scan-frame {
+            width: 88vw;
+            height: 160px;
+          }
+        }
+        @media (min-width: 768px) and (max-width: 1279px) and (orientation: landscape) {
+          .product-create-ipad { padding: 12px; }
+          .product-create-ipad > .space-y-5 > :not(:first-child) { margin-top: 12px; }
+          .product-create-ipad .create-header { padding: 14px; }
+          .product-create-ipad .create-header h1 { font-size: 23px; }
+          .product-create-ipad .create-header .mt-4 { margin-top: 8px; }
+          .product-create-ipad .create-header button { min-height: 44px; }
+          .product-create-ipad .create-body { padding: 14px; }
+          .product-create-ipad .single-layout { grid-template-columns: minmax(0,1.55fr) minmax(0,1fr); gap: 16px; align-items: start; }
+          .product-create-ipad .single-preview { min-width: 0; position: sticky; top: 12px; }
+          .product-create-ipad .single-preview section { padding: 12px; }
+          .product-create-ipad .single-preview img { max-height: 180px; }
+          .product-create-ipad .single-preview .image-preview { min-height: 140px; }
+          .product-create-ipad .single-layout form > .grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+          .product-create-ipad input:not([type="checkbox"]):not([type="file"]),
+          .product-create-ipad select { min-height: 44px; font-size: 12px; }
+          .product-create-ipad textarea { font-size: 12px; }
+          .product-create-ipad .bulk-scroll { overflow: visible; border: 0; }
+          .product-create-ipad .bulk-table { display: block; min-width: 0; }
+          .product-create-ipad .bulk-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+          .product-create-ipad .bulk-table tbody { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; border: 0; }
+          .product-create-ipad .bulk-table tbody > tr { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--border); border-radius: 16px; }
+          .product-create-ipad .bulk-table td { display: block; min-width: 0; padding: 0; text-align: left; }
+          .product-create-ipad .bulk-table td::before { content: attr(data-label); display: block; margin-bottom: 5px; font-size: 10px; font-weight: 700; color: var(--muted-foreground); }
+          .product-create-ipad .bulk-table td:nth-child(1),
+          .product-create-ipad .bulk-table td:nth-child(2),
+          .product-create-ipad .bulk-table td:nth-child(4),
+          .product-create-ipad .bulk-table td:nth-child(10),
+          .product-create-ipad .bulk-table td:nth-child(12),
+          .product-create-ipad .bulk-table td:nth-child(13) { grid-column: 1 / -1; }
+          .product-create-ipad .bulk-table td * { min-width: 0; }
+          .product-create-ipad .bulk-table td input,
+          .product-create-ipad .bulk-table td select,
+          .product-create-ipad .bulk-table td textarea { width: 100%; }
+          .product-create-ipad .bulk-table td:nth-child(10) > div > .grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+          .product-create-ipad .bulk-table td:nth-child(10) > div.grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+          .product-create-ipad .bulk-table button { min-height: 44px; }
+        }
+      `}</style>
+
+      <AnimatePresence>
+        {barcodeScannerOpen ? (
+          <ProductBarcodeScanner
+            theme={theme}
+            onScan={handleBarcodeScan}
+            onClose={() => {
+              setBarcodeScannerOpen(false);
+              setBulkBarcodeRowId(null);
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {productCameraOpen ? (
+          <ProductCameraCapture
+            onCapture={(file) => {
+              const targetRowId = bulkImageRowId;
+              setProductCameraOpen(false);
+              setBulkImageRowId(null);
+
+              if (targetRowId) {
+                void applyBulkImage(targetRowId, file);
+              } else {
+                void applyImage(file);
+              }
+            }}
+            onFallback={() => {
+              const targetRowId = bulkImageRowId;
+              setProductCameraOpen(false);
+              setBulkImageRowId(null);
+
+              window.setTimeout(() => {
+                if (targetRowId) {
+                  document
+                    .getElementById(`bulk-camera-${targetRowId}`)
+                    ?.click();
+                } else {
+                  cameraImageRef.current?.click();
+                }
+              }, 50);
+            }}
+            onClose={() => {
+              setProductCameraOpen(false);
+              setBulkImageRowId(null);
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <div className="mx-auto max-w-7xl space-y-5">
+        <motion.div
+          initial={{ opacity: 0, y: -14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className={cn(
+            "create-header relative overflow-hidden rounded-2xl border p-5 md:p-6",
+            t.card,
+          )}
+        >
+          <div
+            className="absolute left-0 right-0 top-0 h-[2px]"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, var(--color-blue-600), transparent)",
+            }}
+          />
+
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-5">
+              <div>
+                <h1
+                  className={cn(
+                    "text-2xl font-bold tracking-tight md:text-3xl",
+                    t.text,
+                  )}
+                >
+                  Edit Selected Products
+                  <span className={cn("ml-2 text-sm font-medium", t.textMuted)}>
+                    owner protected
+                  </span>
+                </h1>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
+                      t.pill,
+                    )}
+                  >
+                    <UserCircle2 className="h-3.5 w-3.5" />
+                    {creatorInfo.username || creatorInfo.id || "Current User"}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
+                      t.pill,
+                    )}
+                  >
+                    <Store className="h-3.5 w-3.5" />
+                    {creatorInfo.shopCode || creatorInfo.shopId || "No Shop"}
+                  </span>
+
+                  <span className="inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1.5 text-[11px] font-bold text-blue-500">
+                    <Package2 className="h-3.5 w-3.5" />
+                    {activeModuleMeta.label}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className={cn(
+                  "flex h-10 items-center gap-2 rounded-xl border px-4 text-[13px] font-semibold transition-all",
+                  t.btn,
+                )}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </button>
+            </div>
+          </div>
+        </motion.div>
+
+        {(
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className={cn("create-body rounded-2xl border p-5 md:p-6", t.card)}
+          >
+            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className={cn("mb-1 text-[22px] font-black", t.text)}>
+                  Product Form
+                  <span className={cn("ml-2 text-sm font-medium", t.textMuted)}>
+                    / Bulk Edit
+                  </span>
+                </div>
+                <div className={cn("text-[13px]", t.textMuted)}>
+                  မူလ design မပျက်အောင် table row, Local AI, image path/preview
+                  နှင့် module fields ကို row တစ်ကြောင်းချင်းစီတွင်
+                  ထည့်ထားပါတယ်။
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={localAIFillAllBulkRows}
+                  disabled={bulkAiFilling || bulkSaving || rowsLoading}
+                  className={cn(
+                    "flex h-10 items-center gap-2 rounded-xl border px-4 text-[12px] font-semibold transition-all",
+                    t.btn,
+                  )}
+                >
+                  {bulkAiFilling ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Bot className="h-4 w-4" />
+                  )}
+                  AI Fill Rows
+                </button>
+
+                <button
+                  type="button"
+                  onClick={submitBulk}
+                  disabled={bulkSaving || rowsLoading || !!loadError || !bulkRows.length || bulkImageProcessingIds.size > 0}
+                  className={cn(
+                    "flex h-10 items-center gap-2 rounded-xl px-5 text-[13px] font-bold transition-all",
+                    t.btnPrimary,
+                  )}
+                >
+                  {bulkSaving || bulkImageProcessingIds.size > 0 ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-4 w-4" />
+                  )}
+                  {bulkImageProcessingIds.size > 0
+                    ? "Preparing Images..."
+                    : "Save All"}
+                </button>
+              </div>
+            </div>
+
+            {rowsLoading && <p role="status" className={cn("mb-4 text-sm", t.text)}>Loading selected products...</p>}
+            {loadError && <p role="alert" className="mb-4 text-sm text-rose-500">{loadError}</p>}
+            <p className={cn("mb-4 text-sm", t.textMuted)}>Stock to add သည် လက်ကျန်ကို အစားထိုးခြင်းမဟုတ်ပါ။ 0 ဆို stock မပြောင်းပါ။ Failed row ကို retry လုပ်လျှင် pending request ID ကို ဆက်သုံးမည်။</p>
+            <div className="bulk-scroll overflow-x-auto rounded-2xl border border-white/10">
+              <fieldset disabled={bulkSaving || rowsLoading} className="min-w-0">
+              <table className="bulk-table w-full min-w-[2080px] border-collapse text-left">
+                <thead>
+                  <tr
+                    className={cn(
+                      "text-[10px] font-bold uppercase tracking-wider",
+                      t.textSubtle,
+                    )}
+                  >
+                    <th className="px-3 py-3">Status</th>
+                    <th className="px-3 py-3">Image</th>
+                    <th className="px-3 py-3">SKU</th>
+                    <th className="px-3 py-3">Name</th>
+                    <th className="px-3 py-3">Price</th>
+                    <th className="px-3 py-3">Stock to add</th>
+                    <th className="px-3 py-3">Barcode</th>
+                    <th className="px-3 py-3">Category</th>
+                    <th className="px-3 py-3">Module</th>
+                    <th className="px-3 py-3">Module Fields</th>
+                    <th className="px-3 py-3">Discount</th>
+                    <th className="px-3 py-3">Note</th>
+                    <th className="px-3 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+
+                <tbody
+                  className={cn(
+                    "divide-y",
+                    theme === "dark"
+                      ? "divide-white/[0.06]"
+                      : "divide-slate-100",
+                  )}
+                >
+                  {bulkRows.map((row, index) => {
+                    const imagePreview =
+                      row.image_preview || buildImagePreviewUrl(row.image_path);
+                    const imageProcessing = bulkImageProcessingIds.has(
+                      row.rowId,
+                    );
+
+                    return (
+                      <tr key={row.rowId}>
+                        <td data-label="Status" className="px-3 py-3 align-top">
+                          {row.status === "saving" ? (
+                            <Badge className="border border-blue-500/20 bg-blue-500/10 text-blue-400">
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />{" "}
+                              Saving
+                            </Badge>
+                          ) : row.status === "success" ? (
+                            <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                              Saved
+                            </Badge>
+                          ) : row.status === "error" ? (
+                            <Badge
+                              title={row.error || ""}
+                              className="border border-rose-500/20 bg-rose-500/10 text-rose-400"
+                            >
+                              Error
+                            </Badge>
+                          ) : row.suggestion ? (
+                            <Badge
+                              className={cn(
+                                "border text-[10px] font-bold",
+                                CONFIDENCE_COLORS[row.suggestion.confidence],
+                              )}
+                            >
+                              AI {row.suggestion.confidence}
+                            </Badge>
+                          ) : (
+                            <Badge className={cn("border", t.pill)}>
+                              #{index + 1}
+                            </Badge>
+                          )}
+                        </td>
+
+                        <td data-label="Image" className="px-3 py-3 align-top">
+                          <div className="flex min-w-[260px] items-center gap-2">
+                            <div
+                              className={cn(
+                                "grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl border",
+                                t.previewCard,
+                              )}
+                            >
+                              {imageProcessing ? (
+                                <Loader2
+                                  className={cn(
+                                    "h-5 w-5 animate-spin",
+                                    t.textMuted,
+                                  )}
+                                />
+                              ) : imagePreview ? (
+                                <img
+                                  src={imagePreview}
+                                  alt="product"
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <ImageIcon
+                                  className={cn("h-4 w-4", t.textSubtle)}
+                                />
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <label
+                                  className={cn(
+                                    "flex h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl border px-2 text-[10px] font-bold transition-all",
+                                    imageProcessing &&
+                                      "pointer-events-none opacity-50",
+                                    t.btn,
+                                  )}
+                                >
+                                  <Upload className="h-3.5 w-3.5" />
+                                  {row.image_file ? "Change" : "Choose"}
+                                  <input
+                                    type="file"
+                                    hidden
+                                    accept="image/*,.heic,.heif"
+                                    disabled={imageProcessing}
+                                    onChange={(e) => {
+                                      void applyBulkImage(
+                                        row.rowId,
+                                        e.target.files?.[0] || null,
+                                      );
+                                      e.currentTarget.value = "";
+                                    }}
+                                  />
+                                </label>
+
+                                <button
+                                  type="button"
+                                  disabled={imageProcessing}
+                                  onClick={() => {
+                                    setBulkImageRowId(row.rowId);
+                                    setProductCameraOpen(true);
+                                  }}
+                                  className={cn(
+                                    "flex h-11 items-center justify-center gap-1.5 rounded-xl px-2 text-[10px] font-bold transition-all disabled:opacity-50",
+                                    t.btnPrimary,
+                                  )}
+                                >
+                                  <Camera className="h-3.5 w-3.5" />
+                                  Camera
+                                </button>
+
+                                <input
+                                  id={`bulk-camera-${row.rowId}`}
+                                  type="file"
+                                  hidden
+                                  accept="image/*"
+                                  capture="environment"
+                                  onChange={(e) => {
+                                    void applyBulkImage(
+                                      row.rowId,
+                                      e.target.files?.[0] || null,
+                                    );
+                                    e.currentTarget.value = "";
+                                  }}
+                                />
+                              </div>
+
+                              {row.image_file ? (
+                                <div
+                                  className={cn(
+                                    "mt-1 truncate text-[10px]",
+                                    t.textSubtle,
+                                  )}
+                                >
+                                  {row.image_file.name} ·{" "}
+                                  {Math.max(
+                                    1,
+                                    Math.round(row.image_file.size / 1024),
+                                  )}{" "}
+                                  KB
+                                </div>
+                              ) : (
+                                <Input
+                                  readOnly
+                                  title="Existing image path. Choose a file to replace the image."
+                                  value={row.image_path}
+                                  onChange={(e) =>
+                                    setBulkField(
+                                      row.rowId,
+                                      "image_path",
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="optional image path"
+                                  className={cn(
+                                    "mt-1 h-8 rounded-xl text-[11px]",
+                                    t.input,
+                                  )}
+                                />
+                              )}
+                            </div>
+
+                            {(row.image_file || row.image_path) && (
+                              <button
+                                type="button"
+                                onClick={() => clearBulkImage(row.rowId)}
+                                disabled={imageProcessing}
+                                className={cn(
+                                  "grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition-all disabled:opacity-50",
+                                  theme === "dark"
+                                    ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                                    : "border-rose-200 bg-rose-50 text-rose-600",
+                                )}
+                                title="Remove image"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        <td data-label="SKU" className="px-3 py-3 align-top">
+                          <Input
+                            value={row.sku}
+                            onChange={(e) =>
+                              setBulkField(row.rowId, "sku", e.target.value)
+                            }
+                            className={cn(
+                              "h-10 min-w-[130px] rounded-xl",
+                              t.input,
+                            )}
+                          />
+                        </td>
+
+                        <td data-label="Name" className="px-3 py-3 align-top">
+                          <Input
+                            value={row.product_name}
+                            onChange={(e) =>
+                              setBulkField(
+                                row.rowId,
+                                "product_name",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="Product name"
+                            className={cn(
+                              "h-10 min-w-[230px] rounded-xl",
+                              t.input,
+                            )}
+                          />
+                        </td>
+
+                        <td data-label="Price" className="px-3 py-3 align-top">
+                          <Input
+                            type="number"
+                            value={row.product_price}
+                            onChange={(e) =>
+                              setBulkField(
+                                row.rowId,
+                                "product_price",
+                                e.target.value,
+                              )
+                            }
+                            className={cn(
+                              "h-10 min-w-[110px] rounded-xl",
+                              t.input,
+                            )}
+                          />
+                        </td>
+
+                        <td data-label="Stock to add" className="px-3 py-3 align-top">
+                          <div className={cn("mb-1 text-[11px]", t.textMuted)}>Current: {row.currentStock}</div>
+                          <Input
+                            type="number"
+                            aria-label={`Stock to add; current stock ${row.currentStock}`}
+                            title={`Current stock: ${row.currentStock}. Enter additional quantity only.`}
+                            value={row.product_quantity_amount}
+                            onChange={(e) =>
+                              setBulkField(
+                                row.rowId,
+                                "product_quantity_amount",
+                                e.target.value,
+                              )
+                            }
+                            className={cn(
+                              "h-10 min-w-[95px] rounded-xl",
+                              t.input,
+                            )}
+                          />
+                        </td>
+
+                        <td data-label="Barcode" className="px-3 py-3 align-top">
+                          <div className="min-w-[250px] space-y-1.5">
+                            <Input
+                              value={row.barcode}
+                              onChange={(e) =>
+                                setBulkField(
+                                  row.rowId,
+                                  "barcode",
+                                  e.target.value,
+                                )
+                              }
+                              inputMode="numeric"
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder="EAN / UPC / Code 128"
+                              className={cn(
+                                "barcode-mobile-input h-11 rounded-xl font-mono text-[13px]",
+                                t.input,
+                              )}
+                            />
+
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => generateBulkBarcode(row.rowId)}
+                                className={cn(
+                                  "flex h-10 items-center justify-center gap-1.5 rounded-xl border px-2 text-[10px] font-bold",
+                                  t.btn,
+                                )}
+                                title="Generate valid EAN-13"
+                              >
+                                <Wand2 className="h-3.5 w-3.5" />
+                                Generate
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBulkBarcodeRowId(row.rowId);
+                                  setBarcodeScannerOpen(true);
+                                }}
+                                className={cn(
+                                  "flex h-10 items-center justify-center gap-1.5 rounded-xl px-2 text-[10px] font-bold",
+                                  t.btnPrimary,
+                                )}
+                                title="Scan product barcode"
+                              >
+                                <ScanLine className="h-3.5 w-3.5" />
+                                Scan
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td data-label="Category" className="px-3 py-3 align-top">
+                          <Select
+                            value={row.category}
+                            onValueChange={(v) =>
+                              setBulkField(row.rowId, "category", v)
+                            }
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                "h-10 min-w-[150px] rounded-xl",
+                                t.input,
+                              )}
+                            >
+                              <SelectValue placeholder="Category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {getCategoryOptions(
+                                categoriesByModule,
+                                productModule,
+                              ).map((cat) => (
+                                <SelectItem key={cat.value} value={cat.value}>
+                                  {cat.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+
+                        <td data-label="Module" className="px-3 py-3 align-top">
+                          <div
+                            className={cn(
+                              "flex h-10 min-w-[150px] items-center rounded-xl border px-3 text-[11px] font-bold",
+                              t.previewCard,
+                              t.text,
+                            )}
+                          >
+                            {activeModuleMeta.label}
+                          </div>
+                        </td>
+
+                        <td data-label="Module Fields" className="px-3 py-3 align-top">
+                          {productModule === "RESTAURANT" ? (
+                            <label
+                              className={cn(
+                                "flex min-w-[250px] items-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-bold",
+                                t.previewCard,
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={row.kitchen_item}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "kitchen_item",
+                                    e.target.checked,
+                                  )
+                                }
+                              />
+                              Kitchen item
+                            </label>
+                          ) : productModule === "FASHION" ? (
+                            <div className="grid min-w-[430px] grid-cols-3 gap-2">
+                              <Input
+                                value={row.brand}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "brand",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Brand"
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                              <Input
+                                value={row.color}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "color",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Color"
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                              <Input
+                                value={row.size}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "size",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Size"
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                              <Input
+                                value={row.gender}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "gender",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Gender"
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                              <Input
+                                value={row.season}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "season",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Season"
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                            </div>
+                          ) : productModule === "FRUIT" ? (
+                            <div className="grid min-w-[560px] grid-cols-5 gap-2">
+                              <Select
+                                value={row.sale_type}
+                                onValueChange={(v) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "sale_type",
+                                    v as ProductForm["sale_type"],
+                                  )
+                                }
+                              >
+                                <SelectTrigger
+                                  className={cn("h-10 rounded-xl", t.input)}
+                                >
+                                  <SelectValue placeholder="Sale" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="WEIGHT">WEIGHT</SelectItem>
+                                  <SelectItem value="PIECE">PIECE</SelectItem>
+                                  <SelectItem value="PACK">PACK</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Select
+                                value={row.unit}
+                                onValueChange={(v) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "unit",
+                                    v as ProductForm["unit"],
+                                  )
+                                }
+                              >
+                                <SelectTrigger
+                                  className={cn("h-10 rounded-xl", t.input)}
+                                >
+                                  <SelectValue placeholder="Unit" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="kg">kg</SelectItem>
+                                  <SelectItem value="g">g</SelectItem>
+                                  <SelectItem value="viss">viss</SelectItem>
+                                  <SelectItem value="piece">piece</SelectItem>
+                                  <SelectItem value="pack">pack</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Input
+                                type="number"
+                                value={row.cost_price}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "cost_price",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Cost"
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                              <Input
+                                type="date"
+                                value={row.expiry_date}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "expiry_date",
+                                    e.target.value,
+                                  )
+                                }
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                              <Input
+                                value={row.supplier_name}
+                                onChange={(e) =>
+                                  setBulkField(
+                                    row.rowId,
+                                    "supplier_name",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Supplier"
+                                className={cn("h-10 rounded-xl", t.input)}
+                              />
+                            </div>
+                          ) : (
+                            <div
+                              className={cn(
+                                "min-w-[250px] rounded-xl border px-3 py-2 text-[11px] font-bold",
+                                t.previewCard,
+                                t.textMuted,
+                              )}
+                            >
+                              Supermarket default fields
+                            </div>
+                          )}
+                        </td>
+
+                        <td data-label="Discount" className="px-3 py-3 align-top">
+                          <Input
+                            type="number"
+                            value={row.product_discount}
+                            onChange={(e) =>
+                              setBulkField(
+                                row.rowId,
+                                "product_discount",
+                                e.target.value,
+                              )
+                            }
+                            className={cn(
+                              "h-10 min-w-[100px] rounded-xl",
+                              t.input,
+                            )}
+                          />
+                        </td>
+
+                        <td data-label="Note" className="px-3 py-3 align-top">
+                          <Input
+                            value={row.note}
+                            onChange={(e) =>
+                              setBulkField(row.rowId, "note", e.target.value)
+                            }
+                            className={cn(
+                              "h-10 min-w-[220px] rounded-xl",
+                              t.input,
+                            )}
+                          />
+                        </td>
+
+                        <td data-label="Action" className="px-3 py-3 text-right align-top">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => localAIFillBulkRow(row.rowId)}
+                              className={cn(
+                                "rounded-xl border px-3 py-2 text-[12px] font-semibold",
+                                t.btn,
+                              )}
+                            >
+                              <Bot className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (row.image_preview)
+                                  URL.revokeObjectURL(row.image_preview);
+
+                                setBulkRows((prev) =>
+                                  prev.length <= 1
+                                    ? []
+                                    : prev.filter(
+                                        (item) => item.rowId !== row.rowId,
+                                      ),
+                                );
+                              }}
+                              className={cn(
+                                "rounded-xl border px-3 py-2 text-[12px] font-semibold",
+                                theme === "dark"
+                                  ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                                  : "border-rose-200 bg-rose-50 text-rose-600",
+                              )}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              </fieldset>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+}

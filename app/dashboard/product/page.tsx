@@ -1,107 +1,2174 @@
+
+// "use client";
+// import * as React from "react";
+// import { useRouter } from "next/navigation";
+// import { useSession } from "next-auth/react";
+// import { useTheme } from "next-themes";
+// import { motion, AnimatePresence } from "framer-motion";
+// import {
+//   Search,
+//   Plus,
+//   Package2,
+//   Boxes,
+//   LayoutGrid,
+//   List,
+//   RotateCcw,
+//   ArrowDownAZ,
+//   ArrowUpZA,
+//   ChevronRight,
+//   TrendingUp,
+//   TrendingDown,
+//   CheckCircle2,
+//   AlertCircle,
+//   Tag,
+//   Wallet,
+//   Layers,
+//   Store,
+//   X,
+//   ChevronLeft,
+//   ChevronsLeft,
+//   ChevronsRight,
+//   UserCircle2,
+//   Trash2,
+//   Power,
+// } from "lucide-react";
+// import { cn } from "@/lib/utils";
+// import { Input } from "@/components/ui/input";
+// import { Badge } from "@/components/ui/badge";
+// import { FeaturePageGuard } from "@/components/feature-page-guard";
+// import { toast } from "sonner";
+// type Theme = "dark" | "light";
+// type ViewMode = "grid" | "compact";
+// type SortMode =
+//   | "name_asc"
+//   | "name_desc"
+//   | "price_desc"
+//   | "stock_desc"
+//   | "category_asc";
+// type StockLevel = "all" | "in_stock" | "low_stock" | "out_stock";
+// type AvailabilityFilter = "all" | "enabled" | "disabled";
+// type Product = {
+//   id: string;
+//   sku: string;
+//   productName: string;
+//   productPrice: number;
+//   barcode?: string | null;
+//   category?: string | null;
+//   productQuantityAmount: number; // Authoritative current quantity from the server.
+//   openingBalance: number | null;
+//   totalStock: number | null;
+//   soldQuantity: number | null;
+//   stockCorrection: number | null;
+//   stockTrackingBasis: string | null;
+//   stockTrackingStartedAt: string | null;
+//   imagePath?: string | null;
+//   image_path?: string | null;
+//   product_image?: string | null;
+//   productDiscount?: number | null;
+//   note?: string | null;
+//   productType?: string | null;
+//   createdBy?: any;
+//   createdByUserId?: string | null;
+//   createdByUsername?: string | null;
+//   createdByRole?: string | null;
+//   shopId?: string | null;
+//   shopCode?: string | null;
+//   availableForSale: boolean;
+// };
+// type ProductOwnerInfo = {
+//   id: string;
+//   username: string;
+//   shopId: string;
+//   shopCode: string;
+// };
+// const STORAGE_KEY = "binhlaig-product-page-owner-only-v2";
+// const PRODUCT_REFRESH_EVENT = "pos-products-stock-refresh";
+// const PAGE_SIZE_OPTIONS = [6, 9, 12, 18] as const;
+// function numberFormat(n: number) {
+//   return new Intl.NumberFormat().format(n || 0);
+// }
+// function toNumber(value: unknown, fallback = 0) {
+//   if (value == null || value === "") return fallback;
+//   if (typeof value === "number") {
+//     return Number.isFinite(value) ? value : fallback;
+//   }
+//   const cleaned = String(value).replaceAll(",", "").trim();
+//   const n = Number(cleaned);
+//   return Number.isFinite(n) ? n : fallback;
+// }
+// function money(n: number) {
+//   return `¥${numberFormat(n || 0)}`;
+// }
+// function shortMoney(n: number) {
+//   if (!n) return "¥0";
+//   if (n >= 1_000_000) return `¥${(n / 1_000_000).toFixed(1)}M`;
+//   if (n >= 1_000) return `¥${(n / 1_000).toFixed(0)}k`;
+//   return `¥${n}`;
+// }
+// function safeParseJson(value: unknown) {
+//   if (typeof value !== "string") return value;
+//   try {
+//     return JSON.parse(value);
+//   } catch {
+//     return value;
+//   }
+// }
+// function firstString(...values: unknown[]) {
+//   for (const value of values) {
+//     if (value == null) continue;
+//     const s = String(value).trim();
+//     if (s) return s;
+//   }
+//   return null;
+// }
+// function isNumericId(value: unknown) {
+//   return /^\d+$/.test(String(value ?? "").trim());
+// }
+// function normalizeOwnerInfo(session: unknown): ProductOwnerInfo {
+//   const user = ((session as any)?.user ?? {}) as any;
+//   const rawId = String(user.id ?? user.userId ?? user.staffId ?? "").trim();
+//   return {
+//     id: isNumericId(rawId) ? rawId : "",
+//     username: String(
+//       user.username ||
+//       (!isNumericId(rawId) ? rawId : "") ||
+//       user.name ||
+//       user.email ||
+//       "",
+//     ).trim(),
+//     shopId: user.shopId == null ? "" : String(user.shopId).trim(),
+//     shopCode: String(user.shopCode ?? "").trim(),
+//   };
+// }
+// function optionalQuantity(...values: unknown[]): number | null {
+//   for (const value of values) {
+//     if (value == null || value === "") continue;
+//     const n = Number(String(value).replaceAll(",", ""));
+//     if (Number.isFinite(n)) return n;
+//   }
+//   return null;
+// }
+// function stockTone(label: string, theme: Theme): { panel: string; label: string; value: string } | null {
+//   const dark = theme === "dark";
+//   if (label === "Remaining" || label === "Remaining stock") return {
+//     panel: dark ? "border-emerald-400/30 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50",
+//     label: dark ? "text-emerald-300" : "text-emerald-700", value: dark ? "text-emerald-200" : "text-emerald-800",
+//   };
+//   if (label.startsWith("Opening")) return {
+//     panel: dark ? "border-sky-400/30 bg-sky-400/10" : "border-sky-200 bg-sky-50",
+//     label: dark ? "text-sky-300" : "text-sky-700", value: dark ? "text-sky-200" : "text-sky-800",
+//   };
+//   if (label === "Total stock" || label === "Tracked total" || label === "Tracked total stock") return {
+//     panel: dark ? "border-indigo-400/30 bg-indigo-400/10" : "border-indigo-200 bg-indigo-50",
+//     label: dark ? "text-indigo-300" : "text-indigo-700", value: dark ? "text-indigo-200" : "text-indigo-800",
+//   };
+//   if (label === "Sold since tracking") return {
+//     panel: dark ? "border-amber-400/30 bg-amber-400/10" : "border-amber-200 bg-amber-50",
+//     label: dark ? "text-amber-300" : "text-amber-700", value: dark ? "text-amber-200" : "text-amber-800",
+//   };
+//   if (label === "Correction" || label === "Stock correction") return {
+//     panel: dark ? "border-violet-400/30 bg-violet-400/10" : "border-violet-200 bg-violet-50",
+//     label: dark ? "text-violet-300" : "text-violet-700", value: dark ? "text-violet-200" : "text-violet-800",
+//   };
+//   return null;
+// }
+// function stockText(value: number | null) {
+//   return value === null ? "—" : numberFormat(value);
+// }
+// function normalizeProduct(p: any): Product {
+//   const createdBy = safeParseJson(
+//     p?.createdBy ?? p?.created_by ?? p?.user_info ?? p?.owner ?? null,
+//   ) as any;
+//   return {
+//     id: String(p?.id ?? ""),
+//     sku: String(p?.sku ?? p?.productSku ?? p?.product_sku ?? ""),
+//     productName: String(
+//       p?.productName ?? p?.product_name ?? p?.name ?? p?.title ?? "",
+//     ),
+//     productPrice: toNumber(p?.productPrice ?? p?.product_price ?? p?.price),
+//     productQuantityAmount: toNumber(
+//       p?.productQuantityAmount ??
+//       p?.product_quantity_amount ??
+//       p?.quantity ??
+//       p?.stock,
+//     ),
+//     // These historical values must come from the shop-scoped backend response.
+//     // Current quantity alone cannot reveal original stock, edits, or sales.
+//     openingBalance: optionalQuantity(p?.openingBalance),
+//     totalStock: optionalQuantity(p?.totalStock),
+//     soldQuantity: optionalQuantity(p?.soldQuantity),
+//     stockCorrection: optionalQuantity(p?.stockCorrection),
+//     stockTrackingBasis: p?.stockTrackingBasis ?? null,
+//     stockTrackingStartedAt: p?.stockTrackingStartedAt ?? null,
+//     availableForSale: p?.availableForSale !== false,
+//     barcode: p?.barcode ?? null,
+//     category: p?.category ?? null,
+//     productType: p?.productType ?? p?.product_type ?? null,
+//     productDiscount: toNumber(
+//       p?.productDiscount ?? p?.product_discount ?? p?.discount,
+//     ),
+//     note: p?.note ?? null,
+//     imagePath: p?.imagePath ?? null,
+//     image_path: p?.image_path ?? null,
+//     product_image: p?.product_image ?? p?.productImage ?? null,
+//     createdBy,
+//     createdByUserId: firstString(
+//       p?.createdByUserId,
+//       p?.created_by_user_id,
+//       p?.created_by_id,
+//       p?.ownerId,
+//       p?.owner_id,
+//       p?.userId,
+//       p?.user_id,
+//       createdBy?.id,
+//       createdBy?.userId,
+//       createdBy?.user_id,
+//     ),
+//     createdByUsername: firstString(
+//       p?.createdByUsername,
+//       p?.created_by_username,
+//       p?.ownerUsername,
+//       p?.owner_username,
+//       p?.username,
+//       createdBy?.username,
+//       createdBy?.name,
+//       createdBy?.email,
+//     ),
+//     createdByRole: firstString(
+//       p?.createdByRole,
+//       p?.created_by_role,
+//       createdBy?.role,
+//     ),
+//     shopId: firstString(
+//       p?.shopId,
+//       p?.shop_id,
+//       createdBy?.shopId,
+//       createdBy?.shop_id,
+//     ),
+//     shopCode: firstString(
+//       p?.shopCode,
+//       p?.shop_code,
+//       createdBy?.shopCode,
+//       createdBy?.shop_code,
+//     ),
+//   };
+// }
+// function pickImagePath(p: Product) {
+//   return p.imagePath ?? p.image_path ?? p.product_image ?? null;
+// }
+// function buildImageUrl(path?: string | null) {
+//   if (!path) return null;
+//   const raw = String(path).trim();
+//   if (!raw) return null;
+//   if (raw.startsWith("http\://") || raw.startsWith("https\://")) {
+//     return raw;
+//   }
+//   const cleaned = raw.replace(/^\/?uploads\/?/i, "").replace(/^\/+/, "");
+//   return `/uploads/${cleaned}`;
+// }
+// async function readErrorText(res: Response) {
+//   const ct = res.headers.get("content-type") || "";
+//   try {
+//     if (ct.includes("application/json")) {
+//       const j = await res.json();
+//       return j?.message || j?.error || JSON.stringify(j);
+//     }
+//     return (await res.text()) || "";
+//   } catch {
+//     return "";
+//   }
+// }
+// class ProductApiError extends Error {
+//   constructor(public status: number, public detail: string, message: string) { super(message); }
+// }
+// const TRACKED_DELETE_MESSAGE = "Tracked products retain stock history; disable availability instead of deleting";
+// function stockLevelOf(stock: number): StockLevel {
+//   if (stock <= 0) return "out_stock";
+//   if (stock < 5) return "low_stock";
+//   return "in_stock";
+// }
+// function stockBadge(stock: number) {
+//   if (stock <= 0) {
+//     return {
+//       label: "OUT",
+//       cls: "bg-rose-500/12 text-rose-400 border-rose-500/20",
+//     };
+//   }
+//   if (stock < 5) {
+//     return {
+//       label: "LOW",
+//       cls: "bg-amber-500/12 text-amber-400 border-amber-500/20",
+//     };
+//   }
+//   return {
+//     label: "IN",
+//     cls: "bg-emerald-500/12 text-emerald-400 border-emerald-500/20",
+//   };
+// }
+// function sortProducts(items: Product[], mode: SortMode) {
+//   const arr = [...items];
+//   switch (mode) {
+//     case "name_asc":
+//       return arr.sort((a, b) => a.productName.localeCompare(b.productName));
+//     case "name_desc":
+//       return arr.sort((a, b) => b.productName.localeCompare(a.productName));
+//     case "price_desc":
+//       return arr.sort((a, b) => b.productPrice - a.productPrice);
+//     case "stock_desc":
+//       return arr.sort(
+//         (a, b) => b.productQuantityAmount - a.productQuantityAmount,
+//       );
+//     case "category_asc":
+//       return arr.sort((a, b) =>
+//         String(a.category || "").localeCompare(String(b.category || "")),
+//       );
+//     default:
+//       return arr;
+//   }
+// }
+// function hashCode(str: string) {
+//   let h = 0;
+//   for (let i = 0; i < str.length; i++) {
+//     h = str.charCodeAt(i) + ((h << 5) - h);
+//   }
+//   return h;
+// }
+// function getInitials(name: string) {
+//   return String(name || "P")
+//     .split(" ")
+//     .filter(Boolean)
+//     .slice(0, 2)
+//     .map((x) => x[0]?.toUpperCase())
+//     .join("");
+// }
+// function gradientFromSeed(seed: string) {
+//   const palettes = [
+//     ["#3b82f6", "#06b6d4"],
+//     ["#8b5cf6", "#d946ef"],
+//     ["#10b981", "#06b6d4"],
+//     ["#f59e0b", "#ef4444"],
+//     ["#f43f5e", "#ec4899"],
+//     ["#6366f1", "#3b82f6"],
+//     ["#14b8a6", "#10b981"],
+//     ["#f97316", "#f59e0b"],
+//   ];
+//   return palettes[Math.abs(hashCode(seed)) % palettes.length];
+// }
+// const tk = (theme: Theme) =>
+//   theme === "dark"
+//     ? {
+//       root: "bg-transparent",
+//       text: "text-white",
+//       textMuted: "text-slate-400",
+//       textSubtle: "text-slate-500",
+//       card: "border-white/10 bg-black shadow-sm",
+//       input:
+//         "border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/20",
+//       btn: "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 hover:text-white",
+//       btnPrimary:
+//         "bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20",
+//       btnDanger:
+//         "border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20",
+//       pill: "border-white/10 bg-white/[0.04] text-slate-400",
+//       active:
+//         "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-600/20",
+//       statChip: "border-white/10 bg-white/[0.04]",
+//       modalBg: "border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-xl",
+//       line: "border-white/[0.07]",
+//       rowHover: "hover:bg-white/[0.035]",
+//     }
+//     : {
+//       root: "bg-transparent",
+//       text: "text-slate-900",
+//       textMuted: "text-slate-500",
+//       textSubtle: "text-slate-400",
+//       card: "border-slate-200 bg-white shadow-sm",
+//       input:
+//         "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm focus-visible:border-blue-500 focus-visible:ring-blue-500/20",
+//       btn: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 shadow-sm",
+//       btnPrimary:
+//         "bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20",
+//       btnDanger: "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100",
+//       pill: "border-slate-200 bg-white text-slate-500 shadow-sm",
+//       active:
+//         "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-600/20",
+//       statChip: "bg-white/70 border-slate-200",
+//       modalBg: "bg-white/95 backdrop-blur-xl border-slate-200/80 shadow-2xl",
+//       line: "border-slate-200",
+//       rowHover: "hover:bg-white/70",
+//     };
+// function ProductVisual({
+//   product,
+//   index,
+//   className,
+// }: {
+//   product: Product;
+//   index: number;
+//   className?: string;
+// }) {
+//   const imageUrl = buildImageUrl(pickImagePath(product));
+//   const [g1, g2] = gradientFromSeed(
+//     `${product.productName}-${product.sku}-${index}`,
+//   );
+//   if (imageUrl) {
+//     return (
+//       <img
+//         src={imageUrl}
+//         alt={product.productName}
+//         className={cn("h-full w-full object-cover", className)}
+//         draggable={false}
+//       />
+//     );
+//   }
+//   return (
+//     <div
+//       className={cn(
+//         "flex items-center justify-center text-white font-black",
+//         className,
+//       )}
+//       style={{ background: `linear-gradient(135deg, ${g1}, ${g2})` }}
+//     >
+//       <div className="flex flex-col items-center gap-1">
+//         <div className="rounded-2xl bg-black/15 px-3 py-2 text-lg backdrop-blur">
+//           {getInitials(product.productName || "P")}
+//         </div>
+//         <div className="text-[11px] opacity-90">{product.sku || "SKU"}</div>
+//       </div>
+//     </div>
+//   );
+// }
+// function CompactSummaryBar({
+//   theme,
+//   stats,
+// }: {
+//   theme: Theme;
+//   stats: {
+//     total: number;
+//     inStock: number;
+//     lowStock: number;
+//     outStock: number;
+//     totalValue: number;
+//   };
+// }) {
+//   const t = tk(theme);
+//   const items = [
+//     {
+//       label: "Products",
+//       value: numberFormat(stats.total),
+//       icon: Package2,
+//       color: "text-blue-400",
+//     },
+//     {
+//       label: "In Stock",
+//       value: numberFormat(stats.inStock),
+//       icon: CheckCircle2,
+//       color: "text-emerald-400",
+//     },
+//     {
+//       label: "Low",
+//       value: numberFormat(stats.lowStock),
+//       icon: AlertCircle,
+//       color: "text-amber-400",
+//     },
+//     {
+//       label: "Out",
+//       value: numberFormat(stats.outStock),
+//       icon: AlertCircle,
+//       color: "text-rose-400",
+//     },
+//     {
+//       label: "Value",
+//       value: shortMoney(stats.totalValue),
+//       icon: Wallet,
+//       color: "text-violet-400",
+//     },
+//   ];
+//   return (
+//     <div className="mt-3 flex flex-wrap items-center gap-2">
+//       {items.map((item) => {
+//         const Icon = item.icon;
+//         return (
+//           <div
+//             key={item.label}
+//             className={cn(
+//               "flex min-w-[112px] items-center gap-2 rounded-xl px-2 py-1.5",
+//               theme === "dark" ? "bg-white/[0.035]" : "bg-white/70",
+//             )}
+//           >
+//             <span
+//               className={cn(
+//                 "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+//                 theme === "dark" ? "bg-white/[0.06]" : "bg-slate-100",
+//               )}
+//             >
+//               <Icon className={cn("h-4 w-4", item.color)} />
+//             </span>
+//             <div className="min-w-0">
+//               <div
+//                 className={cn(
+//                   "text-[9px] font-black uppercase tracking-widest",
+//                   t.textSubtle,
+//                 )}
+//               >
+//                 {item.label}
+//               </div>
+//               <div className={cn("truncate text-[14px] font-black", t.text)}>
+//                 {item.value}
+//               </div>
+//             </div>
+//           </div>
+//         );
+//       })}
+//     </div>
+//   );
+// }
+// function ProductCard({
+//   product,
+//   index,
+//   theme,
+//   selected,
+//   onSelect,
+// }: {
+//   product: Product;
+//   index: number;
+//   theme: Theme;
+//   selected?: boolean;
+//   onSelect: (p: Product) => void;
+// }) {
+//   const t = tk(theme);
+//   const badge = stockBadge(product.productQuantityAmount);
+//   return (
+//     <motion.button
+//       type="button"
+//       whileHover={{ y: -3 }}
+//       onClick={() => onSelect(product)}
+//       className={cn(
+//         "w-full overflow-hidden rounded-2xl border text-left transition-all duration-200",
+//         theme === "dark"
+//           ? "border-white/[0.07] bg-white/[0.035] hover:bg-white/[0.06]"
+//           : "border-slate-200 bg-white/70 hover:bg-white",
+//         selected && "ring-2 ring-blue-500/50",
+//       )}
+//     >
+//       <div className="relative h-[118px] overflow-hidden">
+//         <ProductVisual
+//           product={product}
+//           index={index}
+//           className="absolute inset-0"
+//         />
+//         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+//         <div className="absolute left-2 top-2 z-10 flex gap-1.5">
+//           <Badge className={cn("border text-[10px] font-bold", badge.cls)}>
+//             {badge.label}
+//           </Badge>
+//           {!product.availableForSale && <Badge className="border border-slate-500/30 bg-slate-500/20 text-[10px] font-bold text-slate-300">Disabled</Badge>}
+//           {Number(product.productDiscount || 0) > 0 && (
+//             <Badge className="border border-amber-500/20 bg-amber-500/12 text-amber-400 text-[10px] font-bold">
+//               -{numberFormat(Number(product.productDiscount || 0))}
+//             </Badge>
+//           )}
+//         </div>
+//         <div className="absolute right-2 top-2 z-10">
+//           <div className="rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[9px] font-bold text-white backdrop-blur">
+//             {product.category || "UNCATEGORIZED"}
+//           </div>
+//         </div>
+//         <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-2.5">
+//           <div className="line-clamp-2 text-[13px] font-black leading-tight text-white drop-shadow-lg">
+//             {product.productName}
+//           </div>
+//           <div className="mt-0.5 font-mono text-[9px] text-white/55">
+//             {product.sku || "NO-SKU"}
+//           </div>
+//         </div>
+//       </div>
+//       <div className="px-3 pb-3 pt-2.5">
+//         <div
+//           className={cn("flex items-center gap-1.5 text-[10px]", t.textMuted)}
+//         >
+//           <Tag className="h-3 w-3 shrink-0" />
+//           {product.productType || "General Item"}
+//         </div>
+//         <div className="mt-2 grid grid-cols-3 gap-1.5">
+//           {[
+//             { label: "Price", value: shortMoney(product.productPrice) },
+//             {
+//               label: "Remaining",
+//               value: numberFormat(product.productQuantityAmount),
+//             },
+//             { label: product.stockTrackingBasis === "OPENING_BALANCE" ? "Opening at tracking" : "Opening stock", value: stockText(product.openingBalance) },
+//             { label: product.stockTrackingBasis === "OPENING_BALANCE" ? "Tracked total" : "Total stock", value: stockText(product.totalStock) },
+//             { label: "Sold since tracking", value: stockText(product.soldQuantity) },
+//             { label: "Correction", value: stockText(product.stockCorrection) },
+//             { label: "Barcode", value: product.barcode ? "YES" : "—" },
+//           ].map((item) => (
+//             <div
+//               key={item.label}
+//               className={cn(
+//                 "rounded-lg border px-1.5 py-1.5 text-center",
+//                 stockTone(item.label, theme)?.panel ?? t.statChip,
+//               )}
+//             >
+//               <div
+//                 className={cn(
+//                   "text-[8px] font-bold uppercase tracking-wider",
+//                   stockTone(item.label, theme)?.label ?? t.textSubtle,
+//                 )}
+//               >
+//                 {item.label}
+//               </div>
+//               <div className={cn("mt-0.5 text-[11px] font-black", stockTone(item.label, theme)?.value ?? t.text)}>
+//                 {item.value}
+//               </div>
+//             </div>
+//           ))}
+//         </div>
+//         <div className="mt-2 flex items-center justify-between">
+//           <div
+//             className={cn(
+//               "flex items-center gap-1 text-[10px] font-bold",
+//               product.productQuantityAmount > 0
+//                 ? "text-emerald-400"
+//                 : "text-rose-400",
+//             )}
+//           >
+//             {product.productQuantityAmount > 0 ? (
+//               <TrendingUp className="h-3 w-3" />
+//             ) : (
+//               <TrendingDown className="h-3 w-3" />
+//             )}
+//             {product.productQuantityAmount > 0 ? "Available" : "Unavailable"}
+//           </div>
+//           <ChevronRight className={cn("h-4 w-4", t.textSubtle)} />
+//         </div>
+//       </div>
+//     </motion.button>
+//   );
+// }
+// function CompactProductCard({
+//   product,
+//   index,
+//   theme,
+//   selected,
+//   onSelect,
+//   checked,
+//   onCheckedChange,
+//   disabled,
+// }: {
+//   product: Product;
+//   index: number;
+//   theme: Theme;
+//   selected?: boolean;
+//   checked: boolean;
+//   disabled: boolean;
+//   onCheckedChange: (id: string) => void;
+//   onSelect: (p: Product) => void;
+// }) {
+//   const t = tk(theme);
+//   const badge = stockBadge(product.productQuantityAmount);
+//   return (
+//     <motion.div
+//       whileHover={{ x: 2 }}
+//       className={cn(
+//         "w-full border-b px-2 py-3 text-left transition-all duration-200",
+//         t.line,
+//         t.rowHover,
+//         selected && (theme === "dark" ? "bg-white/[0.05]" : "bg-white"),
+//       )}
+//     >
+//       <div className="flex items-center gap-3">
+//         <input type="checkbox" checked={checked} disabled={disabled}
+//           onChange={() => onCheckedChange(product.id)}
+//           aria-label={`Select ${product.productName} for deletion`}
+//           className="h-4 w-4 shrink-0 accent-rose-600" />
+//         <button type="button" onClick={() => onSelect(product)}
+//           className="flex min-w-0 flex-1 items-center gap-3 text-left">
+//           <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl">
+//             <ProductVisual
+//               product={product}
+//               index={index}
+//               className="h-10 w-10"
+//             />
+//           </div>
+//           <div className="min-w-0 flex-1">
+//             <div className="flex flex-wrap items-center gap-2">
+//               <div className={cn("truncate text-[13px] font-black", t.text)}>
+//                 {product.productName}
+//               </div>
+//               <span
+//                 className={cn(
+//                   "rounded-full border px-2 py-0.5 text-[10px] font-bold",
+//                   badge.cls,
+//                 )}
+//               >
+//                 {badge.label}
+//               </span>
+//               {!product.availableForSale && <span className="rounded-full bg-slate-500/20 px-2 py-0.5 text-[10px] font-bold text-slate-400">Disabled</span>}
+//             </div>
+//             <div className={cn("mt-0.5 text-[11px]", t.textMuted)}>
+//               {product.sku || "NO-SKU"} · {product.category || "UNCATEGORIZED"}
+//             </div>
+//           </div>
+//           <div className="hidden min-w-[100px] text-right sm:block">
+//             <div className={cn("text-[12px] font-black", t.text)}>
+//               {money(product.productPrice)}
+//             </div>
+//             <div className={cn("text-[10px]", t.textSubtle)}>
+//               Remaining {numberFormat(product.productQuantityAmount)} · Sold since tracking {stockText(product.soldQuantity)}
+//             </div>
+//           </div>
+//           <ChevronRight className={cn("h-4 w-4", t.textSubtle)} />
+//         </button>
+//       </div>
+//     </motion.div>
+//   );
+// }
+// function ProductDetailDialog({
+//   product,
+//   theme,
+//   onClose,
+//   onView,
+//   onEdit,
+//   onDelete,
+//   onAvailability,
+// }: {
+//   product: Product | null;
+//   theme: Theme;
+//   onClose: () => void;
+//   onView: () => void;
+//   onEdit: () => void;
+//   onDelete: () => void;
+//   onAvailability: () => void;
+// }) {
+//   const t = tk(theme);
+//   if (!product) return null;
+//   const badge = stockBadge(product.productQuantityAmount);
+//   return (
+//     <motion.div
+//       initial={{ opacity: 0 }}
+//       animate={{ opacity: 1 }}
+//       exit={{ opacity: 0 }}
+//       className="fixed inset-0 z-50 flex items-center justify-center p-4"
+//       style={{
+//         background: "rgba(0,0,0,0.62)",
+//         backdropFilter: "blur(12px)",
+//       }}
+//       onClick={(e) => e.target === e.currentTarget && onClose()}
+//     >
+//       <motion.div
+//         initial={{ scale: 0.94, y: 18 }}
+//         animate={{ scale: 1, y: 0 }}
+//         exit={{ scale: 0.94, y: 18 }}
+//         transition={{ duration: 0.18 }}
+//         className={cn(
+//           "w-full max-w-[720px] overflow-hidden rounded-3xl border",
+//           t.modalBg,
+//         )}
+//       >
+//         <div
+//           className="flex items-start justify-between gap-4 border-b px-5 py-4"
+//           style={{
+//             borderColor:
+//               theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
+//           }}
+//         >
+//           <div>
+//             <div
+//               className={cn(
+//                 "text-[11px] font-black uppercase tracking-widest",
+//                 t.textSubtle,
+//               )}
+//             >
+//               Product Detail
+//             </div>
+//             <h2 className={cn("mt-1 text-xl font-black", t.text)}>
+//               {product.productName}
+//             </h2>
+//             <div className={cn("mt-1 font-mono text-[11px]", t.textMuted)}>
+//               {product.sku || "NO-SKU"}
+//             </div>
+//           </div>
+//           <button
+//             onClick={onClose}
+//             className={cn("rounded-xl border p-2", t.btn)}
+//           >
+//             <X className="h-4 w-4" />
+//           </button>
+//         </div>
+//         <div className="max-h-[72vh] overflow-y-auto p-5">
+//           <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+//             <div className="relative h-[210px] overflow-hidden rounded-2xl">
+//               <ProductVisual
+//                 product={product}
+//                 index={0}
+//                 className="absolute inset-0"
+//               />
+//               <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+//               <div className="absolute left-3 top-3">
+//                 <span
+//                   className={cn(
+//                     "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold",
+//                     badge.cls,
+//                   )}
+//                 >
+//                   {product.productQuantityAmount > 0 ? (
+//                     <CheckCircle2 className="h-3 w-3" />
+//                   ) : (
+//                     <AlertCircle className="h-3 w-3" />
+//                   )}
+//                   {badge.label}
+//                 </span>
+//                 {!product.availableForSale && <span className="ml-2 rounded-full bg-slate-500/20 px-2 py-0.5 text-[10px] font-bold text-slate-400">Disabled</span>}
+//               </div>
+//             </div>
+//             <div className="grid gap-2 sm:grid-cols-2">
+//               {[
+//                 {
+//                   label: "Price",
+//                   value: money(product.productPrice),
+//                   icon: Wallet,
+//                 },
+//                 {
+//                   label: "Remaining stock",
+//                   value: numberFormat(product.productQuantityAmount),
+//                   icon: Boxes,
+//                 },
+//                 { label: product.stockTrackingBasis === "OPENING_BALANCE" ? "Opening at tracking" : "Opening stock", value: stockText(product.openingBalance), icon: Boxes },
+//                 { label: product.stockTrackingBasis === "OPENING_BALANCE" ? "Tracked total stock" : "Total stock", value: stockText(product.totalStock), icon: Boxes },
+//                 { label: "Sold since tracking", value: stockText(product.soldQuantity), icon: Boxes },
+//                 { label: "Stock correction", value: stockText(product.stockCorrection), icon: Boxes },
+//                 {
+//                   label: "Category",
+//                   value: product.category || "—",
+//                   icon: Tag,
+//                 },
+//                 {
+//                   label: "Type",
+//                   value: product.productType || "—",
+//                   icon: Layers,
+//                 },
+//                 { label: "Barcode", value: product.barcode || "—", icon: Tag },
+//                 {
+//                   label: "Shop",
+//                   value: product.shopCode || product.shopId || "—",
+//                   icon: Store,
+//                 },
+//               ].map((item) => (
+//                 <div
+//                   key={item.label}
+//                   className={cn("rounded-xl border p-3", stockTone(item.label, theme)?.panel ?? t.statChip)}
+//                 >
+//                   <div
+//                     className={cn(
+//                       "mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider",
+//                       stockTone(item.label, theme)?.label ?? t.textSubtle,
+//                     )}
+//                   >
+//                     <item.icon className="h-3 w-3" />
+//                     {item.label}
+//                   </div>
+//                   <div
+//                     className={cn("break-words text-[13px] font-black", stockTone(item.label, theme)?.value ?? t.text)}
+//                   >
+//                     {item.value}
+//                   </div>
+//                 </div>
+//               ))}
+//             </div>
+//           </div>
+//           <div className={cn("mt-4 rounded-xl border p-3", t.statChip)}>
+//             <div
+//               className={cn(
+//                 "mb-2 text-[11px] font-bold uppercase tracking-wider",
+//                 t.textSubtle,
+//               )}
+//             >
+//               Product Owner
+//             </div>
+//             <div className="grid gap-2 sm:grid-cols-3">
+//               <div className={cn("text-[12px]", t.textMuted)}>
+//                 User ID:{" "}
+//                 <span className={cn("font-bold", t.text)}>
+//                   {product.createdByUserId || "—"}
+//                 </span>
+//               </div>
+//               <div className={cn("text-[12px]", t.textMuted)}>
+//                 Username:{" "}
+//                 <span className={cn("font-bold", t.text)}>
+//                   {product.createdByUsername || "—"}
+//                 </span>
+//               </div>
+//               <div className={cn("text-[12px]", t.textMuted)}>
+//                 Role:{" "}
+//                 <span className={cn("font-bold", t.text)}>
+//                   {product.createdByRole || "—"}
+//                 </span>
+//               </div>
+//             </div>
+//           </div>
+//           {product.note ? (
+//             <div className={cn("mt-4 rounded-xl border p-3", t.statChip)}>
+//               <div
+//                 className={cn(
+//                   "mb-2 text-[11px] font-bold uppercase tracking-wider",
+//                   t.textSubtle,
+//                 )}
+//               >
+//                 Note
+//               </div>
+//               <div className={cn("text-[12px] leading-6", t.textMuted)}>
+//                 {product.note}
+//               </div>
+//             </div>
+//           ) : null}
+//         </div>
+//         <div
+//           className="flex flex-wrap justify-end gap-2 border-t px-5 py-4"
+//           style={{
+//             borderColor:
+//               theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
+//           }}
+//         >
+//           <button
+//             onClick={onClose}
+//             className={cn(
+//               "rounded-xl border px-4 py-2 text-[13px] font-bold",
+//               t.btn,
+//             )}
+//           >
+//             Close
+//           </button>
+//           <button
+//             onClick={onView}
+//             className={cn(
+//               "rounded-xl px-4 py-2 text-[13px] font-bold",
+//               t.btnPrimary,
+//             )}
+//           >
+//             View
+//           </button>
+//           <button
+//             onClick={onEdit}
+//             className={cn(
+//               "rounded-xl border px-4 py-2 text-[13px] font-bold",
+//               t.btn,
+//             )}
+//           >
+//             Edit
+//           </button>
+//           <button
+//             onClick={onAvailability}
+//             className={cn("rounded-xl border px-4 py-2 text-[13px] font-bold", t.btn)}
+//           >
+//             <Power className="mr-2 inline h-4 w-4" />
+//             {product.availableForSale ? "Disable Product" : "Enable Product"}
+//           </button>
+//           <button
+//             onClick={onDelete}
+//             className={cn(
+//               "rounded-xl border px-4 py-2 text-[13px] font-bold",
+//               t.btnDanger,
+//             )}
+//           >
+//             Delete
+//           </button>
+//         </div>
+//       </motion.div>
+//     </motion.div>
+//   );
+// }
+// function ProductPagination({
+//   theme,
+//   currentPage,
+//   totalPages,
+//   pageSize,
+//   totalItems,
+//   startIndex,
+//   endIndex,
+//   onPageChange,
+//   onPageSizeChange,
+// }: {
+//   theme: Theme;
+//   currentPage: number;
+//   totalPages: number;
+//   pageSize: number;
+//   totalItems: number;
+//   startIndex: number;
+//   endIndex: number;
+//   onPageChange: (page: number) => void;
+//   onPageSizeChange: (size: number) => void;
+// }) {
+//   const t = tk(theme);
+//   function buildPages() {
+//     if (totalPages <= 7) {
+//       return Array.from({ length: totalPages }, (_, i) => i + 1);
+//     }
+//     if (currentPage <= 4) return [1, 2, 3, 4, 5, "...", totalPages];
+//     if (currentPage >= totalPages - 3) {
+//       return [
+//         1,
+//         "...",
+//         totalPages - 4,
+//         totalPages - 3,
+//         totalPages - 2,
+//         totalPages - 1,
+//         totalPages,
+//       ];
+//     }
+//     return [
+//       1,
+//       "...",
+//       currentPage - 1,
+//       currentPage,
+//       currentPage + 1,
+//       "...",
+//       totalPages,
+//     ];
+//   }
+//   const pages = buildPages();
+//   return (
+//     <motion.div
+//       initial={{ opacity: 0, y: 10 }}
+//       animate={{ opacity: 1, y: 0 }}
+//       className="mt-4"
+//     >
+//       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+//         <div className="flex flex-wrap items-center gap-3">
+//           <div
+//             className={cn(
+//               "rounded-full border px-3 py-1.5 text-[11px] font-bold",
+//               t.pill,
+//             )}
+//           >
+//             Showing {totalItems === 0 ? 0 : startIndex}-{endIndex} of{" "}
+//             {totalItems}
+//           </div>
+//           <div
+//             className={cn(
+//               "flex items-center gap-2 rounded-full border px-2.5 py-1.5",
+//               t.pill,
+//             )}
+//           >
+//             <span className={cn("text-[11px] font-bold", t.textMuted)}>
+//               Rows
+//             </span>
+//             {PAGE_SIZE_OPTIONS.map((size) => (
+//               <button
+//                 key={size}
+//                 type="button"
+//                 onClick={() => onPageSizeChange(size)}
+//                 className={cn(
+//                   "rounded-full px-3 py-1 text-[11px] font-bold transition-all",
+//                   pageSize === size ? t.active : "text-current",
+//                 )}
+//               >
+//                 {size}
+//               </button>
+//             ))}
+//           </div>
+//         </div>
+//         <div className="flex flex-wrap items-center gap-2">
+//           <button
+//             type="button"
+//             disabled={currentPage === 1}
+//             onClick={() => onPageChange(1)}
+//             className={cn(
+//               "rounded-xl border px-3 py-2 disabled:opacity-40",
+//               t.btn,
+//             )}
+//           >
+//             <ChevronsLeft className="h-4 w-4" />
+//           </button>
+//           <button
+//             type="button"
+//             disabled={currentPage === 1}
+//             onClick={() => onPageChange(currentPage - 1)}
+//             className={cn(
+//               "rounded-xl border px-3 py-2 disabled:opacity-40",
+//               t.btn,
+//             )}
+//           >
+//             <ChevronLeft className="h-4 w-4" />
+//           </button>
+//           <div className="flex items-center gap-2">
+//             {pages.map((page, idx) =>
+//               page === "..." ? (
+//                 <span
+//                   key={`ellipsis-${idx}`}
+//                   className={cn("px-2 text-sm font-bold", t.textSubtle)}
+//                 >
+//                   ...
+//                 </span>
+//               ) : (
+//                 <button
+//                   key={page}
+//                   type="button"
+//                   onClick={() => onPageChange(page as number)}
+//                   className={cn(
+//                     "min-w-[32px] rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all",
+//                     currentPage === page ? t.active : t.btn,
+//                   )}
+//                 >
+//                   {page}
+//                 </button>
+//               ),
+//             )}
+//           </div>
+//           <button
+//             type="button"
+//             disabled={currentPage === totalPages}
+//             onClick={() => onPageChange(currentPage + 1)}
+//             className={cn(
+//               "rounded-xl border px-3 py-2 disabled:opacity-40",
+//               t.btn,
+//             )}
+//           >
+//             <ChevronRight className="h-4 w-4" />
+//           </button>
+//           <button
+//             type="button"
+//             disabled={currentPage === totalPages}
+//             onClick={() => onPageChange(totalPages)}
+//             className={cn(
+//               "rounded-xl border px-3 py-2 disabled:opacity-40",
+//               t.btn,
+//             )}
+//           >
+//             <ChevronsRight className="h-4 w-4" />
+//           </button>
+//         </div>
+//       </div>
+//     </motion.div>
+//   );
+// }
+// function ConfirmDeleteModal({
+//   theme,
+//   product,
+//   loading,
+//   onClose,
+//   onConfirm,
+//   conflict,
+// }: {
+//   theme: Theme;
+//   product: Product | null;
+//   loading: boolean;
+//   onClose: () => void;
+//   onConfirm: () => void;
+//   conflict: string | null;
+// }) {
+//   const t = tk(theme);
+//   if (!product) return null;
+//   return (
+//     <motion.div
+//       initial={{ opacity: 0 }}
+//       animate={{ opacity: 1 }}
+//       exit={{ opacity: 0 }}
+//       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+//       style={{
+//         background: "rgba(0,0,0,0.6)",
+//         backdropFilter: "blur(12px)",
+//       }}
+//       onClick={(e) => e.target === e.currentTarget && onClose()}
+//     >
+//       <motion.div
+//         initial={{ scale: 0.92, y: 20 }}
+//         animate={{ scale: 1, y: 0 }}
+//         exit={{ scale: 0.92, y: 20 }}
+//         transition={{ type: "spring", damping: 22, stiffness: 280 }}
+//         className={cn(
+//           "w-full max-w-[420px] overflow-hidden rounded-3xl border",
+//           t.modalBg,
+//         )}
+//       >
+//         <div
+//           className="flex items-center justify-between border-b px-6 py-5"
+//           style={{
+//             borderColor:
+//               theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
+//           }}
+//         >
+//           <div>
+//             <div className={cn("text-[17px] font-black", t.text)}>
+//               Delete Product
+//             </div>
+//             <div className={cn("mt-0.5 text-[12px]", t.textMuted)}>
+//               This product will be removed from active lists. Sales and stock history will be retained.
+//             </div>
+//           </div>
+//           <button
+//             onClick={onClose}
+//             disabled={loading}
+//             className={cn("rounded-xl border p-2", t.btn)}
+//           >
+//             <X className="h-4 w-4" />
+//           </button>
+//         </div>
+//         <div className="space-y-3 p-6">
+//           <div className={cn("text-[13px]", t.textMuted)}>
+//             Are you sure you want to delete
+//           </div>
+//           <div className={cn("text-[18px] font-black", t.text)}>
+//             {product.productName}
+//           </div>
+//           <div className={cn("font-mono text-[11px]", t.textSubtle)}>
+//             {product.sku}
+//           </div>
+//           {conflict && <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-500">{conflict}</div>}
+//         </div>
+//         <div
+//           className="flex gap-3 border-t px-6 py-4"
+//           style={{
+//             borderColor:
+//               theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
+//           }}
+//         >
+//           <button
+//             onClick={onClose}
+//             disabled={loading}
+//             className={cn(
+//               "flex-1 rounded-xl border py-2.5 text-[13px] font-bold",
+//               t.btn,
+//             )}
+//           >
+//             Cancel
+//           </button>
+//           <button
+//             onClick={onConfirm}
+//             disabled={loading}
+//             className={cn(
+//               "flex-1 rounded-xl py-2.5 text-[13px] font-bold",
+//               t.btnDanger,
+//             )}
+//           >
+//             {loading ? "Deleting..." : "Delete"}
+//           </button>
+//         </div>
+//       </motion.div>
+//     </motion.div>
+//   );
+// }
+// function ProductsPageContent() {
+//   const router = useRouter();
+//   const { data: session, status } = useSession();
+//   const { resolvedTheme } = useTheme();
+//   const token =
+//     (session as any)?.accessToken ||
+//     (session as any)?.access_token ||
+//     (session as any)?.token ||
+//     null;
+//   const ownerInfo = React.useMemo(() => normalizeOwnerInfo(session), [session]);
+//   const [products, setProducts] = React.useState<Product[]>([]);
+//   const [q, setQ] = React.useState("");
+//   const [categoryFilter, setCategoryFilter] = React.useState("All");
+//   const [stockFilter, setStockFilter] = React.useState<StockLevel>("all");
+//   const [availabilityFilter, setAvailabilityFilter] = React.useState<AvailabilityFilter>("all");
+//   const [theme, setTheme] = React.useState<Theme>("dark");
+//   const [viewMode, setViewMode] = React.useState<ViewMode>("compact");
+//   const [sortMode, setSortMode] = React.useState<SortMode>("name_asc");
+//   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+//   const [panelOpen, setPanelOpen] = React.useState(false);
+//   const [notification, setNotification] = React.useState<string | null>(null);
+//   const [loading, setLoading] = React.useState(false);
+//   const [firstLoaded, setFirstLoaded] = React.useState(false);
+//   const [authError, setAuthError] = React.useState<string | null>(null);
+//   const [deleteTarget, setDeleteTarget] = React.useState<Product | null>(null);
+//   const [deletingId, setDeletingId] = React.useState<string | null>(null);
+//   const [selectedDeleteIds, setSelectedDeleteIds] = React.useState<Set<string>>(new Set());
+//   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+//   const [bulkOperation, setBulkOperation] = React.useState<"delete" | "disable">("delete");
+//   const [availabilityTarget, setAvailabilityTarget] = React.useState<Product | null>(null);
+//   const [availabilityBusy, setAvailabilityBusy] = React.useState(false);
+//   const [deleteConflict, setDeleteConflict] = React.useState<string | null>(null);
+//   const [bulkDeleting, setBulkDeleting] = React.useState(false);
+//   const deleteBusyRef = React.useRef(false);
+//   const [bulkDeleteError, setBulkDeleteError] = React.useState<string | null>(null);
+//   const loadRevisionRef = React.useRef(0);
+//   const [currentPage, setCurrentPage] = React.useState(1);
+//   const [pageSize, setPageSize] = React.useState<number>(9);
+//   const t = tk(theme);
+//   function authHeaders(): Record<string, string> {
+//     return token ? { Authorization: `Bearer ${token}` } : {};
+//   }
+//   function showNotif(msg: string) {
+//     setNotification(msg);
+//     window.setTimeout(() => setNotification(null), 3000);
+//   }
+//   React.useEffect(() => {
+//     const next: Theme = resolvedTheme === "light" ? "light" : "dark";
+//     setTheme(next);
+//   }, [resolvedTheme]);
+//   React.useEffect(() => {
+//     try {
+//       const raw = localStorage.getItem(STORAGE_KEY);
+//       if (!raw) return;
+//       const p = JSON.parse(raw);
+//       if (p.viewMode) setViewMode(p.viewMode);
+//       if (p.sortMode) setSortMode(p.sortMode);
+//       if (p.pageSize) setPageSize(Number(p.pageSize));
+//     } catch { }
+//   }, []);
+//   React.useEffect(() => {
+//     localStorage.setItem(
+//       STORAGE_KEY,
+//       JSON.stringify({ viewMode, sortMode, panelOpen, pageSize }),
+//     );
+//   }, [viewMode, sortMode, panelOpen, pageSize]);
+//   async function loadProducts(
+//     search?: string,
+//     options?: { silent?: boolean; preserveUi?: boolean },
+//   ) {
+//     if (status !== "authenticated" || deleteBusyRef.current) return;
+//     const loadRevision = ++loadRevisionRef.current;
+//     const silent = options?.silent === true;
+//     const preserveUi = options?.preserveUi === true;
+//     if (!token) {
+//       setAuthError("Session token မရပါ။ ပြန် login ဝင်ပါ။");
+//       if (!silent) toast.error("Session token မရပါ။ ပြန် login ဝင်ပါ။");
+//       return;
+//     }
+//     const tid = silent ? undefined : toast.loading("Loading products...");
+//     const controller = new AbortController();
+//     const timer = window.setTimeout(() => controller.abort(), 20000);
+//     try {
+//       if (!silent) setLoading(true);
+//       setAuthError(null);
+//       const params = new URLSearchParams();
+//       if (search) params.set("q", search);
+//       params.set("availability", "all");
+//       params.set("_ts", String(Date.now()));
+//       if (ownerInfo.id && isNumericId(ownerInfo.id)) {
+//         params.set("created_by_user_id", ownerInfo.id);
+//         params.set("createdByUserId", ownerInfo.id);
+//         params.set("ownerId", ownerInfo.id);
+//         params.set("userId", ownerInfo.id);
+//       }
+//       if (ownerInfo.username) {
+//         params.set("created_by_username", ownerInfo.username);
+//         params.set("createdByUsername", ownerInfo.username);
+//         params.set("ownerUsername", ownerInfo.username);
+//         params.set("username", ownerInfo.username);
+//       }
+//       if (ownerInfo.shopId) {
+//         params.set("shop_id", ownerInfo.shopId);
+//         params.set("shopId", ownerInfo.shopId);
+//       }
+//       if (ownerInfo.shopCode) {
+//         params.set("shop_code", ownerInfo.shopCode);
+//         params.set("shopCode", ownerInfo.shopCode);
+//       }
+//       const query = params.toString() ? `?${params.toString()}` : "";
+//       const res = await fetch(`/backend/api/products${query}`, {
+//         headers: {
+//           ...authHeaders(),
+//           Accept: "application/json",
+//           "Cache-Control": "no-cache",
+//         },
+//         cache: "no-store",
+//         signal: controller.signal,
+//       });
+//       if (!res.ok) {
+//         const detail = await readErrorText(res);
+//         setAuthError(detail || `Error ${res.status}`);
+//         if (!silent && tid) {
+//           toast.error(detail || `Error ${res.status}`, { id: tid });
+//         }
+//         setFirstLoaded(true);
+//         return;
+//       }
+//       const raw = await res.json().catch(() => []);
+//       const arr = Array.isArray(raw) ? raw : (raw?.content ?? raw?.data ?? []);
+//       const normalized = (Array.isArray(arr) ? arr : []).map(normalizeProduct);
+//       // The authenticated backend endpoint already scopes the response using
+//       // the current JWT/shop. Do not filter it again by optional createdBy
+//       // fields because older product responses may not include those fields.
+//       const safeProducts = normalized;
+//       if (deleteBusyRef.current || loadRevision !== loadRevisionRef.current) return;
+//       setProducts(safeProducts);
+//       setFirstLoaded(true);
+//       if (!preserveUi) {
+//         setCurrentPage(1);
+//       }
+//       setSelectedId((old) => {
+//         if (old && safeProducts.some((p) => p.id === old)) return old;
+//         return null;
+//       });
+//       if (!silent && tid) {
+//         toast.success(`Loaded ✅ ${safeProducts.length} products`, { id: tid });
+//       }
+//     } catch (error) {
+//       const message = error instanceof Error && error.name === "AbortError" ? "Product request timed out. Please retry." : error instanceof Error ? error.message : "Server error";
+//       setAuthError(message);
+//       if (!silent && tid) toast.error(message, { id: tid });
+//     } finally {
+//       window.clearTimeout(timer);
+//       if (!silent) setLoading(false);
+//     }
+//   }
+//   async function deleteProductRequest(id: string) {
+//     if (!id || id === "undefined" || id === "null") throw new Error("Product ID မရှိပါ။ Product API response ကို စစ်ပါ။");
+//     const controller = new AbortController();
+//     const timer = window.setTimeout(() => controller.abort(), 20000);
+//     try {
+//       const res = await fetch(`/backend/api/products/${encodeURIComponent(id)}`, {
+//         method: "DELETE", headers: { ...authHeaders(), Accept: "application/json" },
+//         credentials: "same-origin", cache: "no-store", signal: controller.signal,
+//       });
+//       if (!res.ok) {
+//         const detail = await readErrorText(res);
+//         throw new ProductApiError(res.status, detail, `Product ${id}: HTTP ${res.status}. ${detail || "Delete failed"}`);
+//       }
+//       if (res.redirected || (res.headers.get("content-type") || "").includes("text/html")) {
+//         throw new Error(`Product ${id}: Delete API က HTML/login page ပြန်ပို့နေပါသည်။ Backend proxy route ကို စစ်ပါ။`);
+//       }
+//     } catch (error) {
+//       if (error instanceof Error && error.name === "AbortError") {
+//         throw new Error(`Product ${id}: Request timeout. Refresh လုပ်ပြီး data ကို ပြန်စစ်ပါ။`);
+//       }
+//       throw error;
+//     } finally { window.clearTimeout(timer); }
+//   }
+//   async function availabilityRequest(id: string, availableForSale: boolean) {
+//     const controller = new AbortController();
+//     const timer = window.setTimeout(() => controller.abort(), 20000);
+//     try {
+//       const res = await fetch(`/backend/api/products/${encodeURIComponent(id)}/availability`, {
+//         method: "PATCH", credentials: "same-origin", cache: "no-store", signal: controller.signal,
+//         headers: { ...authHeaders(), Accept: "application/json", "Content-Type": "application/json" },
+//         body: JSON.stringify({ availableForSale }),
+//       });
+//       if (!res.ok) {
+//         const detail = await readErrorText(res);
+//         throw new ProductApiError(res.status, detail, `Product ${id}: HTTP ${res.status}. ${detail || "Availability update failed"}`);
+//       }
+//       if (res.redirected || !(res.headers.get("content-type") || "").includes("application/json")) {
+//         throw new Error(`Product ${id}: Availability API returned an unexpected response.`);
+//       }
+//       return normalizeProduct(await res.json());
+//     } catch (error) {
+//       if (error instanceof Error && error.name === "AbortError") throw new Error(`Product ${id}: Request timeout. Please retry.`);
+//       throw error;
+//     } finally { window.clearTimeout(timer); }
+//   }
+//   function applyAvailability(updated: Product) {
+//     setProducts(prev => prev.map(product => product.id === updated.id ? { ...product, ...updated } : product));
+//   }
+//   async function confirmAvailability() {
+//     if (!availabilityTarget || deleteBusyRef.current || !token) return;
+//     deleteBusyRef.current = true; setAvailabilityBusy(true); ++loadRevisionRef.current;
+//     const target = availabilityTarget;
+//     const next = !target.availableForSale;
+//     const tid = toast.loading(next ? "Enabling product..." : "Disabling product...");
+//     try {
+//       applyAvailability(await availabilityRequest(target.id, next));
+//       setAvailabilityTarget(null); setDeleteTarget(null); setDeleteConflict(null);
+//       toast.success(next ? "Product enabled" : "Product disabled", { id: tid });
+//     } catch (error) {
+//       toast.error(error instanceof Error ? error.message : "Availability update failed", { id: tid });
+//     } finally { setAvailabilityBusy(false); deleteBusyRef.current = false; }
+//   }
+//   function removeDeletedProducts(ids: string[]) {
+//     const deleted = new Set(ids);
+//     setProducts(prev => prev.filter(p => !deleted.has(p.id)));
+//     setSelectedDeleteIds(prev => new Set([...prev].filter(id => !deleted.has(id))));
+//     if (selectedId && deleted.has(selectedId)) {
+//       setSelectedId(null);
+//       setPanelOpen(false);
+//     }
+//   }
+//   async function confirmDelete() {
+//     if (!deleteTarget || status !== "authenticated" || !token || deleteBusyRef.current) return;
+//     deleteBusyRef.current = true;
+//     ++loadRevisionRef.current;
+//     const id = deleteTarget.id;
+//     const tid = toast.loading("Deleting...");
+//     setDeletingId(id);
+//     setDeleteConflict(null);
+//     try {
+//       await deleteProductRequest(id);
+//       removeDeletedProducts([id]);
+//       toast.success("Product deleted", { id: tid });
+//       showNotif("Product deleted");
+//       setDeleteTarget(null);
+//     } catch (error) {
+//       setDeleteConflict(error instanceof Error ? error.message : "Delete failed");
+//       toast.error(error instanceof Error ? error.message : "Delete failed", { id: tid });
+//     } finally {
+//       setDeletingId(null);
+//       deleteBusyRef.current = false;
+//     }
+//   }
+//   async function confirmBulkDelete() {
+//     if (deleteBusyRef.current) return;
+//     if (!selectedDeleteIds.size) { setBulkDeleteError("Select at least one product."); return; }
+//     if (status !== "authenticated" || !token) { setBulkDeleteError("Your session is unavailable. Sign in and retry."); return; }
+//     setBulkDeleteError(null); deleteBusyRef.current = true; ++loadRevisionRef.current; setBulkDeleting(true);
+//     const ids = [...selectedDeleteIds];
+//     const succeeded: string[] = [];
+//     const failures: string[] = [];
+//     const verb = bulkOperation === "disable" ? "Disabling" : "Deleting";
+//     const tid = toast.loading(`${verb} ${ids.length} products...`);
+//     try {
+//       for (let offset = 0; offset < ids.length; offset += 4) {
+//         const batch = ids.slice(offset, offset + 4);
+//         const results = await Promise.allSettled(batch.map(id => bulkOperation === "disable"
+//           ? availabilityRequest(id, false) : deleteProductRequest(id)));
+//         results.forEach((result, index) => {
+//           if (result.status === "fulfilled") {
+//             succeeded.push(batch[index]);
+//             if (bulkOperation === "disable") applyAvailability(result.value as Product);
+//           } else failures.push(result.reason instanceof Error ? result.reason.message : `${bulkOperation} failed`);
+//         });
+//       }
+//       if (bulkOperation === "delete") removeDeletedProducts(succeeded);
+//       else setSelectedDeleteIds(prev => new Set([...prev].filter(id => !succeeded.includes(id))));
+//       const summary = `${succeeded.length} ${bulkOperation === "disable" ? "disabled" : "deleted"}, ${failures.length} failed.`;
+//       if (failures.length) {
+//         setBulkDeleteError(`${summary} ${failures.join(" ")}`);
+//         toast.warning(`${summary} ${failures[0]}`, { id: tid });
+//       } else {
+//         toast.success(summary, { id: tid }); showNotif(summary); setBulkDeleteOpen(false);
+//       }
+//     } catch (error) {
+//       const message = error instanceof Error ? error.message : `${bulkOperation} failed`;
+//       setBulkDeleteError(message); toast.error(message, { id: tid });
+//     } finally { setBulkDeleting(false); deleteBusyRef.current = false; }
+//   }
+//   React.useEffect(() => {
+//     if (status === "authenticated") {
+//       loadProducts();
+//     }
+//   }, [
+//     status,
+//     token,
+//     ownerInfo.id,
+//     ownerInfo.username,
+//     ownerInfo.shopId,
+//     ownerInfo.shopCode,
+//   ]);
+//   React.useEffect(() => {
+//     if (status !== "authenticated" || !token) return;
+//     const refreshLatestStock = () => {
+//       void loadProducts(q, { silent: true, preserveUi: true });
+//     };
+//     const onVisibilityChange = () => {
+//       if (document.visibilityState === "visible") refreshLatestStock();
+//     };
+//     window.addEventListener("focus", refreshLatestStock);
+//     window.addEventListener(PRODUCT_REFRESH_EVENT, refreshLatestStock);
+//     document.addEventListener("visibilitychange", onVisibilityChange);
+//     return () => {
+//       window.removeEventListener("focus", refreshLatestStock);
+//       window.removeEventListener(PRODUCT_REFRESH_EVENT, refreshLatestStock);
+//       document.removeEventListener("visibilitychange", onVisibilityChange);
+//     };
+//   }, [
+//     status,
+//     token,
+//     q,
+//     ownerInfo.id,
+//     ownerInfo.username,
+//     ownerInfo.shopId,
+//     ownerInfo.shopCode,
+//   ]);
+//   const categories = React.useMemo(() => {
+//     const uniq = Array.from(
+//       new Set(products.map((p) => p.category).filter(Boolean)),
+//     ) as string[];
+//     return ["All", ...uniq];
+//   }, [products]);
+//   const filtered = React.useMemo(() => {
+//     const query = q.trim().toLowerCase();
+//     const base = products.filter((p) => {
+//       const matchQ =
+//         !query ||
+//         p.productName.toLowerCase().includes(query) ||
+//         p.sku.toLowerCase().includes(query) ||
+//         String(p.category || "")
+//           .toLowerCase()
+//           .includes(query) ||
+//         String(p.productType || "")
+//           .toLowerCase()
+//           .includes(query);
+//       const matchCategory =
+//         categoryFilter === "All" || p.category === categoryFilter;
+//       const level = stockLevelOf(p.productQuantityAmount);
+//       const matchStock = stockFilter === "all" || level === stockFilter;
+//       const matchAvailability = availabilityFilter === "all" || (availabilityFilter === "enabled") === p.availableForSale;
+//       return matchQ && matchCategory && matchStock && matchAvailability;
+//     });
+//     return sortProducts(base, sortMode);
+//   }, [products, q, categoryFilter, stockFilter, availabilityFilter, sortMode]);
+//   React.useEffect(() => {
+//     setCurrentPage(1);
+//     setSelectedId(null);
+//     setPanelOpen(false);
+//   }, [q, categoryFilter, stockFilter, availabilityFilter, sortMode, pageSize]);
+//   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+//   React.useEffect(() => {
+//     if (currentPage > totalPages) {
+//       setCurrentPage(totalPages);
+//     }
+//   }, [currentPage, totalPages]);
+//   const paginatedProducts = React.useMemo(() => {
+//     const start = (currentPage - 1) * pageSize;
+//     return filtered.slice(start, start + pageSize);
+//   }, [filtered, currentPage, pageSize]);
+//   const deleteBusy = bulkDeleting || deletingId !== null;
+//   const currentPageIds = paginatedProducts.map(product => product.id);
+//   const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every(id => selectedDeleteIds.has(id));
+//   const someCurrentPageSelected = !allCurrentPageSelected && currentPageIds.some(id => selectedDeleteIds.has(id));
+//   function toggleDeleteSelection(id: string) {
+//     if (deleteBusyRef.current) return;
+//     setSelectedDeleteIds(prev => {
+//       const next = new Set(prev);
+//       if (next.has(id)) next.delete(id); else next.add(id);
+//       return next;
+//     });
+//   }
+//   function toggleSelectCurrentPage() {
+//     if (deleteBusyRef.current) return;
+//     setSelectedDeleteIds(prev => {
+//       const next = new Set(prev);
+//       currentPageIds.forEach(id => { if (allCurrentPageSelected) next.delete(id); else next.add(id); });
+//       return next;
+//     });
+//   }
+//   React.useEffect(() => {
+//     const available = new Set(products.map(product => product.id));
+//     setSelectedDeleteIds(prev => {
+//       const next = new Set([...prev].filter(id => available.has(id)));
+//       return next.size === prev.size ? prev : next;
+//     });
+//   }, [products]);
+//   const startIndex =
+//     filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+//   const endIndex = Math.min(currentPage * pageSize, filtered.length);
+//   const selectedProduct = selectedId
+//     ? (filtered.find((p) => p.id === selectedId) ?? null)
+//     : null;
+//   const stats = React.useMemo(() => {
+//     const total = products.length;
+//     const inStock = products.filter((p) => p.productQuantityAmount > 0).length;
+//     const lowStock = products.filter(
+//       (p) => p.productQuantityAmount > 0 && p.productQuantityAmount < 5,
+//     ).length;
+//     const outStock = products.filter(
+//       (p) => p.productQuantityAmount <= 0,
+//     ).length;
+//     const totalValue = products.reduce(
+//       (a, p) => a + p.productPrice * p.productQuantityAmount,
+//       0,
+//     );
+//     return {
+//       total,
+//       inStock,
+//       lowStock,
+//       outStock,
+//       totalValue,
+//     };
+//   }, [products]);
+//   const SORT_OPTIONS = [
+//     { label: "A → Z", value: "name_asc" as SortMode, icon: ArrowDownAZ },
+//     { label: "Z → A", value: "name_desc" as SortMode, icon: ArrowUpZA },
+//     { label: "Price", value: "price_desc" as SortMode, icon: Wallet },
+//     { label: "Stock", value: "stock_desc" as SortMode, icon: Boxes },
+//     { label: "Category", value: "category_asc" as SortMode, icon: Tag },
+//   ];
+//   if (status === "loading") {
+//     return (
+//       <div className="flex min-h-[60vh] items-center justify-center text-slate-900 dark:text-white">
+//         <div className="text-center">
+//           <Package2 className="mx-auto mb-4 h-10 w-10 animate-pulse text-blue-600" />
+//           <div className="text-sm font-bold">Loading session...</div>
+//         </div>
+//       </div>
+//     );
+//   }
+//   if (status === "unauthenticated") {
+//     return (
+//       <div className="flex min-h-[60vh] items-center justify-center p-6 text-slate-900 dark:text-white">
+//         <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-white/10 dark:bg-black">
+//           <UserCircle2 className="mx-auto mb-4 h-12 w-12 text-blue-600" />
+//           <div className="text-xl font-black">Login required</div>
+//           <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+//             Product တွေကြည့်ဖို့ login အရင်ဝင်ပါ။
+//           </div>
+//           <button
+//             onClick={() => router.replace("/Sign_in?next=/dashboard/product")}
+//             className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
+//           >
+//             Go Login
+//           </button>
+//         </div>
+//       </div>
+//     );
+//   }
+//   return (
+//     <div
+//       className={cn(
+//         "relative min-h-full py-5 transition-colors duration-300",
+//         t.root,
+//       )}
+//     >
+//       <AnimatePresence>
+//         {notification && (
+//           <motion.div
+//             initial={{ opacity: 0, y: -20, scale: 0.9 }}
+//             animate={{ opacity: 1, y: 0, scale: 1 }}
+//             exit={{ opacity: 0, y: -20, scale: 0.9 }}
+//             className="fixed left-1/2 top-5 z-[100] flex -translate-x-1/2 items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-[13px] font-bold shadow-2xl"
+//             style={{
+//               background: theme === "dark" ? "rgba(12,16,24,0.95)" : "white",
+//               borderColor:
+//                 theme === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+//               color: theme === "dark" ? "white" : "#0f172a",
+//               backdropFilter: "blur(20px)",
+//             }}
+//           >
+//             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+//             {notification}
+//           </motion.div>
+//         )}
+//       </AnimatePresence>
+//       <AnimatePresence>
+//         {availabilityTarget && (
+//           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+//             <motion.div role="dialog" aria-modal="true" className={cn("w-full max-w-[420px] rounded-3xl border p-6", t.modalBg)}>
+//               <Power className="h-8 w-8 text-amber-500" />
+//               <h2 className={cn("mt-4 text-xl font-black", t.text)}>{availabilityTarget.availableForSale ? "Disable Product?" : "Enable Product?"}</h2>
+//               <p className={cn("mt-2 text-sm", t.textMuted)}>{availabilityTarget.productName}</p>
+//               <p className={cn("mt-2 text-sm", t.textMuted)}>{availabilityTarget.availableForSale ? "The product will disappear from active POS lists and sales will be rejected. History is preserved." : "The product will return to active POS lists."}</p>
+//               <div className="mt-6 flex gap-3"><button disabled={availabilityBusy} onClick={() => setAvailabilityTarget(null)} className={cn("flex-1 rounded-xl border py-3 text-sm font-bold", t.btn)}>Cancel</button><button disabled={availabilityBusy} onClick={confirmAvailability} className={cn("flex-1 rounded-xl border py-3 text-sm font-bold", t.btnDanger)}>{availabilityBusy ? "Saving..." : availabilityTarget.availableForSale ? "Disable" : "Enable"}</button></div>
+//             </motion.div>
+//           </motion.div>
+//         )}
+//       </AnimatePresence>
+//       <AnimatePresence>
+//         {bulkDeleteOpen && (
+//           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+//             className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+//             onClick={e => { if (e.target === e.currentTarget && !deleteBusyRef.current) setBulkDeleteOpen(false); }}>
+//             <motion.div role="dialog" aria-modal="true" aria-labelledby="bulk-delete-title"
+//               initial={{ scale: 0.94, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 20 }}
+//               className={cn("w-full max-w-[440px] rounded-3xl border p-6", t.modalBg)}>
+//               <Power className={cn("h-8 w-8", bulkOperation === "disable" ? "text-amber-500" : "text-rose-500")} />
+//               <h2 id="bulk-delete-title" className={cn("mt-4 text-xl font-black", t.text)}>{bulkOperation === "disable" ? "Disable selected products?" : "Delete selected products?"}</h2>
+//               <p className={cn("mt-2 text-sm", t.textMuted)}>{selectedDeleteIds.size} products selected across pages and filters. {bulkOperation === "disable" ? "History is preserved and products can be enabled later." : "This product will be removed from active lists. Sales and stock history will be retained."}</p>
+//               {bulkDeleteError && <p role="alert" className="mt-4 break-words rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-500">{bulkDeleteError}</p>}
+//               <div className="mt-6 flex gap-3">
+//                 <button type="button" disabled={deleteBusy} onClick={() => setBulkDeleteOpen(false)}
+//                   className={cn("flex-1 rounded-xl border py-3 text-sm font-bold", t.btn)}>Cancel</button>
+//                 <button type="button" disabled={deleteBusy || selectedDeleteIds.size === 0} onClick={confirmBulkDelete}
+//                   className={cn("flex-1 rounded-xl border py-3 text-sm font-bold", t.btnDanger)}>
+//                   {bulkDeleting ? (bulkOperation === "disable" ? "Disabling..." : "Deleting...") : (bulkOperation === "disable" ? "Disable " : "Delete ") + selectedDeleteIds.size}
+//                 </button>
+//               </div>
+//             </motion.div>
+//           </motion.div>
+//         )}
+//       </AnimatePresence>
+//       <AnimatePresence>
+//         {deleteTarget && (
+//           <ConfirmDeleteModal
+//             theme={theme}
+//             product={deleteTarget}
+//             loading={deletingId === deleteTarget.id}
+//             onClose={() => { if (!deleteBusyRef.current) setDeleteTarget(null); setDeleteConflict(null); }}
+//             onConfirm={confirmDelete}
+//             conflict={deleteConflict}
+//           />
+//         )}
+//       </AnimatePresence>
+//       <AnimatePresence>
+//         {panelOpen && selectedProduct ? (
+//           <ProductDetailDialog
+//             product={selectedProduct}
+//             theme={theme}
+//             onClose={() => setPanelOpen(false)}
+//             onView={() => {
+//               router.push(`/dashboard/product/${selectedProduct.id}`);
+//             }}
+//             onEdit={() => {
+//               router.push(`/dashboard/product/${selectedProduct.id}/edit`);
+//             }}
+//             onDelete={() => {
+//               setDeleteConflict(null);
+//               setDeleteTarget(selectedProduct);
+//               setPanelOpen(false);
+//             }}
+//             onAvailability={() => { setAvailabilityTarget(selectedProduct); setPanelOpen(false); }}
+//           />
+//         ) : null}
+//       </AnimatePresence>
+//       <main className="relative z-10 mx-auto max-w-[1500px]">
+//         <section className="mb-3">
+//           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+//             <div className="flex flex-wrap items-center gap-2">
+//               <span
+//                 className={cn(
+//                   "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
+//                   t.pill,
+//                 )}
+//               >
+//                 <Store className="h-3.5 w-3.5" />
+//                 My Products Only
+//               </span>
+//               <span
+//                 className={cn(
+//                   "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
+//                   t.pill,
+//                 )}
+//               >
+//                 <UserCircle2 className="h-3.5 w-3.5" />
+//                 {ownerInfo.username || ownerInfo.id || "Current User"}
+//               </span>
+//               {ownerInfo.shopCode || ownerInfo.shopId ? (
+//                 <span
+//                   className={cn(
+//                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
+//                     t.pill,
+//                   )}
+//                 >
+//                   Shop: {ownerInfo.shopCode || ownerInfo.shopId}
+//                 </span>
+//               ) : null}
+//             </div>
+//             <div className="flex flex-wrap items-center gap-2">
+//               <button
+//                 type="button"
+//                 onClick={() => loadProducts(q)}
+//                 className={cn(
+//                   "rounded-xl border px-3 py-2 text-[12px] font-bold",
+//                   t.btn,
+//                 )}
+//                 disabled={loading}
+//               >
+//                 <RotateCcw
+//                   className={cn(
+//                     "mr-2 inline h-4 w-4",
+//                     loading && "animate-spin",
+//                   )}
+//                 />
+//                 Refresh
+//               </button>
+//               <button
+//                 type="button"
+//                 onClick={() => router.push("/dashboard/product/add")}
+//                 className={cn(
+//                   "rounded-xl px-3 py-2 text-[12px] font-bold hover:cursor-pointer",
+//                   t.btnPrimary,
+//                 )}
+//               >
+//                 <Plus className="mr-2 inline h-4 w-4" />
+//                 Add Product
+//               </button>
+//             </div>
+//           </div>
+//           <CompactSummaryBar theme={theme} stats={stats} />
+//         </section>
+//         <section className="mb-3">
+//           <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto_auto] xl:items-center">
+//             <div className="relative">
+//               <Search
+//                 className={cn(
+//                   "absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2",
+//                   t.textSubtle,
+//                 )}
+//               />
+//               <Input
+//                 value={q}
+//                 onChange={(e) => setQ(e.target.value)}
+//                 onKeyDown={(e) => {
+//                   if (e.key === "Enter") loadProducts(q);
+//                 }}
+//                 placeholder="Search product name, SKU, category..."
+//                 className={cn("h-10 rounded-xl pl-10 text-[12px]", t.input)}
+//               />
+//             </div>
+// <div className="flex flex-wrap gap-2">
+//               {(["all", "enabled", "disabled"] as AvailabilityFilter[]).map(value => <button key={value} type="button" onClick={() => setAvailabilityFilter(value)} className={cn("rounded-xl border px-3 py-2 text-[11px] font-bold", availabilityFilter === value ? t.active : t.btn)}>{value === "all" ? "All availability" : value === "enabled" ? "Enabled" : "Disabled"}</button>)}
+//             </div>
+//             <div className="flex flex-wrap gap-2">
+//               {["all", "in_stock", "low_stock", "out_stock"].map((s) => (
+//                 <button
+//                   key={s}
+//                   type="button"
+//                   onClick={() => setStockFilter(s as StockLevel)}
+//                   className={cn(
+//                     "rounded-xl border px-3 py-2 text-[11px] font-bold",
+//                     stockFilter === s ? t.active : t.btn,
+//                   )}
+//                 >
+//                   {s === "all"
+//                     ? "All"
+//                     : s === "in_stock"
+//                       ? "In Stock"
+//                       : s === "low_stock"
+//                         ? "Low"
+//                         : "Out"}
+//                 </button>
+//               ))}
+//             </div>
+//             <div className="flex flex-wrap gap-2">
+//               {SORT_OPTIONS.map((item) => (
+//                 <button
+//                   key={item.value}
+//                   type="button"
+//                   onClick={() => setSortMode(item.value)}
+//                   className={cn(
+//                     "rounded-xl border px-2.5 py-2 text-[11px] font-bold",
+//                     sortMode === item.value ? t.active : t.btn,
+//                   )}
+//                 >
+//                   <item.icon className="mr-1.5 inline h-3.5 w-3.5" />
+//                   {item.label}
+//                 </button>
+//               ))}
+//             </div>
+//             <div className="flex gap-2">
+//               <button
+//                 type="button"
+//                 onClick={() => setViewMode("grid")}
+//                 className={cn(
+//                   "rounded-xl border px-2.5 py-2 text-[11px] font-bold",
+//                   viewMode === "grid" ? t.active : t.btn,
+//                 )}
+//               >
+//                 <LayoutGrid className="h-4 w-4" />
+//               </button>
+//               <button
+//                 type="button"
+//                 onClick={() => setViewMode("compact")}
+//                 className={cn(
+//                   "rounded-xl border px-2.5 py-2 text-[11px] font-bold",
+//                   viewMode === "compact" ? t.active : t.btn,
+//                 )}
+//               >
+//                 <List className="h-4 w-4" />
+//               </button>
+//             </div>
+//           </div>
+//           <div className="mt-3 flex flex-wrap gap-2">
+//             {categories.map((cat) => (
+//               <button
+//                 key={cat}
+//                 type="button"
+//                 onClick={() => setCategoryFilter(cat)}
+//                 className={cn(
+//                   "rounded-full border px-3 py-1.5 text-[11px] font-bold",
+//                   categoryFilter === cat ? t.active : t.btn,
+//                 )}
+//               >
+//                 {cat}
+//               </button>
+//             ))}
+//           </div>
+//         </section>
+//         {authError ? (
+//           <div className="mb-6 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm font-bold text-rose-400">
+//             {authError}
+//           </div>
+//         ) : null}
+//         {!firstLoaded || loading ? (
+//           <div className="p-10 text-center">
+//             <Package2
+//               className={cn(
+//                 "mx-auto mb-4 h-12 w-12 animate-pulse",
+//                 t.textMuted,
+//               )}
+//             />
+//             <div className={cn("font-black", t.text)}>Loading products...</div>
+//           </div>
+//         ) : products.length === 0 ? (
+//           <div className="p-10 text-center">
+//             <Package2 className={cn("mx-auto mb-4 h-12 w-12", t.textMuted)} />
+//             <div className={cn("text-xl font-black", t.text)}>
+//               No products for this user
+//             </div>
+//             <div className={cn("mx-auto mt-2 max-w-xl text-sm", t.textMuted)}>
+//               Product မတွေ့ရပါ။ Backend response ထဲမှာ `createdByUserId`,
+//               `created_by_user_id`, `createdByUsername`, `shopId` သို့မဟုတ်
+//               `shopCode` မပါရင် frontend က safety အတွက် မပြတော့ပါ။
+//             </div>
+//             <button
+//               onClick={() => router.push("/dashboard/product/add")}
+//               className={cn(
+//                 "mt-6 rounded-2xl px-5 py-2.5 text-sm font-bold",
+//                 t.btnPrimary,
+//               )}
+//             >
+//               <Plus className="mr-2 inline h-4 w-4" />
+//               Create Product
+//             </button>
+//           </div>
+//         ) : (
+//           <section>
+//             {paginatedProducts.length === 0 ? (
+//               <div className="p-10 text-center">
+//                 <Search className={cn("mx-auto mb-4 h-12 w-12", t.textMuted)} />
+//                 <div className={cn("text-xl font-black", t.text)}>
+//                   No matching products
+//                 </div>
+//                 <div className={cn("mt-2 text-sm", t.textMuted)}>
+//                   Search/filter ကို ပြန်ပြင်ပြီး စမ်းကြည့်ပါ။
+//                 </div>
+//               </div>
+//             ) : viewMode === "grid" ? (
+//               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+//                 {paginatedProducts.map((product, index) => (
+//                   <ProductCard
+//                     key={product.id}
+//                     product={product}
+//                     index={index}
+//                     theme={theme}
+//                     selected={selectedId === product.id}
+//                     onSelect={(p) => {
+//                       setSelectedId(p.id);
+//                       setPanelOpen(true);
+//                     }}
+//                   />
+//                 ))}
+//               </div>
+//             ) : (
+//               <div className={cn("overflow-hidden border-t", t.line)}>
+//                 <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3", t.line)}>
+//                   <label className={cn("flex items-center gap-2 text-xs font-bold", t.textMuted)}>
+//                     <input type="checkbox" checked={allCurrentPageSelected} disabled={deleteBusy}
+//                       ref={el => { if (el) el.indeterminate = someCurrentPageSelected; }}
+//                       onChange={toggleSelectCurrentPage} className="h-4 w-4 accent-rose-600" />
+//                     Select page
+//                   </label>
+//                   {selectedDeleteIds.size > 0 && <div className="flex flex-wrap items-center gap-2">
+//                     <span className={cn("text-xs font-bold", t.text)}>{selectedDeleteIds.size} selected across pages</span>
+//                     <button type="button" disabled={deleteBusy} onClick={() => setSelectedDeleteIds(new Set())}
+//                       className={cn("rounded-xl border px-3 py-2 text-xs font-bold", t.btn)}>Clear</button>
+//                     <button type="button" disabled={deleteBusy} onClick={() => { setBulkOperation("disable"); setBulkDeleteError(null); setBulkDeleteOpen(true); }}
+//                       className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold", t.btn)}>
+//                       <Power className="h-4 w-4" />Disable Selected ({selectedDeleteIds.size})
+//                     </button>
+//                     <button type="button" disabled={deleteBusy} onClick={() => { setBulkOperation("delete"); setBulkDeleteError(null); setBulkDeleteOpen(true); }}
+//                       className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold", t.btnDanger)}>
+//                       <Trash2 className="h-4 w-4" />Delete Selected ({selectedDeleteIds.size})
+//                     </button>
+//                   </div>}
+//                 </div>
+//                 {paginatedProducts.map((product, index) => (
+//                   <CompactProductCard
+//                     checked={selectedDeleteIds.has(product.id)}
+//                     disabled={deleteBusy}
+//                     onCheckedChange={toggleDeleteSelection}
+//                     key={product.id}
+//                     product={product}
+//                     index={index}
+//                     theme={theme}
+//                     selected={selectedId === product.id}
+//                     onSelect={(p) => {
+//                       setSelectedId(p.id);
+//                       setPanelOpen(true);
+//                     }}
+//                   />
+//                 ))}
+//               </div>
+//             )}
+//             <ProductPagination
+//               theme={theme}
+//               currentPage={currentPage}
+//               totalPages={totalPages}
+//               pageSize={pageSize}
+//               totalItems={filtered.length}
+//               startIndex={startIndex}
+//               endIndex={endIndex}
+//               onPageChange={(page) => {
+//                 setCurrentPage(page);
+//                 setSelectedId(null);
+//                 setPanelOpen(false);
+//                 window.scrollTo({ top: 0, behavior: "smooth" });
+//               }}
+//               onPageSizeChange={(size) => {
+//                 setPageSize(size);
+//                 setCurrentPage(1);
+//                 setSelectedId(null);
+//                 setPanelOpen(false);
+//               }}
+//             />
+//           </section>
+//         )}
+//       </main>
+//     </div>
+//   );
+// }
+// export default function ProductsPage() {
+//   return (
+//     <FeaturePageGuard featureKey="productsEnabled">
+//       <ProductsPageContent />
+//     </FeaturePageGuard>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
 "use client";
-
 import * as React from "react";
-
 import { useRouter } from "next/navigation";
-
 import { useSession } from "next-auth/react";
-
 import { useTheme } from "next-themes";
-
 import { motion, AnimatePresence } from "framer-motion";
-
 import {
-
   Search,
-
   Plus,
-
   Package2,
-
   Boxes,
-
   LayoutGrid,
-
   List,
-
   RotateCcw,
-
   ArrowDownAZ,
-
   ArrowUpZA,
-
   ChevronRight,
-
   TrendingUp,
-
   TrendingDown,
-
   CheckCircle2,
-
   AlertCircle,
-
   Tag,
-
   Wallet,
-
   Layers,
-
   Store,
-
   X,
-
   ChevronLeft,
-
   ChevronsLeft,
-
   ChevronsRight,
-
   UserCircle2,
-
+  Trash2,
 } from "lucide-react";
-
 import { cn } from "@/lib/utils";
-
 import { Input } from "@/components/ui/input";
-
 import { Badge } from "@/components/ui/badge";
-
 import { FeaturePageGuard } from "@/components/feature-page-guard";
-
 import { toast } from "sonner";
-
 type Theme = "dark" | "light";
-
 type ViewMode = "grid" | "compact";
-
 type SortMode =
-
   | "name_asc"
-
   | "name_desc"
-
   | "price_desc"
-
   | "stock_desc"
-
   | "category_asc";
-
 type StockLevel = "all" | "in_stock" | "low_stock" | "out_stock";
-
 type Product = {
-
   id: string;
-
   sku: string;
-
   productName: string;
-
   productPrice: number;
-
   barcode?: string | null;
-
   category?: string | null;
-
   productQuantityAmount: number; // Authoritative current quantity from the server.
   openingBalance: number | null;
   totalStock: number | null;
@@ -109,163 +2176,84 @@ type Product = {
   stockCorrection: number | null;
   stockTrackingBasis: string | null;
   stockTrackingStartedAt: string | null;
-
   imagePath?: string | null;
-
   image_path?: string | null;
-
   product_image?: string | null;
-
   productDiscount?: number | null;
-
   note?: string | null;
-
   productType?: string | null;
-
   createdBy?: any;
-
   createdByUserId?: string | null;
-
   createdByUsername?: string | null;
-
   createdByRole?: string | null;
-
   shopId?: string | null;
-
   shopCode?: string | null;
-
 };
-
 type ProductOwnerInfo = {
-
   id: string;
-
   username: string;
-
   shopId: string;
-
   shopCode: string;
-
 };
-
 const STORAGE_KEY = "binhlaig-product-page-owner-only-v2";
-
 const PRODUCT_REFRESH_EVENT = "pos-products-stock-refresh";
-
 const PAGE_SIZE_OPTIONS = [6, 9, 12, 18] as const;
-
 function numberFormat(n: number) {
-
   return new Intl.NumberFormat().format(n || 0);
-
 }
-
 function toNumber(value: unknown, fallback = 0) {
-
   if (value == null || value === "") return fallback;
-
   if (typeof value === "number") {
-
     return Number.isFinite(value) ? value : fallback;
-
   }
-
   const cleaned = String(value).replaceAll(",", "").trim();
-
   const n = Number(cleaned);
-
   return Number.isFinite(n) ? n : fallback;
-
 }
-
 function money(n: number) {
-
   return `¥${numberFormat(n || 0)}`;
-
 }
-
 function shortMoney(n: number) {
-
   if (!n) return "¥0";
-
   if (n >= 1_000_000) return `¥${(n / 1_000_000).toFixed(1)}M`;
-
   if (n >= 1_000) return `¥${(n / 1_000).toFixed(0)}k`;
-
   return `¥${n}`;
-
 }
-
 function safeParseJson(value: unknown) {
-
   if (typeof value !== "string") return value;
-
   try {
-
     return JSON.parse(value);
-
   } catch {
-
     return value;
-
   }
-
 }
-
 function firstString(...values: unknown[]) {
-
   for (const value of values) {
-
     if (value == null) continue;
-
     const s = String(value).trim();
-
     if (s) return s;
-
   }
-
   return null;
-
 }
-
 function isNumericId(value: unknown) {
-
   return /^\d+$/.test(String(value ?? "").trim());
-
 }
-
 function normalizeOwnerInfo(session: unknown): ProductOwnerInfo {
-
   const user = ((session as any)?.user ?? {}) as any;
-
   const rawId = String(user.id ?? user.userId ?? user.staffId ?? "").trim();
-
   return {
-
     id: isNumericId(rawId) ? rawId : "",
-
     username: String(
-
       user.username ||
-
       (!isNumericId(rawId) ? rawId : "") ||
-
       user.name ||
-
       user.email ||
-
       "",
-
     ).trim(),
-
     shopId: user.shopId == null ? "" : String(user.shopId).trim(),
-
     shopCode: String(user.shopCode ?? "").trim(),
-
   };
-
 }
-
 function optionalQuantity(...values: unknown[]): number | null {
   for (const value of values) {
     if (value == null || value === "") continue;
@@ -298,46 +2286,26 @@ function stockTone(label: string, theme: Theme): { panel: string; label: string;
   };
   return null;
 }
-
 function stockText(value: number | null) {
   return value === null ? "—" : numberFormat(value);
 }
-
 function normalizeProduct(p: any): Product {
-
-
   const createdBy = safeParseJson(
-
     p?.createdBy ?? p?.created_by ?? p?.user_info ?? p?.owner ?? null,
-
   ) as any;
-
   return {
-
     id: String(p?.id ?? ""),
-
     sku: String(p?.sku ?? p?.productSku ?? p?.product_sku ?? ""),
-
     productName: String(
-
       p?.productName ?? p?.product_name ?? p?.name ?? p?.title ?? "",
-
     ),
-
     productPrice: toNumber(p?.productPrice ?? p?.product_price ?? p?.price),
-
     productQuantityAmount: toNumber(
-
       p?.productQuantityAmount ??
-
       p?.product_quantity_amount ??
-
       p?.quantity ??
-
       p?.stock,
-
     ),
-
     // These historical values must come from the shop-scoped backend response.
     // Current quantity alone cannot reveal original stock, edits, or sales.
     openingBalance: optionalQuantity(p?.openingBalance),
@@ -347,1217 +2315,624 @@ function normalizeProduct(p: any): Product {
     stockTrackingBasis: p?.stockTrackingBasis ?? null,
     stockTrackingStartedAt: p?.stockTrackingStartedAt ?? null,
     barcode: p?.barcode ?? null,
-
     category: p?.category ?? null,
-
     productType: p?.productType ?? p?.product_type ?? null,
-
     productDiscount: toNumber(
-
       p?.productDiscount ?? p?.product_discount ?? p?.discount,
-
     ),
-
     note: p?.note ?? null,
-
     imagePath: p?.imagePath ?? null,
-
     image_path: p?.image_path ?? null,
-
     product_image: p?.product_image ?? p?.productImage ?? null,
-
     createdBy,
-
     createdByUserId: firstString(
-
       p?.createdByUserId,
-
       p?.created_by_user_id,
-
       p?.created_by_id,
-
       p?.ownerId,
-
       p?.owner_id,
-
       p?.userId,
-
       p?.user_id,
-
       createdBy?.id,
-
       createdBy?.userId,
-
       createdBy?.user_id,
-
     ),
-
     createdByUsername: firstString(
-
       p?.createdByUsername,
-
       p?.created_by_username,
-
       p?.ownerUsername,
-
       p?.owner_username,
-
       p?.username,
-
       createdBy?.username,
-
       createdBy?.name,
-
       createdBy?.email,
-
     ),
-
     createdByRole: firstString(
-
       p?.createdByRole,
-
       p?.created_by_role,
-
       createdBy?.role,
-
     ),
-
     shopId: firstString(
-
       p?.shopId,
-
       p?.shop_id,
-
       createdBy?.shopId,
-
       createdBy?.shop_id,
-
     ),
-
     shopCode: firstString(
-
       p?.shopCode,
-
       p?.shop_code,
-
       createdBy?.shopCode,
-
       createdBy?.shop_code,
-
     ),
-
   };
-
 }
-
 function pickImagePath(p: Product) {
-
   return p.imagePath ?? p.image_path ?? p.product_image ?? null;
-
 }
-
 function buildImageUrl(path?: string | null) {
-
   if (!path) return null;
-
   const raw = String(path).trim();
-
   if (!raw) return null;
-
-  if (raw.startsWith("http://") || raw.startsWith("https://")) {
-
+  if (raw.startsWith("http\://") || raw.startsWith("https\://")) {
     return raw;
-
   }
-
   const cleaned = raw.replace(/^\/?uploads\/?/i, "").replace(/^\/+/, "");
-
   return `/uploads/${cleaned}`;
-
 }
-
 async function readErrorText(res: Response) {
-
   const ct = res.headers.get("content-type") || "";
-
   try {
-
     if (ct.includes("application/json")) {
-
       const j = await res.json();
-
       return j?.message || j?.error || JSON.stringify(j);
-
     }
-
     return (await res.text()) || "";
-
   } catch {
-
     return "";
-
   }
-
 }
-
 function stockLevelOf(stock: number): StockLevel {
-
   if (stock <= 0) return "out_stock";
-
   if (stock < 5) return "low_stock";
-
   return "in_stock";
-
 }
-
 function stockBadge(stock: number) {
-
   if (stock <= 0) {
-
     return {
-
       label: "OUT",
-
       cls: "bg-rose-500/12 text-rose-400 border-rose-500/20",
-
     };
-
   }
-
   if (stock < 5) {
-
     return {
-
       label: "LOW",
-
       cls: "bg-amber-500/12 text-amber-400 border-amber-500/20",
-
     };
-
   }
-
   return {
-
     label: "IN",
-
     cls: "bg-emerald-500/12 text-emerald-400 border-emerald-500/20",
-
   };
-
 }
-
 function sortProducts(items: Product[], mode: SortMode) {
-
   const arr = [...items];
-
   switch (mode) {
-
     case "name_asc":
-
       return arr.sort((a, b) => a.productName.localeCompare(b.productName));
-
     case "name_desc":
-
       return arr.sort((a, b) => b.productName.localeCompare(a.productName));
-
     case "price_desc":
-
       return arr.sort((a, b) => b.productPrice - a.productPrice);
-
     case "stock_desc":
-
       return arr.sort(
-
         (a, b) => b.productQuantityAmount - a.productQuantityAmount,
-
       );
-
     case "category_asc":
-
       return arr.sort((a, b) =>
-
-        String(a.category || "").localeCompare(String(b.category || "")),
-
+String(a.category || "").localeCompare(String(b.category || "")),
       );
-
     default:
-
       return arr;
-
   }
-
 }
-
 function hashCode(str: string) {
-
   let h = 0;
-
   for (let i = 0; i < str.length; i++) {
-
     h = str.charCodeAt(i) + ((h << 5) - h);
-
   }
-
   return h;
-
 }
-
 function getInitials(name: string) {
-
   return String(name || "P")
-
     .split(" ")
-
     .filter(Boolean)
-
     .slice(0, 2)
-
     .map((x) => x[0]?.toUpperCase())
-
     .join("");
-
 }
-
 function gradientFromSeed(seed: string) {
-
   const palettes = [
-
     ["#3b82f6", "#06b6d4"],
-
     ["#8b5cf6", "#d946ef"],
-
     ["#10b981", "#06b6d4"],
-
     ["#f59e0b", "#ef4444"],
-
     ["#f43f5e", "#ec4899"],
-
     ["#6366f1", "#3b82f6"],
-
     ["#14b8a6", "#10b981"],
-
     ["#f97316", "#f59e0b"],
-
   ];
-
   return palettes[Math.abs(hashCode(seed)) % palettes.length];
-
 }
-
 const tk = (theme: Theme) =>
-
   theme === "dark"
-
     ? {
-
       root: "bg-transparent",
-
       text: "text-white",
-
       textMuted: "text-slate-400",
-
       textSubtle: "text-slate-500",
-
       card: "border-white/10 bg-black shadow-sm",
-
       input:
-
         "border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/20",
-
       btn: "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 hover:text-white",
-
       btnPrimary:
-
         "bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20",
-
       btnDanger:
-
         "border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20",
-
       pill: "border-white/10 bg-white/[0.04] text-slate-400",
-
       active:
-
         "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-600/20",
-
       statChip: "border-white/10 bg-white/[0.04]",
-
       modalBg: "border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-xl",
-
       line: "border-white/[0.07]",
-
       rowHover: "hover:bg-white/[0.035]",
-
     }
-
     : {
-
       root: "bg-transparent",
-
       text: "text-slate-900",
-
       textMuted: "text-slate-500",
-
       textSubtle: "text-slate-400",
-
       card: "border-slate-200 bg-white shadow-sm",
-
       input:
-
         "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm focus-visible:border-blue-500 focus-visible:ring-blue-500/20",
-
       btn: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 shadow-sm",
-
       btnPrimary:
-
         "bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20",
-
       btnDanger: "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100",
-
       pill: "border-slate-200 bg-white text-slate-500 shadow-sm",
-
       active:
-
         "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-600/20",
-
       statChip: "bg-white/70 border-slate-200",
-
       modalBg: "bg-white/95 backdrop-blur-xl border-slate-200/80 shadow-2xl",
-
       line: "border-slate-200",
-
       rowHover: "hover:bg-white/70",
-
     };
-
 function ProductVisual({
-
-  product,
-
-  index,
-
-  className,
-
+product,
+index,
+className,
 }: {
-
   product: Product;
-
   index: number;
-
   className?: string;
-
 }) {
-
   const imageUrl = buildImageUrl(pickImagePath(product));
-
   const [g1, g2] = gradientFromSeed(
-
     `${product.productName}-${product.sku}-${index}`,
-
   );
-
   if (imageUrl) {
-
     return (
-
       <img
-
-        src={imageUrl}
-
-        alt={product.productName}
-
-        className={cn("h-full w-full object-cover", className)}
-
-        draggable={false}
-
+src={imageUrl}
+alt={product.productName}
+className={cn("h-full w-full object-cover", className)}
+draggable={false}
       />
-
     );
-
   }
-
   return (
-
     <div
-
-      className={cn(
-
+className={cn(
         "flex items-center justify-center text-white font-black",
-
         className,
-
       )}
-
-      style={{ background: `linear-gradient(135deg, ${g1}, ${g2})` }}
-
+style={{ background: `linear-gradient(135deg, ${g1}, ${g2})` }}
     >
-
       <div className="flex flex-col items-center gap-1">
-
         <div className="rounded-2xl bg-black/15 px-3 py-2 text-lg backdrop-blur">
-
           {getInitials(product.productName || "P")}
-
         </div>
-
         <div className="text-[11px] opacity-90">{product.sku || "SKU"}</div>
-
       </div>
-
     </div>
-
   );
-
 }
-
 function CompactSummaryBar({
-
-  theme,
-
-  stats,
-
+theme,
+stats,
 }: {
-
   theme: Theme;
-
   stats: {
-
     total: number;
-
     inStock: number;
-
     lowStock: number;
-
     outStock: number;
-
     totalValue: number;
-
   };
-
 }) {
-
   const t = tk(theme);
-
   const items = [
-
     {
-
       label: "Products",
-
       value: numberFormat(stats.total),
-
       icon: Package2,
-
       color: "text-blue-400",
-
     },
-
     {
-
       label: "In Stock",
-
       value: numberFormat(stats.inStock),
-
       icon: CheckCircle2,
-
       color: "text-emerald-400",
-
     },
-
     {
-
       label: "Low",
-
       value: numberFormat(stats.lowStock),
-
       icon: AlertCircle,
-
       color: "text-amber-400",
-
     },
-
     {
-
       label: "Out",
-
       value: numberFormat(stats.outStock),
-
       icon: AlertCircle,
-
       color: "text-rose-400",
-
     },
-
     {
-
       label: "Value",
-
       value: shortMoney(stats.totalValue),
-
       icon: Wallet,
-
       color: "text-violet-400",
-
     },
-
   ];
-
   return (
-
     <div className="mt-3 flex flex-wrap items-center gap-2">
-
       {items.map((item) => {
-
         const Icon = item.icon;
-
         return (
-
           <div
-
-            key={item.label}
-
-            className={cn(
-
+key={item.label}
+className={cn(
               "flex min-w-[112px] items-center gap-2 rounded-xl px-2 py-1.5",
-
               theme === "dark" ? "bg-white/[0.035]" : "bg-white/70",
-
             )}
-
           >
-
             <span
-
-              className={cn(
-
+className={cn(
                 "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-
                 theme === "dark" ? "bg-white/[0.06]" : "bg-slate-100",
-
               )}
-
             >
-
               <Icon className={cn("h-4 w-4", item.color)} />
-
             </span>
-
             <div className="min-w-0">
-
               <div
-
-                className={cn(
-
+className={cn(
                   "text-[9px] font-black uppercase tracking-widest",
-
                   t.textSubtle,
-
                 )}
-
               >
-
                 {item.label}
-
               </div>
-
               <div className={cn("truncate text-[14px] font-black", t.text)}>
-
                 {item.value}
-
               </div>
-
             </div>
-
           </div>
-
         );
-
       })}
-
     </div>
-
   );
-
 }
-
 function ProductCard({
-
-  product,
-
-  index,
-
-  theme,
-
-  selected,
-
-  onSelect,
-
+product,
+index,
+theme,
+selected,
+onSelect,
 }: {
-
   product: Product;
-
   index: number;
-
   theme: Theme;
-
   selected?: boolean;
-
   onSelect: (p: Product) => void;
-
 }) {
-
   const t = tk(theme);
-
   const badge = stockBadge(product.productQuantityAmount);
-
   return (
-
     <motion.button
-
-      type="button"
-
-      whileHover={{ y: -3 }}
-
-      onClick={() => onSelect(product)}
-
-      className={cn(
-
+type="button"
+whileHover={{ y: -3 }}
+onClick={() => onSelect(product)}
+className={cn(
         "w-full overflow-hidden rounded-2xl border text-left transition-all duration-200",
-
         theme === "dark"
-
           ? "border-white/[0.07] bg-white/[0.035] hover:bg-white/[0.06]"
-
           : "border-slate-200 bg-white/70 hover:bg-white",
-
         selected && "ring-2 ring-blue-500/50",
-
       )}
-
     >
-
       <div className="relative h-[118px] overflow-hidden">
-
         <ProductVisual
-
-          product={product}
-
-          index={index}
-
-          className="absolute inset-0"
-
+product={product}
+index={index}
+className="absolute inset-0"
         />
-
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
-
         <div className="absolute left-2 top-2 z-10 flex gap-1.5">
-
           <Badge className={cn("border text-[10px] font-bold", badge.cls)}>
-
             {badge.label}
-
           </Badge>
-
           {Number(product.productDiscount || 0) > 0 && (
-
             <Badge className="border border-amber-500/20 bg-amber-500/12 text-amber-400 text-[10px] font-bold">
-
               -{numberFormat(Number(product.productDiscount || 0))}
-
             </Badge>
-
           )}
-
         </div>
-
         <div className="absolute right-2 top-2 z-10">
-
           <div className="rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[9px] font-bold text-white backdrop-blur">
-
             {product.category || "UNCATEGORIZED"}
-
           </div>
-
         </div>
-
         <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-2.5">
-
           <div className="line-clamp-2 text-[13px] font-black leading-tight text-white drop-shadow-lg">
-
             {product.productName}
-
           </div>
-
           <div className="mt-0.5 font-mono text-[9px] text-white/55">
-
             {product.sku || "NO-SKU"}
-
           </div>
-
         </div>
-
       </div>
-
       <div className="px-3 pb-3 pt-2.5">
-
         <div
-
-          className={cn("flex items-center gap-1.5 text-[10px]", t.textMuted)}
-
+className={cn("flex items-center gap-1.5 text-[10px]", t.textMuted)}
         >
-
           <Tag className="h-3 w-3 shrink-0" />
-
           {product.productType || "General Item"}
-
         </div>
-
         <div className="mt-2 grid grid-cols-3 gap-1.5">
-
           {[
-
             { label: "Price", value: shortMoney(product.productPrice) },
-
             {
-
               label: "Remaining",
-
               value: numberFormat(product.productQuantityAmount),
-
             },
-
             { label: product.stockTrackingBasis === "OPENING_BALANCE" ? "Opening at tracking" : "Opening stock", value: stockText(product.openingBalance) },
             { label: product.stockTrackingBasis === "OPENING_BALANCE" ? "Tracked total" : "Total stock", value: stockText(product.totalStock) },
             { label: "Sold since tracking", value: stockText(product.soldQuantity) },
             { label: "Correction", value: stockText(product.stockCorrection) },
             { label: "Barcode", value: product.barcode ? "YES" : "—" },
-
           ].map((item) => (
-
             <div
-
-              key={item.label}
-
-              className={cn(
-
+key={item.label}
+className={cn(
                 "rounded-lg border px-1.5 py-1.5 text-center",
-
                 stockTone(item.label, theme)?.panel ?? t.statChip,
-
               )}
-
             >
-
               <div
-
-                className={cn(
-
+className={cn(
                   "text-[8px] font-bold uppercase tracking-wider",
-
                   stockTone(item.label, theme)?.label ?? t.textSubtle,
-
                 )}
-
               >
-
                 {item.label}
-
               </div>
-
               <div className={cn("mt-0.5 text-[11px] font-black", stockTone(item.label, theme)?.value ?? t.text)}>
-
                 {item.value}
-
               </div>
-
             </div>
-
           ))}
-
         </div>
-
         <div className="mt-2 flex items-center justify-between">
-
           <div
-
-            className={cn(
-
+className={cn(
               "flex items-center gap-1 text-[10px] font-bold",
-
               product.productQuantityAmount > 0
-
                 ? "text-emerald-400"
-
                 : "text-rose-400",
-
             )}
-
           >
-
             {product.productQuantityAmount > 0 ? (
-
               <TrendingUp className="h-3 w-3" />
-
             ) : (
-
               <TrendingDown className="h-3 w-3" />
-
             )}
-
             {product.productQuantityAmount > 0 ? "Available" : "Unavailable"}
-
           </div>
-
           <ChevronRight className={cn("h-4 w-4", t.textSubtle)} />
-
         </div>
-
       </div>
-
     </motion.button>
-
   );
-
 }
-
 function CompactProductCard({
-
-  product,
-
-  index,
-
-  theme,
-
-  selected,
-
-  onSelect,
-
+product,
+index,
+theme,
+selected,
+onSelect,
+checked,
+onCheckedChange,
+disabled,
 }: {
-
   product: Product;
-
   index: number;
-
   theme: Theme;
-
   selected?: boolean;
-
+  checked: boolean;
+  disabled: boolean;
+  onCheckedChange: (id: string) => void;
   onSelect: (p: Product) => void;
-
 }) {
-
   const t = tk(theme);
-
   const badge = stockBadge(product.productQuantityAmount);
-
   return (
-
-    <motion.button
-
-      type="button"
-
-      whileHover={{ x: 2 }}
-
-      onClick={() => onSelect(product)}
-
-      className={cn(
-
-        "w-full border-b px-2 py-3 text-left transition-all duration-200",
-
-        t.line,
-
-        t.rowHover,
-
-        selected && (theme === "dark" ? "bg-white/[0.05]" : "bg-white"),
-
-      )}
-
-    >
-
-      <div className="flex items-center gap-3">
-
-        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl">
-
-          <ProductVisual
-
-            product={product}
-
-            index={index}
-
-            className="h-10 w-10"
-
-          />
-
-        </div>
-
-        <div className="min-w-0 flex-1">
-
-          <div className="flex flex-wrap items-center gap-2">
-
-            <div className={cn("truncate text-[13px] font-black", t.text)}>
-
-              {product.productName}
-
-            </div>
-
-            <span
-
-              className={cn(
-
-                "rounded-full border px-2 py-0.5 text-[10px] font-bold",
-
-                badge.cls,
-
-              )}
-
-            >
-
-              {badge.label}
-
-            </span>
-
-          </div>
-
-          <div className={cn("mt-0.5 text-[11px]", t.textMuted)}>
-
-            {product.sku || "NO-SKU"} · {product.category || "UNCATEGORIZED"}
-
-          </div>
-
-        </div>
-
-        <div className="hidden min-w-[100px] text-right sm:block">
-
-          <div className={cn("text-[12px] font-black", t.text)}>
-
-            {money(product.productPrice)}
-
-          </div>
-
-          <div className={cn("text-[10px]", t.textSubtle)}>
-
-            Remaining {numberFormat(product.productQuantityAmount)} · Sold since tracking {stockText(product.soldQuantity)}
-
-          </div>
-
-        </div>
-
-        <ChevronRight className={cn("h-4 w-4", t.textSubtle)} />
-
-      </div>
-
-    </motion.button>
-
-  );
-
-}
-
-function ProductDetailDialog({
-
-  product,
-
-  theme,
-
-  onClose,
-
-  onView,
-
-  onEdit,
-
-  onDelete,
-
-}: {
-
-  product: Product | null;
-
-  theme: Theme;
-
-  onClose: () => void;
-
-  onView: () => void;
-
-  onEdit: () => void;
-
-  onDelete: () => void;
-
-}) {
-
-  const t = tk(theme);
-
-  if (!product) return null;
-
-  const badge = stockBadge(product.productQuantityAmount);
-
-  return (
-
     <motion.div
-
-      initial={{ opacity: 0 }}
-
-      animate={{ opacity: 1 }}
-
-      exit={{ opacity: 0 }}
-
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-
-      style={{
-
-        background: "rgba(0,0,0,0.62)",
-
-        backdropFilter: "blur(12px)",
-
-      }}
-
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-
+whileHover={{ x: 2 }}
+className={cn(
+        "w-full border-b px-2 py-3 text-left transition-all duration-200",
+        t.line,
+        t.rowHover,
+        selected && (theme === "dark" ? "bg-white/[0.05]" : "bg-white"),
+      )}
     >
-
-      <motion.div
-
-        initial={{ scale: 0.94, y: 18 }}
-
-        animate={{ scale: 1, y: 0 }}
-
-        exit={{ scale: 0.94, y: 18 }}
-
-        transition={{ duration: 0.18 }}
-
-        className={cn(
-
-          "w-full max-w-[720px] overflow-hidden rounded-3xl border",
-
-          t.modalBg,
-
-        )}
-
-      >
-
-        <div
-
-          className="flex items-start justify-between gap-4 border-b px-5 py-4"
-
-          style={{
-
-            borderColor:
-
-              theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
-
-          }}
-
-        >
-
-          <div>
-
-            <div
-
-              className={cn(
-
-                "text-[11px] font-black uppercase tracking-widest",
-
-                t.textSubtle,
-
-              )}
-
-            >
-
-              Product Detail
-
-            </div>
-
-            <h2 className={cn("mt-1 text-xl font-black", t.text)}>
-
-              {product.productName}
-
-            </h2>
-
-            <div className={cn("mt-1 font-mono text-[11px]", t.textMuted)}>
-
-              {product.sku || "NO-SKU"}
-
-            </div>
-
-          </div>
-
-          <button
-
-            onClick={onClose}
-
-            className={cn("rounded-xl border p-2", t.btn)}
-
-          >
-
-            <X className="h-4 w-4" />
-
-          </button>
-
+      <div className="flex items-center gap-3">
+        <input type="checkbox" checked={checked} disabled={disabled}
+          onChange={() => onCheckedChange(product.id)}
+          aria-label={`Select ${product.productName} for editing or deletion`}
+          className="h-4 w-4 shrink-0 accent-rose-600" />
+        <button type="button" onClick={() => onSelect(product)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl">
+          <ProductVisual
+product={product}
+index={index}
+className="h-10 w-10"
+          />
         </div>
-
-        <div className="max-h-[72vh] overflow-y-auto p-5">
-
-          <div className="grid gap-4 md:grid-cols-[240px_1fr]">
-
-            <div className="relative h-[210px] overflow-hidden rounded-2xl">
-
-              <ProductVisual
-
-                product={product}
-
-                index={0}
-
-                className="absolute inset-0"
-
-              />
-
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-
-              <div className="absolute left-3 top-3">
-
-                <span
-
-                  className={cn(
-
-                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold",
-
-                    badge.cls,
-
-                  )}
-
-                >
-
-                  {product.productQuantityAmount > 0 ? (
-
-                    <CheckCircle2 className="h-3 w-3" />
-
-                  ) : (
-
-                    <AlertCircle className="h-3 w-3" />
-
-                  )}
-
-                  {badge.label}
-
-                </span>
-
-              </div>
-
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className={cn("truncate text-[13px] font-black", t.text)}>
+              {product.productName}
             </div>
-
+            <span
+className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                badge.cls,
+              )}
+            >
+              {badge.label}
+            </span>
+          </div>
+          <div className={cn("mt-0.5 text-[11px]", t.textMuted)}>
+            {product.sku || "NO-SKU"} · {product.category || "UNCATEGORIZED"}
+          </div>
+        </div>
+        <div className="hidden min-w-[100px] text-right sm:block">
+          <div className={cn("text-[12px] font-black", t.text)}>
+            {money(product.productPrice)}
+          </div>
+          <div className={cn("text-[10px]", t.textSubtle)}>
+            Remaining {numberFormat(product.productQuantityAmount)} · Sold since tracking {stockText(product.soldQuantity)}
+          </div>
+        </div>
+        <ChevronRight className={cn("h-4 w-4", t.textSubtle)} />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+function ProductDetailDialog({
+product,
+theme,
+onClose,
+onView,
+onEdit,
+onDelete,
+}: {
+  product: Product | null;
+  theme: Theme;
+  onClose: () => void;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const t = tk(theme);
+  if (!product) return null;
+  const badge = stockBadge(product.productQuantityAmount);
+  return (
+    <motion.div
+initial={{ opacity: 0 }}
+animate={{ opacity: 1 }}
+exit={{ opacity: 0 }}
+className="fixed inset-0 z-50 flex items-center justify-center p-4"
+style={{
+        background: "rgba(0,0,0,0.62)",
+        backdropFilter: "blur(12px)",
+      }}
+onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+initial={{ scale: 0.94, y: 18 }}
+animate={{ scale: 1, y: 0 }}
+exit={{ scale: 0.94, y: 18 }}
+transition={{ duration: 0.18 }}
+className={cn(
+          "w-full max-w-[720px] overflow-hidden rounded-3xl border",
+          t.modalBg,
+        )}
+      >
+        <div
+className="flex items-start justify-between gap-4 border-b px-5 py-4"
+style={{
+            borderColor:
+              theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
+          }}
+        >
+          <div>
+            <div
+className={cn(
+                "text-[11px] font-black uppercase tracking-widest",
+                t.textSubtle,
+              )}
+            >
+              Product Detail
+            </div>
+            <h2 className={cn("mt-1 text-xl font-black", t.text)}>
+              {product.productName}
+            </h2>
+            <div className={cn("mt-1 font-mono text-[11px]", t.textMuted)}>
+              {product.sku || "NO-SKU"}
+            </div>
+          </div>
+          <button
+onClick={onClose}
+className={cn("rounded-xl border p-2", t.btn)}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="max-h-[72vh] overflow-y-auto p-5">
+          <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+            <div className="relative h-[210px] overflow-hidden rounded-2xl">
+              <ProductVisual
+product={product}
+index={0}
+className="absolute inset-0"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              <div className="absolute left-3 top-3">
+                <span
+className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                    badge.cls,
+                  )}
+                >
+                  {product.productQuantityAmount > 0 ? (
+                    <CheckCircle2 className="h-3 w-3" />
+                  ) : (
+                    <AlertCircle className="h-3 w-3" />
+                  )}
+                  {badge.label}
+                </span>
+              </div>
+            </div>
             <div className="grid gap-2 sm:grid-cols-2">
-
               {[
-
                 {
-
                   label: "Price",
-
                   value: money(product.productPrice),
-
                   icon: Wallet,
-
                 },
-
                 {
-
                   label: "Remaining stock",
                   value: numberFormat(product.productQuantityAmount),
                   icon: Boxes,
@@ -1566,2089 +2941,1193 @@ function ProductDetailDialog({
                 { label: product.stockTrackingBasis === "OPENING_BALANCE" ? "Tracked total stock" : "Total stock", value: stockText(product.totalStock), icon: Boxes },
                 { label: "Sold since tracking", value: stockText(product.soldQuantity), icon: Boxes },
                 { label: "Stock correction", value: stockText(product.stockCorrection), icon: Boxes },
-
                 {
-
                   label: "Category",
-
                   value: product.category || "—",
-
                   icon: Tag,
-
                 },
-
                 {
-
                   label: "Type",
-
                   value: product.productType || "—",
-
                   icon: Layers,
-
                 },
-
                 { label: "Barcode", value: product.barcode || "—", icon: Tag },
-
                 {
-
                   label: "Shop",
-
                   value: product.shopCode || product.shopId || "—",
-
                   icon: Store,
-
                 },
-
               ].map((item) => (
-
                 <div
-
-                  key={item.label}
-
-                  className={cn("rounded-xl border p-3", stockTone(item.label, theme)?.panel ?? t.statChip)}
-
+key={item.label}
+className={cn("rounded-xl border p-3", stockTone(item.label, theme)?.panel ?? t.statChip)}
                 >
-
                   <div
-
-                    className={cn(
-
+className={cn(
                       "mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider",
-
                       stockTone(item.label, theme)?.label ?? t.textSubtle,
-
                     )}
-
                   >
-
                     <item.icon className="h-3 w-3" />
-
                     {item.label}
-
                   </div>
-
                   <div
-
-                    className={cn("break-words text-[13px] font-black", stockTone(item.label, theme)?.value ?? t.text)}
-
+className={cn("break-words text-[13px] font-black", stockTone(item.label, theme)?.value ?? t.text)}
                   >
-
                     {item.value}
-
                   </div>
-
                 </div>
-
               ))}
-
             </div>
-
           </div>
-
           <div className={cn("mt-4 rounded-xl border p-3", t.statChip)}>
-
             <div
-
-              className={cn(
-
+className={cn(
                 "mb-2 text-[11px] font-bold uppercase tracking-wider",
-
                 t.textSubtle,
-
               )}
-
             >
-
               Product Owner
-
             </div>
-
             <div className="grid gap-2 sm:grid-cols-3">
-
               <div className={cn("text-[12px]", t.textMuted)}>
-
                 User ID:{" "}
-
                 <span className={cn("font-bold", t.text)}>
-
                   {product.createdByUserId || "—"}
-
                 </span>
-
               </div>
-
               <div className={cn("text-[12px]", t.textMuted)}>
-
                 Username:{" "}
-
                 <span className={cn("font-bold", t.text)}>
-
                   {product.createdByUsername || "—"}
-
                 </span>
-
               </div>
-
               <div className={cn("text-[12px]", t.textMuted)}>
-
                 Role:{" "}
-
                 <span className={cn("font-bold", t.text)}>
-
                   {product.createdByRole || "—"}
-
                 </span>
-
               </div>
-
             </div>
-
           </div>
-
           {product.note ? (
-
             <div className={cn("mt-4 rounded-xl border p-3", t.statChip)}>
-
               <div
-
-                className={cn(
-
+className={cn(
                   "mb-2 text-[11px] font-bold uppercase tracking-wider",
-
                   t.textSubtle,
-
                 )}
-
               >
-
                 Note
-
               </div>
-
               <div className={cn("text-[12px] leading-6", t.textMuted)}>
-
                 {product.note}
-
               </div>
-
             </div>
-
           ) : null}
-
         </div>
-
         <div
-
-          className="flex flex-wrap justify-end gap-2 border-t px-5 py-4"
-
-          style={{
-
+className="flex flex-wrap justify-end gap-2 border-t px-5 py-4"
+style={{
             borderColor:
-
               theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
-
           }}
-
         >
-
           <button
-
-            onClick={onClose}
-
-            className={cn(
-
+onClick={onClose}
+className={cn(
               "rounded-xl border px-4 py-2 text-[13px] font-bold",
-
               t.btn,
-
             )}
-
           >
-
             Close
-
           </button>
-
           <button
-
-            onClick={onView}
-
-            className={cn(
-
+onClick={onView}
+className={cn(
               "rounded-xl px-4 py-2 text-[13px] font-bold",
-
               t.btnPrimary,
-
             )}
-
           >
-
             View
-
           </button>
-
           <button
-
-            onClick={onEdit}
-
-            className={cn(
-
+onClick={onEdit}
+className={cn(
               "rounded-xl border px-4 py-2 text-[13px] font-bold",
-
               t.btn,
-
             )}
-
           >
-
             Edit
-
           </button>
-
           <button
-
-            onClick={onDelete}
-
-            className={cn(
-
+onClick={onDelete}
+className={cn(
               "rounded-xl border px-4 py-2 text-[13px] font-bold",
-
               t.btnDanger,
-
             )}
-
           >
-
             Delete
-
           </button>
-
         </div>
-
       </motion.div>
-
     </motion.div>
-
   );
-
 }
-
 function ProductPagination({
-
-  theme,
-
-  currentPage,
-
-  totalPages,
-
-  pageSize,
-
-  totalItems,
-
-  startIndex,
-
-  endIndex,
-
-  onPageChange,
-
-  onPageSizeChange,
-
+theme,
+currentPage,
+totalPages,
+pageSize,
+totalItems,
+startIndex,
+endIndex,
+onPageChange,
+onPageSizeChange,
 }: {
-
   theme: Theme;
-
   currentPage: number;
-
   totalPages: number;
-
   pageSize: number;
-
   totalItems: number;
-
   startIndex: number;
-
   endIndex: number;
-
   onPageChange: (page: number) => void;
-
   onPageSizeChange: (size: number) => void;
-
 }) {
-
   const t = tk(theme);
-
   function buildPages() {
-
     if (totalPages <= 7) {
-
       return Array.from({ length: totalPages }, (_, i) => i + 1);
-
     }
-
     if (currentPage <= 4) return [1, 2, 3, 4, 5, "...", totalPages];
-
     if (currentPage >= totalPages - 3) {
-
       return [
-
         1,
-
         "...",
-
         totalPages - 4,
-
         totalPages - 3,
-
         totalPages - 2,
-
         totalPages - 1,
-
         totalPages,
-
       ];
-
     }
-
     return [
-
       1,
-
       "...",
-
       currentPage - 1,
-
       currentPage,
-
       currentPage + 1,
-
       "...",
-
       totalPages,
-
     ];
-
   }
-
   const pages = buildPages();
-
   return (
-
     <motion.div
-
-      initial={{ opacity: 0, y: 10 }}
-
-      animate={{ opacity: 1, y: 0 }}
-
-      className="mt-4"
-
+initial={{ opacity: 0, y: 10 }}
+animate={{ opacity: 1, y: 0 }}
+className="mt-4"
     >
-
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-
         <div className="flex flex-wrap items-center gap-3">
-
           <div
-
-            className={cn(
-
+className={cn(
               "rounded-full border px-3 py-1.5 text-[11px] font-bold",
-
               t.pill,
-
             )}
-
           >
-
             Showing {totalItems === 0 ? 0 : startIndex}-{endIndex} of{" "}
-
             {totalItems}
-
           </div>
-
           <div
-
-            className={cn(
-
+className={cn(
               "flex items-center gap-2 rounded-full border px-2.5 py-1.5",
-
               t.pill,
-
             )}
-
           >
-
             <span className={cn("text-[11px] font-bold", t.textMuted)}>
-
               Rows
-
             </span>
-
             {PAGE_SIZE_OPTIONS.map((size) => (
-
               <button
-
-                key={size}
-
-                type="button"
-
-                onClick={() => onPageSizeChange(size)}
-
-                className={cn(
-
+key={size}
+type="button"
+onClick={() => onPageSizeChange(size)}
+className={cn(
                   "rounded-full px-3 py-1 text-[11px] font-bold transition-all",
-
                   pageSize === size ? t.active : "text-current",
-
                 )}
-
               >
-
                 {size}
-
               </button>
-
             ))}
-
           </div>
-
         </div>
-
         <div className="flex flex-wrap items-center gap-2">
-
           <button
-
-            type="button"
-
-            disabled={currentPage === 1}
-
-            onClick={() => onPageChange(1)}
-
-            className={cn(
-
+type="button"
+disabled={currentPage === 1}
+onClick={() => onPageChange(1)}
+className={cn(
               "rounded-xl border px-3 py-2 disabled:opacity-40",
-
               t.btn,
-
             )}
-
           >
-
             <ChevronsLeft className="h-4 w-4" />
-
           </button>
-
           <button
-
-            type="button"
-
-            disabled={currentPage === 1}
-
-            onClick={() => onPageChange(currentPage - 1)}
-
-            className={cn(
-
+type="button"
+disabled={currentPage === 1}
+onClick={() => onPageChange(currentPage - 1)}
+className={cn(
               "rounded-xl border px-3 py-2 disabled:opacity-40",
-
               t.btn,
-
             )}
-
           >
-
             <ChevronLeft className="h-4 w-4" />
-
           </button>
-
           <div className="flex items-center gap-2">
-
             {pages.map((page, idx) =>
-
               page === "..." ? (
-
                 <span
-
-                  key={`ellipsis-${idx}`}
-
-                  className={cn("px-2 text-sm font-bold", t.textSubtle)}
-
+key={`ellipsis-${idx}`}
+className={cn("px-2 text-sm font-bold", t.textSubtle)}
                 >
-
                   ...
-
                 </span>
-
               ) : (
-
                 <button
-
-                  key={page}
-
-                  type="button"
-
-                  onClick={() => onPageChange(page as number)}
-
-                  className={cn(
-
+key={page}
+type="button"
+onClick={() => onPageChange(page as number)}
+className={cn(
                     "min-w-[32px] rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all",
-
                     currentPage === page ? t.active : t.btn,
-
                   )}
-
                 >
-
                   {page}
-
                 </button>
-
               ),
-
             )}
-
           </div>
-
           <button
-
-            type="button"
-
-            disabled={currentPage === totalPages}
-
-            onClick={() => onPageChange(currentPage + 1)}
-
-            className={cn(
-
+type="button"
+disabled={currentPage === totalPages}
+onClick={() => onPageChange(currentPage + 1)}
+className={cn(
               "rounded-xl border px-3 py-2 disabled:opacity-40",
-
               t.btn,
-
             )}
-
           >
-
             <ChevronRight className="h-4 w-4" />
-
           </button>
-
           <button
-
-            type="button"
-
-            disabled={currentPage === totalPages}
-
-            onClick={() => onPageChange(totalPages)}
-
-            className={cn(
-
+type="button"
+disabled={currentPage === totalPages}
+onClick={() => onPageChange(totalPages)}
+className={cn(
               "rounded-xl border px-3 py-2 disabled:opacity-40",
-
               t.btn,
-
             )}
-
           >
-
             <ChevronsRight className="h-4 w-4" />
-
           </button>
-
         </div>
-
       </div>
-
     </motion.div>
-
   );
-
 }
-
 function ConfirmDeleteModal({
-
-  theme,
-
-  product,
-
-  loading,
-
-  onClose,
-
-  onConfirm,
-
+theme,
+product,
+loading,
+onClose,
+onConfirm,
 }: {
-
   theme: Theme;
-
   product: Product | null;
-
   loading: boolean;
-
   onClose: () => void;
-
   onConfirm: () => void;
-
 }) {
-
   const t = tk(theme);
-
   if (!product) return null;
-
   return (
-
     <motion.div
-
-      initial={{ opacity: 0 }}
-
-      animate={{ opacity: 1 }}
-
-      exit={{ opacity: 0 }}
-
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-
-      style={{
-
+initial={{ opacity: 0 }}
+animate={{ opacity: 1 }}
+exit={{ opacity: 0 }}
+className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+style={{
         background: "rgba(0,0,0,0.6)",
-
         backdropFilter: "blur(12px)",
-
       }}
-
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-
+onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-
       <motion.div
-
-        initial={{ scale: 0.92, y: 20 }}
-
-        animate={{ scale: 1, y: 0 }}
-
-        exit={{ scale: 0.92, y: 20 }}
-
-        transition={{ type: "spring", damping: 22, stiffness: 280 }}
-
-        className={cn(
-
+initial={{ scale: 0.92, y: 20 }}
+animate={{ scale: 1, y: 0 }}
+exit={{ scale: 0.92, y: 20 }}
+transition={{ type: "spring", damping: 22, stiffness: 280 }}
+className={cn(
           "w-full max-w-[420px] overflow-hidden rounded-3xl border",
-
           t.modalBg,
-
         )}
-
       >
-
         <div
-
-          className="flex items-center justify-between border-b px-6 py-5"
-
-          style={{
-
+className="flex items-center justify-between border-b px-6 py-5"
+style={{
             borderColor:
-
               theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
-
           }}
-
         >
-
           <div>
-
             <div className={cn("text-[17px] font-black", t.text)}>
-
               Delete Product
-
             </div>
-
             <div className={cn("mt-0.5 text-[12px]", t.textMuted)}>
-
               This action cannot be undone.
-
             </div>
-
           </div>
-
           <button
-
-            onClick={onClose}
-
-            className={cn("rounded-xl border p-2", t.btn)}
-
+onClick={onClose}
+className={cn("rounded-xl border p-2", t.btn)}
           >
-
             <X className="h-4 w-4" />
-
           </button>
-
         </div>
-
         <div className="space-y-3 p-6">
-
           <div className={cn("text-[13px]", t.textMuted)}>
-
             Are you sure you want to delete
-
           </div>
-
           <div className={cn("text-[18px] font-black", t.text)}>
-
             {product.productName}
-
           </div>
-
           <div className={cn("font-mono text-[11px]", t.textSubtle)}>
-
             {product.sku}
-
           </div>
-
         </div>
-
         <div
-
-          className="flex gap-3 border-t px-6 py-4"
-
-          style={{
-
+className="flex gap-3 border-t px-6 py-4"
+style={{
             borderColor:
-
               theme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)",
-
           }}
-
         >
-
           <button
-
-            onClick={onClose}
-
-            className={cn(
-
+onClick={onClose}
+className={cn(
               "flex-1 rounded-xl border py-2.5 text-[13px] font-bold",
-
               t.btn,
-
             )}
-
           >
-
             Cancel
-
           </button>
-
           <button
-
-            onClick={onConfirm}
-
-            disabled={loading}
-
-            className={cn(
-
+onClick={onConfirm}
+disabled={loading}
+className={cn(
               "flex-1 rounded-xl py-2.5 text-[13px] font-bold",
-
               t.btnDanger,
-
             )}
-
           >
-
             {loading ? "Deleting..." : "Delete"}
-
           </button>
-
         </div>
-
       </motion.div>
-
     </motion.div>
-
   );
-
 }
-
 function ProductsPageContent() {
-
   const router = useRouter();
-
   const { data: session, status } = useSession();
-
   const { resolvedTheme } = useTheme();
-
   const token =
-
     (session as any)?.accessToken ||
-
     (session as any)?.access_token ||
-
     (session as any)?.token ||
-
     null;
-
   const ownerInfo = React.useMemo(() => normalizeOwnerInfo(session), [session]);
-
   const [products, setProducts] = React.useState<Product[]>([]);
-
   const [q, setQ] = React.useState("");
-
   const [categoryFilter, setCategoryFilter] = React.useState("All");
-
   const [stockFilter, setStockFilter] = React.useState<StockLevel>("all");
-
   const [theme, setTheme] = React.useState<Theme>("dark");
-
   const [viewMode, setViewMode] = React.useState<ViewMode>("compact");
-
   const [sortMode, setSortMode] = React.useState<SortMode>("name_asc");
-
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-
   const [panelOpen, setPanelOpen] = React.useState(false);
-
   const [notification, setNotification] = React.useState<string | null>(null);
-
   const [loading, setLoading] = React.useState(false);
-
   const [firstLoaded, setFirstLoaded] = React.useState(false);
-
   const [authError, setAuthError] = React.useState<string | null>(null);
-
   const [deleteTarget, setDeleteTarget] = React.useState<Product | null>(null);
-
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
-
+  const [selectedDeleteIds, setSelectedDeleteIds] = React.useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [bulkDeleting, setBulkDeleting] = React.useState(false);
+  const deleteBusyRef = React.useRef(false);
+  const [bulkDeleteError, setBulkDeleteError] = React.useState<string | null>(null);
+  const loadRevisionRef = React.useRef(0);
   const [currentPage, setCurrentPage] = React.useState(1);
-
   const [pageSize, setPageSize] = React.useState<number>(9);
-
   const t = tk(theme);
-
   function authHeaders(): Record<string, string> {
-
     return token ? { Authorization: `Bearer ${token}` } : {};
-
   }
-
   function showNotif(msg: string) {
-
     setNotification(msg);
-
     window.setTimeout(() => setNotification(null), 3000);
-
   }
-
   React.useEffect(() => {
-
     const next: Theme = resolvedTheme === "light" ? "light" : "dark";
-
     setTheme(next);
-
   }, [resolvedTheme]);
-
   React.useEffect(() => {
-
     try {
-
       const raw = localStorage.getItem(STORAGE_KEY);
-
       if (!raw) return;
-
       const p = JSON.parse(raw);
-
       if (p.viewMode) setViewMode(p.viewMode);
-
       if (p.sortMode) setSortMode(p.sortMode);
-
       if (p.pageSize) setPageSize(Number(p.pageSize));
-
     } catch { }
-
   }, []);
-
   React.useEffect(() => {
-
     localStorage.setItem(
-
       STORAGE_KEY,
-
       JSON.stringify({ viewMode, sortMode, panelOpen, pageSize }),
-
     );
-
   }, [viewMode, sortMode, panelOpen, pageSize]);
-
   async function loadProducts(
-
-    search?: string,
-
-    options?: { silent?: boolean; preserveUi?: boolean },
-
+search?: string,
+options?: { silent?: boolean; preserveUi?: boolean },
   ) {
-
-    if (status !== "authenticated") return;
-
+    if (status !== "authenticated" || deleteBusyRef.current) return;
+    const loadRevision = ++loadRevisionRef.current;
     const silent = options?.silent === true;
-
     const preserveUi = options?.preserveUi === true;
-
     if (!token) {
-
       setAuthError("Session token မရပါ။ ပြန် login ဝင်ပါ။");
-
       if (!silent) toast.error("Session token မရပါ။ ပြန် login ဝင်ပါ။");
-
       return;
-
     }
-
     const tid = silent ? undefined : toast.loading("Loading products...");
-
     try {
-
       if (!silent) setLoading(true);
-
       setAuthError(null);
-
       const params = new URLSearchParams();
-
       if (search) params.set("q", search);
-
       params.set("_ts", String(Date.now()));
-
       if (ownerInfo.id && isNumericId(ownerInfo.id)) {
-
         params.set("created_by_user_id", ownerInfo.id);
-
         params.set("createdByUserId", ownerInfo.id);
-
         params.set("ownerId", ownerInfo.id);
-
         params.set("userId", ownerInfo.id);
-
       }
-
       if (ownerInfo.username) {
-
         params.set("created_by_username", ownerInfo.username);
-
         params.set("createdByUsername", ownerInfo.username);
-
         params.set("ownerUsername", ownerInfo.username);
-
         params.set("username", ownerInfo.username);
-
       }
-
       if (ownerInfo.shopId) {
-
         params.set("shop_id", ownerInfo.shopId);
-
         params.set("shopId", ownerInfo.shopId);
-
       }
-
       if (ownerInfo.shopCode) {
-
         params.set("shop_code", ownerInfo.shopCode);
-
         params.set("shopCode", ownerInfo.shopCode);
-
       }
-
       const query = params.toString() ? `?${params.toString()}` : "";
-
       const res = await fetch(`/backend/api/products${query}`, {
-
         headers: {
-
           ...authHeaders(),
-
           Accept: "application/json",
-
           "Cache-Control": "no-cache",
-
         },
-
         cache: "no-store",
-
       });
-
       if (!res.ok) {
-
         const detail = await readErrorText(res);
-
         setAuthError(detail || `Error ${res.status}`);
-
         if (!silent && tid) {
-
           toast.error(detail || `Error ${res.status}`, { id: tid });
-
         }
-
         setFirstLoaded(true);
-
         return;
-
       }
-
       const raw = await res.json().catch(() => []);
-
       const arr = Array.isArray(raw) ? raw : (raw?.content ?? raw?.data ?? []);
-
       const normalized = (Array.isArray(arr) ? arr : []).map(normalizeProduct);
-
       // The authenticated backend endpoint already scopes the response using
-
       // the current JWT/shop. Do not filter it again by optional createdBy
-
       // fields because older product responses may not include those fields.
-
       const safeProducts = normalized;
-
+      if (deleteBusyRef.current || loadRevision !== loadRevisionRef.current) return;
       setProducts(safeProducts);
-
       setFirstLoaded(true);
-
       if (!preserveUi) {
-
         setCurrentPage(1);
-
       }
-
       setSelectedId((old) => {
-
         if (old && safeProducts.some((p) => p.id === old)) return old;
-
         return null;
-
       });
-
       if (!silent && tid) {
-
         toast.success(`Loaded ✅ ${safeProducts.length} products`, { id: tid });
-
       }
-
     } catch {
-
       setAuthError("Server error");
-
       if (!silent && tid) {
-
         toast.error("Server error", { id: tid });
-
       }
-
     } finally {
-
       if (!silent) setLoading(false);
-
     }
-
   }
-
-  async function confirmDelete() {
-
-    if (!deleteTarget || status !== "authenticated" || !token) return;
-
-    const tid = toast.loading("Deleting...");
-
+  async function deleteProductRequest(id: string) {
+    if (!id || id === "undefined" || id === "null") throw new Error("Product ID မရှိပါ။ Product API response ကို စစ်ပါ။");
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 20000);
     try {
-
-      setDeletingId(deleteTarget.id);
-
-      const res = await fetch(`/backend/api/products/${deleteTarget.id}`, {
-
-        method: "DELETE",
-
-        headers: {
-
-          ...authHeaders(),
-
-        },
-
+      const res = await fetch(`/backend/api/products/${encodeURIComponent(id)}`, {
+        method: "DELETE", headers: { ...authHeaders(), Accept: "application/json" },
+        credentials: "same-origin", cache: "no-store", signal: controller.signal,
       });
-
       if (!res.ok) {
-
         const detail = await readErrorText(res);
-
-        toast.error(detail || "Delete failed", { id: tid });
-
-        return;
-
+        throw new Error(`Product ${id}: HTTP ${res.status}. ${detail || "Delete failed"}`);
       }
-
-      setProducts((prev) => prev.filter((p) => p.id !== deleteTarget.id));
-
-      if (selectedId === deleteTarget.id) {
-
-        setSelectedId(null);
-
+      if (res.redirected || (res.headers.get("content-type") || "").includes("text/html")) {
+        throw new Error(`Product ${id}: Delete API က HTML/login page ပြန်ပို့နေပါသည်။ Backend proxy route ကို စစ်ပါ။`);
       }
-
-      toast.success("Deleted ✅", { id: tid });
-
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`Product ${id}: Request timeout. Refresh လုပ်ပြီး data ကို ပြန်စစ်ပါ။`);
+      }
+      throw error;
+    } finally { window.clearTimeout(timer); }
+  }
+  function removeDeletedProducts(ids: string[]) {
+    const deleted = new Set(ids);
+    setProducts(prev => prev.filter(p => !deleted.has(p.id)));
+    setSelectedDeleteIds(prev => new Set([...prev].filter(id => !deleted.has(id))));
+    if (selectedId && deleted.has(selectedId)) {
+      setSelectedId(null);
+      setPanelOpen(false);
+    }
+  }
+  async function confirmDelete() {
+    if (!deleteTarget || status !== "authenticated" || !token || deleteBusyRef.current) return;
+    deleteBusyRef.current = true;
+    ++loadRevisionRef.current;
+    const id = deleteTarget.id;
+    const tid = toast.loading("Deleting...");
+    setDeletingId(id);
+    try {
+      await deleteProductRequest(id);
+      removeDeletedProducts([id]);
+      toast.success("Product deleted", { id: tid });
       showNotif("Product deleted");
-
-    } catch {
-
-      toast.error("Server error", { id: tid });
-
-    } finally {
-
-      setDeletingId(null);
-
       setDeleteTarget(null);
-
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delete failed", { id: tid });
+    } finally {
+      setDeletingId(null);
+      deleteBusyRef.current = false;
     }
-
   }
-
+  async function confirmBulkDelete() {
+    if (deleteBusyRef.current) return;
+    if (!selectedDeleteIds.size) { setBulkDeleteError("ဖျက်မည့် product ကို ရွေးပါ။"); return; }
+    if (status !== "authenticated" || !token) {
+      setBulkDeleteError("Session token မရပါ။ ပြန် login ဝင်ပြီး စမ်းပါ။");
+      return;
+    }
+    setBulkDeleteError(null);
+    deleteBusyRef.current = true;
+    ++loadRevisionRef.current;
+    setBulkDeleting(true);
+    const ids = [...selectedDeleteIds];
+    const deleted: string[] = [];
+    const failures: string[] = [];
+    const tid = toast.loading(`Deleting ${ids.length} products...`);
+    try {
+      // Limit request concurrency to avoid overwhelming the existing endpoint.
+      for (let offset = 0; offset < ids.length; offset += 4) {
+        const batch = ids.slice(offset, offset + 4);
+        const results = await Promise.allSettled(batch.map(deleteProductRequest));
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled") deleted.push(batch[index]);
+          else failures.push(result.reason instanceof Error ? result.reason.message : "Delete failed");
+        });
+      }
+      removeDeletedProducts(deleted);
+      if (failures.length) {
+        setBulkDeleteError(`${deleted.length} deleted, ${failures.length} failed. ${failures[0]}`);
+        toast.warning(`${deleted.length} deleted, ${failures.length} failed. ${failures[0]}`, { id: tid });
+      } else {
+        toast.success(`${deleted.length} products deleted`, { id: tid });
+        showNotif(`${deleted.length} products deleted`);
+        setBulkDeleteOpen(false);
+      }
+    } finally {
+      setBulkDeleting(false);
+      deleteBusyRef.current = false;
+    }
+  }
   React.useEffect(() => {
-
     if (status === "authenticated") {
-
       loadProducts();
-
     }
-
   }, [
-
     status,
-
     token,
-
     ownerInfo.id,
-
     ownerInfo.username,
-
     ownerInfo.shopId,
-
     ownerInfo.shopCode,
-
   ]);
-
   React.useEffect(() => {
-
     if (status !== "authenticated" || !token) return;
-
     const refreshLatestStock = () => {
-
       void loadProducts(q, { silent: true, preserveUi: true });
-
     };
-
     const onVisibilityChange = () => {
-
       if (document.visibilityState === "visible") refreshLatestStock();
-
     };
-
     window.addEventListener("focus", refreshLatestStock);
-
     window.addEventListener(PRODUCT_REFRESH_EVENT, refreshLatestStock);
-
     document.addEventListener("visibilitychange", onVisibilityChange);
-
     return () => {
-
       window.removeEventListener("focus", refreshLatestStock);
-
       window.removeEventListener(PRODUCT_REFRESH_EVENT, refreshLatestStock);
-
       document.removeEventListener("visibilitychange", onVisibilityChange);
-
     };
-
   }, [
-
     status,
-
     token,
-
     q,
-
     ownerInfo.id,
-
     ownerInfo.username,
-
     ownerInfo.shopId,
-
     ownerInfo.shopCode,
-
   ]);
-
   const categories = React.useMemo(() => {
-
     const uniq = Array.from(
-
-      new Set(products.map((p) => p.category).filter(Boolean)),
-
+new Set(products.map((p) => p.category).filter(Boolean)),
     ) as string[];
-
     return ["All", ...uniq];
-
   }, [products]);
-
   const filtered = React.useMemo(() => {
-
     const query = q.trim().toLowerCase();
-
     const base = products.filter((p) => {
-
       const matchQ =
-
         !query ||
-
         p.productName.toLowerCase().includes(query) ||
-
         p.sku.toLowerCase().includes(query) ||
-
-        String(p.category || "")
-
+String(p.category || "")
           .toLowerCase()
-
           .includes(query) ||
-
-        String(p.productType || "")
-
+String(p.productType || "")
           .toLowerCase()
-
           .includes(query);
-
       const matchCategory =
-
         categoryFilter === "All" || p.category === categoryFilter;
-
       const level = stockLevelOf(p.productQuantityAmount);
-
       const matchStock = stockFilter === "all" || level === stockFilter;
-
       return matchQ && matchCategory && matchStock;
-
     });
-
     return sortProducts(base, sortMode);
-
   }, [products, q, categoryFilter, stockFilter, sortMode]);
-
   React.useEffect(() => {
-
     setCurrentPage(1);
-
     setSelectedId(null);
-
     setPanelOpen(false);
-
   }, [q, categoryFilter, stockFilter, sortMode, pageSize]);
-
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-
   React.useEffect(() => {
-
     if (currentPage > totalPages) {
-
       setCurrentPage(totalPages);
-
     }
-
   }, [currentPage, totalPages]);
-
   const paginatedProducts = React.useMemo(() => {
-
     const start = (currentPage - 1) * pageSize;
-
     return filtered.slice(start, start + pageSize);
-
   }, [filtered, currentPage, pageSize]);
-
-  const startIndex =
-
-    filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-
-  const endIndex = Math.min(currentPage * pageSize, filtered.length);
-
-  const selectedProduct = selectedId
-
-    ? (filtered.find((p) => p.id === selectedId) ?? null)
-
-    : null;
-
-  const stats = React.useMemo(() => {
-
-    const total = products.length;
-
-    const inStock = products.filter((p) => p.productQuantityAmount > 0).length;
-
-    const lowStock = products.filter(
-
-      (p) => p.productQuantityAmount > 0 && p.productQuantityAmount < 5,
-
-    ).length;
-
-    const outStock = products.filter(
-
-      (p) => p.productQuantityAmount <= 0,
-
-    ).length;
-
-    const totalValue = products.reduce(
-
-      (a, p) => a + p.productPrice * p.productQuantityAmount,
-
-      0,
-
-    );
-
-    return {
-
-      total,
-
-      inStock,
-
-      lowStock,
-
-      outStock,
-
-      totalValue,
-
-    };
-
+  const deleteBusy = bulkDeleting || deletingId !== null;
+  const currentPageIds = paginatedProducts.map(product => product.id);
+  const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every(id => selectedDeleteIds.has(id));
+  const someCurrentPageSelected = !allCurrentPageSelected && currentPageIds.some(id => selectedDeleteIds.has(id));
+  function toggleDeleteSelection(id: string) {
+    if (deleteBusyRef.current) return;
+    setSelectedDeleteIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectCurrentPage() {
+    if (deleteBusyRef.current) return;
+    setSelectedDeleteIds(prev => {
+      const next = new Set(prev);
+      currentPageIds.forEach(id => { if (allCurrentPageSelected) next.delete(id); else next.add(id); });
+      return next;
+    });
+  }
+  React.useEffect(() => {
+    const available = new Set(products.map(product => product.id));
+    setSelectedDeleteIds(prev => {
+      const next = new Set([...prev].filter(id => available.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
   }, [products]);
-
+  const startIndex =
+    filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIndex = Math.min(currentPage * pageSize, filtered.length);
+  const selectedProduct = selectedId
+    ? (filtered.find((p) => p.id === selectedId) ?? null)
+    : null;
+  const stats = React.useMemo(() => {
+    const total = products.length;
+    const inStock = products.filter((p) => p.productQuantityAmount > 0).length;
+    const lowStock = products.filter(
+      (p) => p.productQuantityAmount > 0 && p.productQuantityAmount < 5,
+    ).length;
+    const outStock = products.filter(
+      (p) => p.productQuantityAmount <= 0,
+    ).length;
+    const totalValue = products.reduce(
+      (a, p) => a + p.productPrice * p.productQuantityAmount,
+      0,
+    );
+    return {
+      total,
+      inStock,
+      lowStock,
+      outStock,
+      totalValue,
+    };
+  }, [products]);
   const SORT_OPTIONS = [
-
     { label: "A → Z", value: "name_asc" as SortMode, icon: ArrowDownAZ },
-
     { label: "Z → A", value: "name_desc" as SortMode, icon: ArrowUpZA },
-
     { label: "Price", value: "price_desc" as SortMode, icon: Wallet },
-
     { label: "Stock", value: "stock_desc" as SortMode, icon: Boxes },
-
     { label: "Category", value: "category_asc" as SortMode, icon: Tag },
-
   ];
-
   if (status === "loading") {
-
     return (
-
       <div className="flex min-h-[60vh] items-center justify-center text-slate-900 dark:text-white">
-
         <div className="text-center">
-
           <Package2 className="mx-auto mb-4 h-10 w-10 animate-pulse text-blue-600" />
-
           <div className="text-sm font-bold">Loading session...</div>
-
         </div>
-
       </div>
-
     );
-
   }
-
   if (status === "unauthenticated") {
-
     return (
-
       <div className="flex min-h-[60vh] items-center justify-center p-6 text-slate-900 dark:text-white">
-
         <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-white/10 dark:bg-black">
-
           <UserCircle2 className="mx-auto mb-4 h-12 w-12 text-blue-600" />
-
           <div className="text-xl font-black">Login required</div>
-
           <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-
             Product တွေကြည့်ဖို့ login အရင်ဝင်ပါ။
-
           </div>
-
           <button
-
-            onClick={() => router.replace("/Sign_in?next=/dashboard/product")}
-
-            className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
-
+onClick={() => router.replace("/Sign_in?next=/dashboard/product")}
+className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
           >
-
             Go Login
-
           </button>
-
         </div>
-
       </div>
-
     );
-
   }
-
   return (
-
     <div
-
-      className={cn(
-
+className={cn(
         "relative min-h-full py-5 transition-colors duration-300",
-
         t.root,
-
       )}
-
     >
-
       <AnimatePresence>
-
         {notification && (
-
           <motion.div
-
-            initial={{ opacity: 0, y: -20, scale: 0.9 }}
-
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-
-            exit={{ opacity: 0, y: -20, scale: 0.9 }}
-
-            className="fixed left-1/2 top-5 z-[100] flex -translate-x-1/2 items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-[13px] font-bold shadow-2xl"
-
-            style={{
-
+initial={{ opacity: 0, y: -20, scale: 0.9 }}
+animate={{ opacity: 1, y: 0, scale: 1 }}
+exit={{ opacity: 0, y: -20, scale: 0.9 }}
+className="fixed left-1/2 top-5 z-[100] flex -translate-x-1/2 items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-[13px] font-bold shadow-2xl"
+style={{
               background: theme === "dark" ? "rgba(12,16,24,0.95)" : "white",
-
               borderColor:
-
                 theme === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
-
               color: theme === "dark" ? "white" : "#0f172a",
-
               backdropFilter: "blur(20px)",
-
             }}
-
           >
-
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-
             {notification}
-
           </motion.div>
-
         )}
-
       </AnimatePresence>
-
       <AnimatePresence>
-
+        {bulkDeleteOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            onClick={e => { if (e.target === e.currentTarget && !deleteBusyRef.current) setBulkDeleteOpen(false); }}>
+            <motion.div role="dialog" aria-modal="true" aria-labelledby="bulk-delete-title"
+              initial={{ scale: 0.94, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 20 }}
+              className={cn("w-full max-w-[440px] rounded-3xl border p-6", t.modalBg)}>
+              <Trash2 className="h-8 w-8 text-rose-500" />
+              <h2 id="bulk-delete-title" className={cn("mt-4 text-xl font-black", t.text)}>Delete selected products?</h2>
+              <p className={cn("mt-2 text-sm", t.textMuted)}>{selectedDeleteIds.size} products selected across pages and filters. This action cannot be undone.</p>
+              {bulkDeleteError && <p role="alert" className="mt-4 break-words rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-500">{bulkDeleteError}</p>}
+              <div className="mt-6 flex gap-3">
+                <button type="button" disabled={deleteBusy} onClick={() => setBulkDeleteOpen(false)}
+                  className={cn("flex-1 rounded-xl border py-3 text-sm font-bold", t.btn)}>Cancel</button>
+                <button type="button" disabled={deleteBusy || selectedDeleteIds.size === 0} onClick={confirmBulkDelete}
+                  className={cn("flex-1 rounded-xl border py-3 text-sm font-bold", t.btnDanger)}>
+                  {bulkDeleting ? "Deleting..." : `Delete ${selectedDeleteIds.size}`}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
         {deleteTarget && (
-
           <ConfirmDeleteModal
-
-            theme={theme}
-
-            product={deleteTarget}
-
-            loading={deletingId === deleteTarget.id}
-
-            onClose={() => setDeleteTarget(null)}
-
-            onConfirm={confirmDelete}
-
+theme={theme}
+product={deleteTarget}
+loading={deletingId === deleteTarget.id}
+onClose={() => { if (!deleteBusyRef.current) setDeleteTarget(null); }}
+onConfirm={confirmDelete}
           />
-
         )}
-
       </AnimatePresence>
-
       <AnimatePresence>
-
         {panelOpen && selectedProduct ? (
-
           <ProductDetailDialog
-
-            product={selectedProduct}
-
-            theme={theme}
-
-            onClose={() => setPanelOpen(false)}
-
-            onView={() => {
-
+product={selectedProduct}
+theme={theme}
+onClose={() => setPanelOpen(false)}
+onView={() => {
               router.push(`/dashboard/product/${selectedProduct.id}`);
-
             }}
-
-            onEdit={() => {
-
+onEdit={() => {
               router.push(`/dashboard/product/${selectedProduct.id}/edit`);
-
             }}
-
-            onDelete={() => {
-
+onDelete={() => {
               setDeleteTarget(selectedProduct);
-
               setPanelOpen(false);
-
             }}
-
           />
-
         ) : null}
-
       </AnimatePresence>
-
       <main className="relative z-10 mx-auto max-w-[1500px]">
-
         <section className="mb-3">
-
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-
             <div className="flex flex-wrap items-center gap-2">
-
               <span
-
-                className={cn(
-
+className={cn(
                   "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
-
                   t.pill,
-
                 )}
-
               >
-
                 <Store className="h-3.5 w-3.5" />
-
                 My Products Only
-
               </span>
-
               <span
-
-                className={cn(
-
+className={cn(
                   "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
-
                   t.pill,
-
                 )}
-
               >
-
                 <UserCircle2 className="h-3.5 w-3.5" />
-
                 {ownerInfo.username || ownerInfo.id || "Current User"}
-
               </span>
-
               {ownerInfo.shopCode || ownerInfo.shopId ? (
-
                 <span
-
-                  className={cn(
-
+className={cn(
                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold",
-
                     t.pill,
-
                   )}
-
                 >
-
                   Shop: {ownerInfo.shopCode || ownerInfo.shopId}
-
                 </span>
-
               ) : null}
-
             </div>
-
             <div className="flex flex-wrap items-center gap-2">
-
               <button
-
-                type="button"
-
-                onClick={() => loadProducts(q)}
-
-                className={cn(
-
+type="button"
+onClick={() => loadProducts(q)}
+className={cn(
                   "rounded-xl border px-3 py-2 text-[12px] font-bold",
-
                   t.btn,
-
                 )}
-
-                disabled={loading}
-
+disabled={loading}
               >
-
                 <RotateCcw
-
-                  className={cn(
-
+className={cn(
                     "mr-2 inline h-4 w-4",
-
                     loading && "animate-spin",
-
                   )}
-
                 />
-
                 Refresh
-
               </button>
-
               <button
-
-                type="button"
-
-                onClick={() => router.push("/dashboard/product/add")}
-
-                className={cn(
-
+type="button"
+onClick={() => router.push("/dashboard/product/add")}
+className={cn(
                   "rounded-xl px-3 py-2 text-[12px] font-bold hover:cursor-pointer",
-
                   t.btnPrimary,
-
                 )}
-
               >
-
                 <Plus className="mr-2 inline h-4 w-4" />
-
                 Add Product
-
               </button>
-
             </div>
-
           </div>
-
           <CompactSummaryBar theme={theme} stats={stats} />
-
         </section>
-
         <section className="mb-3">
-
           <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto_auto] xl:items-center">
-
             <div className="relative">
-
               <Search
-
-                className={cn(
-
+className={cn(
                   "absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2",
-
                   t.textSubtle,
-
                 )}
-
               />
-
               <Input
-
-                value={q}
-
-                onChange={(e) => setQ(e.target.value)}
-
-                onKeyDown={(e) => {
-
+value={q}
+onChange={(e) => setQ(e.target.value)}
+onKeyDown={(e) => {
                   if (e.key === "Enter") loadProducts(q);
-
                 }}
-
-                placeholder="Search product name, SKU, category..."
-
-                className={cn("h-10 rounded-xl pl-10 text-[12px]", t.input)}
-
+placeholder="Search product name, SKU, category..."
+className={cn("h-10 rounded-xl pl-10 text-[12px]", t.input)}
               />
-
             </div>
-
             <div className="flex flex-wrap gap-2">
-
               {["all", "in_stock", "low_stock", "out_stock"].map((s) => (
-
                 <button
-
-                  key={s}
-
-                  type="button"
-
-                  onClick={() => setStockFilter(s as StockLevel)}
-
-                  className={cn(
-
+key={s}
+type="button"
+onClick={() => setStockFilter(s as StockLevel)}
+className={cn(
                     "rounded-xl border px-3 py-2 text-[11px] font-bold",
-
                     stockFilter === s ? t.active : t.btn,
-
                   )}
-
                 >
-
                   {s === "all"
-
                     ? "All"
-
                     : s === "in_stock"
-
                       ? "In Stock"
-
                       : s === "low_stock"
-
                         ? "Low"
-
                         : "Out"}
-
                 </button>
-
               ))}
-
             </div>
-
             <div className="flex flex-wrap gap-2">
-
               {SORT_OPTIONS.map((item) => (
-
                 <button
-
-                  key={item.value}
-
-                  type="button"
-
-                  onClick={() => setSortMode(item.value)}
-
-                  className={cn(
-
+key={item.value}
+type="button"
+onClick={() => setSortMode(item.value)}
+className={cn(
                     "rounded-xl border px-2.5 py-2 text-[11px] font-bold",
-
                     sortMode === item.value ? t.active : t.btn,
-
                   )}
-
                 >
-
                   <item.icon className="mr-1.5 inline h-3.5 w-3.5" />
-
                   {item.label}
-
                 </button>
-
               ))}
-
             </div>
-
             <div className="flex gap-2">
-
               <button
-
-                type="button"
-
-                onClick={() => setViewMode("grid")}
-
-                className={cn(
-
+type="button"
+onClick={() => setViewMode("grid")}
+className={cn(
                   "rounded-xl border px-2.5 py-2 text-[11px] font-bold",
-
                   viewMode === "grid" ? t.active : t.btn,
-
                 )}
-
               >
-
                 <LayoutGrid className="h-4 w-4" />
-
               </button>
-
               <button
-
-                type="button"
-
-                onClick={() => setViewMode("compact")}
-
-                className={cn(
-
+type="button"
+onClick={() => setViewMode("compact")}
+className={cn(
                   "rounded-xl border px-2.5 py-2 text-[11px] font-bold",
-
                   viewMode === "compact" ? t.active : t.btn,
-
                 )}
-
               >
-
                 <List className="h-4 w-4" />
-
               </button>
-
             </div>
-
           </div>
-
           <div className="mt-3 flex flex-wrap gap-2">
-
             {categories.map((cat) => (
-
               <button
-
-                key={cat}
-
-                type="button"
-
-                onClick={() => setCategoryFilter(cat)}
-
-                className={cn(
-
+key={cat}
+type="button"
+onClick={() => setCategoryFilter(cat)}
+className={cn(
                   "rounded-full border px-3 py-1.5 text-[11px] font-bold",
-
                   categoryFilter === cat ? t.active : t.btn,
-
                 )}
-
               >
-
                 {cat}
-
               </button>
-
             ))}
-
           </div>
-
         </section>
-
         {authError ? (
-
           <div className="mb-6 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm font-bold text-rose-400">
-
             {authError}
-
           </div>
-
         ) : null}
-
         {!firstLoaded || loading ? (
-
           <div className="p-10 text-center">
-
             <Package2
-
-              className={cn(
-
+className={cn(
                 "mx-auto mb-4 h-12 w-12 animate-pulse",
-
                 t.textMuted,
-
               )}
-
             />
-
             <div className={cn("font-black", t.text)}>Loading products...</div>
-
           </div>
-
         ) : products.length === 0 ? (
-
           <div className="p-10 text-center">
-
             <Package2 className={cn("mx-auto mb-4 h-12 w-12", t.textMuted)} />
-
             <div className={cn("text-xl font-black", t.text)}>
-
               No products for this user
-
             </div>
-
             <div className={cn("mx-auto mt-2 max-w-xl text-sm", t.textMuted)}>
-
               Product မတွေ့ရပါ။ Backend response ထဲမှာ `createdByUserId`,
-
               `created_by_user_id`, `createdByUsername`, `shopId` သို့မဟုတ်
-
               `shopCode` မပါရင် frontend က safety အတွက် မပြတော့ပါ။
-
             </div>
-
             <button
-
-              onClick={() => router.push("/dashboard/product/add")}
-
-              className={cn(
-
+onClick={() => router.push("/dashboard/product/add")}
+className={cn(
                 "mt-6 rounded-2xl px-5 py-2.5 text-sm font-bold",
-
                 t.btnPrimary,
-
               )}
-
             >
-
               <Plus className="mr-2 inline h-4 w-4" />
-
               Create Product
-
             </button>
-
           </div>
-
         ) : (
-
           <section>
-
             {paginatedProducts.length === 0 ? (
-
               <div className="p-10 text-center">
-
                 <Search className={cn("mx-auto mb-4 h-12 w-12", t.textMuted)} />
-
                 <div className={cn("text-xl font-black", t.text)}>
-
                   No matching products
-
                 </div>
-
                 <div className={cn("mt-2 text-sm", t.textMuted)}>
-
                   Search/filter ကို ပြန်ပြင်ပြီး စမ်းကြည့်ပါ။
-
                 </div>
-
               </div>
-
             ) : viewMode === "grid" ? (
-
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-
                 {paginatedProducts.map((product, index) => (
-
                   <ProductCard
-
-                    key={product.id}
-
-                    product={product}
-
-                    index={index}
-
-                    theme={theme}
-
-                    selected={selectedId === product.id}
-
-                    onSelect={(p) => {
-
+key={product.id}
+product={product}
+index={index}
+theme={theme}
+selected={selectedId === product.id}
+onSelect={(p) => {
                       setSelectedId(p.id);
-
                       setPanelOpen(true);
-
                     }}
-
                   />
-
                 ))}
-
               </div>
-
             ) : (
-
               <div className={cn("overflow-hidden border-t", t.line)}>
-
+                <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3", t.line)}>
+                  <label className={cn("flex items-center gap-2 text-xs font-bold", t.textMuted)}>
+                    <input type="checkbox" checked={allCurrentPageSelected} disabled={deleteBusy}
+                      ref={el => { if (el) el.indeterminate = someCurrentPageSelected; }}
+                      onChange={toggleSelectCurrentPage} className="h-4 w-4 accent-rose-600" />
+                    Select page
+                  </label>
+                  {selectedDeleteIds.size > 0 && <div className="flex flex-wrap items-center gap-2">
+                    <span className={cn("text-xs font-bold", t.text)}>{selectedDeleteIds.size} selected across pages</span>
+                    <button type="button" disabled={deleteBusy} onClick={() => {
+                      try {
+                        sessionStorage.setItem("pos-product-bulk-edit-selection", JSON.stringify([...selectedDeleteIds]));
+                        router.push("/dashboard/product/bulk-edit");
+                      } catch { toast.error("Selection ကို သိမ်းမရပါ။ Browser storage ကို စစ်ပါ။"); }
+                    }} className={cn("rounded-xl border px-3 py-2 text-xs font-bold", t.btn)}>Edit Selected ({selectedDeleteIds.size})</button>
+                    <button type="button" disabled={deleteBusy} onClick={() => setSelectedDeleteIds(new Set())}
+                      className={cn("rounded-xl border px-3 py-2 text-xs font-bold", t.btn)}>Clear</button>
+                    <button type="button" disabled={deleteBusy} onClick={() => { setBulkDeleteError(null); setBulkDeleteOpen(true); }}
+                      className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold", t.btnDanger)}>
+                      <Trash2 className="h-4 w-4" />Delete Selected ({selectedDeleteIds.size})
+                    </button>
+                  </div>}
+                </div>
                 {paginatedProducts.map((product, index) => (
-
                   <CompactProductCard
-
-                    key={product.id}
-
-                    product={product}
-
-                    index={index}
-
-                    theme={theme}
-
-                    selected={selectedId === product.id}
-
-                    onSelect={(p) => {
-
+checked={selectedDeleteIds.has(product.id)}
+disabled={deleteBusy}
+onCheckedChange={toggleDeleteSelection}
+key={product.id}
+product={product}
+index={index}
+theme={theme}
+selected={selectedId === product.id}
+onSelect={(p) => {
                       setSelectedId(p.id);
-
                       setPanelOpen(true);
-
                     }}
-
                   />
-
                 ))}
-
               </div>
-
             )}
-
             <ProductPagination
-
-              theme={theme}
-
-              currentPage={currentPage}
-
-              totalPages={totalPages}
-
-              pageSize={pageSize}
-
-              totalItems={filtered.length}
-
-              startIndex={startIndex}
-
-              endIndex={endIndex}
-
-              onPageChange={(page) => {
-
+theme={theme}
+currentPage={currentPage}
+totalPages={totalPages}
+pageSize={pageSize}
+totalItems={filtered.length}
+startIndex={startIndex}
+endIndex={endIndex}
+onPageChange={(page) => {
                 setCurrentPage(page);
-
                 setSelectedId(null);
-
                 setPanelOpen(false);
-
                 window.scrollTo({ top: 0, behavior: "smooth" });
-
               }}
-
-              onPageSizeChange={(size) => {
-
+onPageSizeChange={(size) => {
                 setPageSize(size);
-
                 setCurrentPage(1);
-
                 setSelectedId(null);
-
                 setPanelOpen(false);
-
               }}
-
             />
-
           </section>
-
         )}
-
       </main>
-
     </div>
-
   );
-
 }
-
 export default function ProductsPage() {
-
   return (
-
     <FeaturePageGuard featureKey="productsEnabled">
-
       <ProductsPageContent />
-
     </FeaturePageGuard>
-
   );
-
 }
