@@ -26,6 +26,42 @@ import { clearAuthTokens, saveToken } from "@/lib/auth";
 /* ═══════════════════════════════════════════════════════════
    PREMIUM LANTERN SVG
 ═══════════════════════════════════════════════════════════ */
+function getCurrentDeviceName(): string {
+  const ua = navigator.userAgent;
+  if (/Windows/i.test(ua)) return "Windows PC";
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) {
+    return "iPad";
+  }
+  if (/iPhone/i.test(ua)) return "iPhone";
+  if (/Android/i.test(ua)) {
+    if (/Redmi/i.test(ua)) return "Redmi Android";
+    if (/Xiaomi|Mi Pad/i.test(ua)) return "Xiaomi Android";
+    return "Android Device";
+  }
+  if (/Macintosh|Mac OS X/i.test(ua)) return "Mac";
+  if (/CrOS/i.test(ua)) return "Chromebook";
+  if (/Linux/i.test(ua)) return "Linux PC";
+  return "Web Browser";
+}
+
+function getLoginDeviceId(): string {
+  const key = "pos_device_id";
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+    const deviceId = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+    localStorage.setItem(key, deviceId);
+    return deviceId;
+  } catch {
+    throw new Error("Device ID ကို သိမ်းမရပါ။ Browser storage settings ကို စစ်ပါ။");
+  }
+}
+
 function PremiumLantern({
   size = 80,
   night = true,
@@ -758,12 +794,16 @@ export default function LoginPage() {
 
     try {
       const callbackUrl = safeNextPath;
+      const deviceId = getLoginDeviceId();
+      const deviceName = getCurrentDeviceName();
 
       const res = await signIn("credentials", {
         redirect: false,
         username: trimUser,
         password,
         shopCode: trimShop,
+        deviceId,
+        deviceName,
         callbackUrl,
       });
 
