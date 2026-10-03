@@ -1,6 +1,4 @@
-
 "use client";
-
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -23,7 +21,6 @@ import {
   Camera,
 } from "lucide-react";
 import { getLimitErrorMessage } from "@/lib/api-limit-error";
-
 /* ─── Types ─────────────────────────────────────────────── */
 type StaffForm = {
   fullName: string;
@@ -44,7 +41,6 @@ type StaffForm = {
   emergencyPhone: string;
   note: string;
 };
-
 type ApiResponse = {
   id?: number;
   fullName?: string;
@@ -52,7 +48,6 @@ type ApiResponse = {
   message?: string;
   imageUrl?: string;
 };
-
 /* ─── Constants ─────────────────────────────────────────── */
 const roleOptions = [
   { value: "admin", label: "Admin", icon: Crown, color: "#d97706" },
@@ -60,23 +55,19 @@ const roleOptions = [
   { value: "cashier", label: "Cashier", icon: Key, color: "#eab308" },
   { value: "stock", label: "Stock", icon: Store, color: "#b45309" },
 ];
-
 const branchOptions = ["Main Branch", "Branch A", "Branch B", "Online Shop"];
-
 const statusOptions = [
   { value: "active", label: "Active", emoji: "🟢", color: "#10b981" },
   { value: "on_leave", label: "On Leave", emoji: "🟡", color: "#f59e0b" },
   { value: "inactive", label: "Inactive", emoji: "🔴", color: "#ef4444" },
 ];
-
 const generateStaffId = () => Math.floor(100000 + Math.random() * 900000);
-
 const createInitialForm = (shopId: number | null = null): StaffForm => ({
   fullName: "",
   email: "",
   phone: "",
   nrc: "",
-  staffId: generateStaffId(),
+  staffId: "",
   password: "",
   dateOfBirth: "",
   shopId,
@@ -90,22 +81,22 @@ const createInitialForm = (shopId: number | null = null): StaffForm => ({
   emergencyPhone: "",
   note: "",
 });
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 const STORAGE_KEY = "add-staff-lantern-theme-v1";
-
 /* ─── Theme / Typography ───────────────────────────────── */
 function FontImport() {
   return (
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;700&display=swap');
       * { font-family: 'DM Sans', sans-serif; }
+      .staff-premium-input[type="date"] { display: block; -webkit-appearance: none; appearance: none; min-inline-size: 0; }
+      .staff-premium-input[type="date"]::-webkit-date-and-time-value { text-align: left; min-width: 0; }
+      .staff-premium-input[type="date"]::-webkit-datetime-edit { min-width: 0; padding: 0; }
       .serif { font-family: 'DM Serif Display', serif !important; }
       ::placeholder { color: rgba(122,85,32,0.75); opacity: 1; }
     `}</style>
   );
 }
-
 function glassCard(night:boolean, extra?:React.CSSProperties): React.CSSProperties {
   return {
     background: night ? "rgba(14,10,6,0.84)" : "rgba(255,255,255,0.90)",
@@ -117,7 +108,6 @@ function glassCard(night:boolean, extra?:React.CSSProperties): React.CSSProperti
     ...extra,
   };
 }
-
 function premiumInputStyle(night:boolean): React.CSSProperties {
   return {
     background: night ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.72)",
@@ -128,16 +118,13 @@ function premiumInputStyle(night:boolean): React.CSSProperties {
     boxShadow: "none",
   };
 }
-
 function sectionTitle(night:boolean) {
   return night ? "text-[#7a5520]" : "text-[#8a7a65]";
 }
-
 /* ─── Lantern Components ───────────────────────────────── */
 function LanternMark({ size = 48, glow = false }: { size?: number; glow?: boolean }) {
   const h = size * 1.5;
   const isNight = glow;
-
   return (
     <svg width={size} height={h} viewBox="0 0 32 48" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -147,36 +134,30 @@ function LanternMark({ size = 48, glow = false }: { size?: number; glow?: boolea
           <stop offset="60%" stopColor="#f59e0b" stopOpacity="0.45" />
           <stop offset="100%" stopColor="#d97706" stopOpacity="0" />
         </radialGradient>
-
         <linearGradient id="addStaffLanternBodyDay" x1="6" y1="11" x2="26" y2="37" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#fffaf1" />
           <stop offset="45%" stopColor="#f5e7cf" />
           <stop offset="100%" stopColor="#ecd5ae" />
         </linearGradient>
-
         <linearGradient id="addStaffLanternMetalDay" x1="8" y1="6" x2="24" y2="42" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#c58a3c" />
           <stop offset="50%" stopColor="#a96b28" />
           <stop offset="100%" stopColor="#8a551d" />
         </linearGradient>
-
         <radialGradient id="addStaffLanternGlassDay" cx="50%" cy="45%" r="65%">
           <stop offset="0%" stopColor="#fffdf7" stopOpacity="0.9" />
           <stop offset="70%" stopColor="#f6ead4" stopOpacity="0.45" />
           <stop offset="100%" stopColor="#e8d0a4" stopOpacity="0.1" />
         </radialGradient>
       </defs>
-
       <line x1="16" y1="0" x2="16" y2="6" stroke={isNight ? "#d6ae67" : "#9d6a2b"} strokeWidth="1.5" strokeLinecap="round" />
       <rect x="8" y="6" width="16" height="5" rx="2" fill={isNight ? "#b07840" : "url(#addStaffLanternMetalDay)"} stroke={isNight ? "#d4a060" : "#7b4a18"} strokeWidth="0.8" />
       <rect x="6" y="11" width="20" height="26" rx="3" fill={isNight ? "#0e0908" : "url(#addStaffLanternBodyDay)"} stroke={isNight ? "#9d6220" : "#a66b27"} strokeWidth="1" />
-
       {isNight ? (
         <rect x="6" y="11" width="20" height="26" rx="3" fill="url(#addStaffLanternCoreNight)" />
       ) : (
         <rect x="6" y="11" width="20" height="26" rx="3" fill="url(#addStaffLanternGlassDay)" />
       )}
-
       {[11, 16, 21].map((x) => (
         <line
           key={x}
@@ -189,7 +170,6 @@ function LanternMark({ size = 48, glow = false }: { size?: number; glow?: boolea
           opacity="0.95"
         />
       ))}
-
       {isNight && (
         <g>
           <motion.ellipse
@@ -223,7 +203,6 @@ function LanternMark({ size = 48, glow = false }: { size?: number; glow?: boolea
           />
         </g>
       )}
-
       {!isNight && (
         <motion.g
           animate={{ opacity: [0.78, 1, 0.82], scale: [0.98, 1.02, 0.99] }}
@@ -234,14 +213,12 @@ function LanternMark({ size = 48, glow = false }: { size?: number; glow?: boolea
           <ellipse cx="16" cy="26" rx="1.6" ry="2.8" fill="#fffdf7" opacity="0.9" />
         </motion.g>
       )}
-
       <rect x="8" y="37" width="16" height="5" rx="2" fill={isNight ? "#b07840" : "url(#addStaffLanternMetalDay)"} stroke={isNight ? "#d4a060" : "#7b4a18"} strokeWidth="0.8" />
       <line x1="16" y1="42" x2="16" y2="47" stroke={isNight ? "#d4804a" : "#8f5b24"} strokeWidth="1.5" strokeLinecap="round" />
       <circle cx="16" cy="47" r="1.5" fill={isNight ? "#d4804a" : "#8f5b24"} />
     </svg>
   );
 }
-
 function LanternToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void }) {
   return (
     <motion.button
@@ -296,9 +273,7 @@ function LanternToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void
           />
         )}
       </AnimatePresence>
-
       <LanternMark size={34} glow={dark} />
-
       <span
         style={{
           marginTop: 5,
@@ -315,7 +290,6 @@ function LanternToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void
     </motion.button>
   );
 }
-
 /* ─── Particles ─────────────────────────────────────────── */
 function NightParticles() {
   const particles = React.useMemo(
@@ -331,7 +305,6 @@ function NightParticles() {
       })),
     []
   );
-
   return (
     <div className="pointer-events-none fixed inset-0 overflow-hidden">
       {particles.map((p) => (
@@ -346,7 +319,6 @@ function NightParticles() {
     </div>
   );
 }
-
 function DayParticles() {
   const motes = React.useMemo(
     () =>
@@ -366,7 +338,6 @@ function DayParticles() {
       })),
     []
   );
-
   return (
     <div className="pointer-events-none fixed inset-0 overflow-hidden">
       {motes.map((m) => (
@@ -388,7 +359,6 @@ function DayParticles() {
     </div>
   );
 }
-
 /* ─── Form helpers ──────────────────────────────────────── */
 function PremiumField({
   label,
@@ -410,7 +380,6 @@ function PremiumField({
     </div>
   );
 }
-
 function PremiumInput({
   icon,
   night,
@@ -422,7 +391,7 @@ function PremiumInput({
   night:boolean;
 }) {
   return (
-    <div className="relative">
+    <div className="relative min-w-0 w-full max-w-full overflow-hidden rounded-[16px]">
       {icon && (
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" style={{color:night?"#7a5520":"#8a7a65"}}>
           {icon}
@@ -430,13 +399,12 @@ function PremiumInput({
       )}
       <input
         {...props}
-        className={`h-12 min-w-0 w-full rounded-[16px] pr-4 text-base outline-none sm:text-sm ${icon ? "pl-10" : "px-4"} ${className}`}
-        style={{ ...premiumInputStyle(night), ...(style || {}) }}
+        className={`staff-premium-input h-12 min-w-0 w-full max-w-full box-border rounded-[16px] pr-4 text-base outline-none sm:text-sm ${icon ? "pl-10" : "px-4"} ${className}`}
+        style={{ ...premiumInputStyle(night), width: "100%", minWidth: 0, maxWidth: "100%", boxSizing: "border-box", ...(style || {}) }}
       />
     </div>
   );
 }
-
 function PremiumButton({
   children,
   onClick,
@@ -465,7 +433,6 @@ function PremiumButton({
           color: night ? "#bca98f" : "#7d6f60",
           border: `1px solid ${night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"}`,
         };
-
   return (
     <motion.button
       type="button"
@@ -481,7 +448,6 @@ function PremiumButton({
     </motion.button>
   );
 }
-
 function SectionCard({
   title,
   subtitle,
@@ -510,7 +476,6 @@ function SectionCard({
     </motion.div>
   );
 }
-
 function MiniPreviewBadge({ text, night }: { text:string; night:boolean }) {
   return (
     <span
@@ -525,68 +490,124 @@ function MiniPreviewBadge({ text, night }: { text:string; night:boolean }) {
     </span>
   );
 }
-
 /* ─── Main Component ────────────────────────────────────── */
 export default function CreateStaffPage() {
   const { data: session, status: sessionStatus } = useSession();
-
   const sessionShopId =
     typeof (session?.user as any)?.shopId === "number"
       ? (session?.user as any)?.shopId
       : null;
-
-  const [form, setForm] = React.useState<StaffForm>(() => createInitialForm(sessionShopId));
+  const [form, setForm] = React.useState<StaffForm>(() => createInitialForm());
   const [imagePreview, setImagePreview] = React.useState<string>("");
   const [imageFile, setImageFile] = React.useState<File | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [successMessage, setSuccessMessage] = React.useState("");
   const [night, setNight] = React.useState(true);
-
+  const [themeReady, setThemeReady] = React.useState(false);
+  const [cameraOpen, setCameraOpen] = React.useState(false);
+  const [cameraError, setCameraError] = React.useState("");
+  const [cameraReady, setCameraReady] = React.useState(false);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement>(null);
+  const cameraStreamRef = React.useRef<MediaStream | null>(null);
+  React.useEffect(() => {
+    setForm((prev) => prev.staffId === "" ? { ...prev, staffId: generateStaffId() } : prev);
+  }, []);
+  React.useEffect(() => {
+    if (!cameraOpen) return;
+    let cancelled = false;
+    let stream: MediaStream | null = null;
+    setCameraError("");
+    setCameraReady(false);
+    const startCamera = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Camera preview requires HTTPS or localhost. Use Take Photo instead.");
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 960 } },
+          audio: false,
+        });
+        if (cancelled) { stream.getTracks().forEach((track) => track.stop()); return; }
+        cameraStreamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+      } catch (error) {
+        if (!cancelled) setCameraError(error instanceof DOMException && error.name === "NotAllowedError"
+          ? "Camera permission was denied. Allow camera access or use Take Photo / Upload."
+          : error instanceof Error ? error.message : "Unable to open camera.");
+      }
+    };
+    void startCamera();
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    };
+  }, [cameraOpen]);
   React.useEffect(() => {
     if (sessionShopId != null) {
       setForm((prev) => ({ ...prev, shopId: sessionShopId }));
     }
   }, [sessionShopId]);
-
   React.useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setNight(saved === "night");
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setNight(saved === "night");
+    } catch { /* Storage may be unavailable in private browsing. */ }
+    setThemeReady(true);
   }, []);
-
   React.useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, night ? "night" : "day");
-  }, [night]);
-
+    if (!themeReady) return;
+    try { localStorage.setItem(STORAGE_KEY, night ? "night" : "day"); } catch { /* Optional preference. */ }
+  }, [night, themeReady]);
   React.useEffect(() => {
     return () => {
       if (imagePreview) URL.revokeObjectURL(imagePreview);
     };
   }, [imagePreview]);
-
   const update = (key: keyof StaffForm, value: string | number | null) => {
     setForm((prev) => ({ ...prev, [key]: value as never }));
   };
-
   const selectedRole = roleOptions.find((r) => r.value === form.role) ?? roleOptions[2];
   const selectedStatus = statusOptions.find((s) => s.value === form.status) ?? statusOptions[0];
-
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (imagePreview) URL.revokeObjectURL(imagePreview);
+  const selectPhoto = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setErrorMessage("Please choose an image file.");
+      return;
+    }
+    setErrorMessage("");
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
   };
-
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) selectPhoto(file);
+    event.target.value = "";
+  };
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) { setCameraError("Unable to capture photo. Use Take Photo / Upload."); return; }
+    context.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) { setCameraError("Unable to capture photo. Please try again."); return; }
+      selectPhoto(new File([blob], `staff-photo-${Date.now()}.jpg`, { type: "image/jpeg" }));
+      setCameraOpen(false);
+    }, "image/jpeg", 0.9);
+  };
   const resetForm = () => {
-    setForm(createInitialForm(sessionShopId));
+    setForm({ ...createInitialForm(sessionShopId), staffId: generateStaffId() });
     setImageFile(null);
-    if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImagePreview("");
   };
-
   const validateForm = () => {
     if (!form.fullName.trim()) return "Full name is required.";
     if (!form.email.trim()) return "Email is required.";
@@ -600,7 +621,6 @@ export default function CreateStaffPage() {
     if (!form.shopId) return "Shop ID is missing from session.";
     return "";
   };
-
   const handleSaveStaff = async () => {
     const err = validateForm();
     if (err) {
@@ -608,32 +628,26 @@ export default function CreateStaffPage() {
       setSuccessMessage("");
       return;
     }
-
     try {
       setLoading(true);
       setErrorMessage("");
       setSuccessMessage("");
-
       const accessToken = (session as any)?.accessToken;
       if (!accessToken) {
         throw new Error("Login session expired. Please sign in again.");
       }
-
       const payload = {
         ...form,
         shopId: sessionShopId ?? form.shopId,
       };
-
       const fd = new FormData();
       fd.append("data", new Blob([JSON.stringify(payload)], { type: "application/json" }));
       if (imageFile) fd.append("file", imageFile);
-
       const res = await fetch(`${API_BASE_URL}/api/staff/with-image`, {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
         body: fd,
       });
-
       if (!res.ok) {
         let msg = "Failed to save staff.";
         try {
@@ -644,11 +658,9 @@ export default function CreateStaffPage() {
         }
         throw new Error(msg);
       }
-
       const result: ApiResponse = await res.json();
       setSuccessMessage(result.message || `${result.fullName || form.fullName} added successfully.`);
       resetForm();
-
       setTimeout(() => {
         window.location.href = "/admin/staff";
       }, 800);
@@ -659,11 +671,9 @@ export default function CreateStaffPage() {
       setLoading(false);
     }
   };
-
   const bg = night
     ? "linear-gradient(160deg, #05060d 0%, #0d0b18 42%, #120a02 100%)"
     : "linear-gradient(160deg, #f6f1e9 0%, #fbf7f1 50%, #f0ebe3 100%)";
-
   return (
     <>
       <FontImport />
@@ -674,7 +684,6 @@ export default function CreateStaffPage() {
         <AnimatePresence mode="wait">
           {night ? <NightParticles key="night" /> : <DayParticles key="day" />}
         </AnimatePresence>
-
         <div className="pointer-events-none absolute inset-0">
           <div
             className="absolute right-[-120px] top-[-100px] h-[320px] w-[320px] rounded-full blur-3xl"
@@ -689,7 +698,6 @@ export default function CreateStaffPage() {
             }}
           />
         </div>
-
         <AnimatePresence>
           {errorMessage && (
             <motion.div
@@ -708,7 +716,6 @@ export default function CreateStaffPage() {
               {errorMessage}
             </motion.div>
           )}
-
           {successMessage && (
             <motion.div
               key="ok"
@@ -727,7 +734,6 @@ export default function CreateStaffPage() {
             </motion.div>
           )}
         </AnimatePresence>
-
         <div className="relative z-10 mx-auto max-w-[1450px] px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:py-5 md:px-6 lg:py-6">
           <div className="mb-4 flex items-center justify-between gap-3 sm:mb-6">
             <div className="flex items-center gap-3">
@@ -736,12 +742,10 @@ export default function CreateStaffPage() {
                 CUTEPOS · STAFF CREATE
               </span>
             </div>
-
             <div className="flex items-center">
               <LanternToggle dark={night} onToggle={() => setNight((p) => !p)} />
             </div>
           </div>
-
           <motion.div
             initial={{ opacity: 0, y: 22 }}
             animate={{ opacity: 1, y: 0 }}
@@ -774,7 +778,6 @@ export default function CreateStaffPage() {
                   </p>
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end [&>button]:w-full sm:[&>button]:w-auto">
                 <PremiumButton
                   onClick={() => window.history.back()}
@@ -784,7 +787,6 @@ export default function CreateStaffPage() {
                 >
                   Back
                 </PremiumButton>
-
                 <PremiumButton
                   onClick={handleSaveStaff}
                   disabled={loading || sessionStatus === "loading"}
@@ -796,7 +798,6 @@ export default function CreateStaffPage() {
               </div>
             </div>
           </motion.div>
-
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]">
             <div className="min-w-0 space-y-5">
               <SectionCard
@@ -814,7 +815,6 @@ export default function CreateStaffPage() {
                       placeholder="Enter full name"
                     />
                   </PremiumField>
-
                   <PremiumField label="Email" night={night}>
                     <PremiumInput
                       icon={<Mail className="h-4 w-4" />}
@@ -825,7 +825,6 @@ export default function CreateStaffPage() {
                       placeholder="staff@company.com"
                     />
                   </PremiumField>
-
                   <PremiumField label="Phone" night={night}>
                     <PremiumInput
                       icon={<Phone className="h-4 w-4" />}
@@ -835,7 +834,6 @@ export default function CreateStaffPage() {
                       placeholder="+95 9 xxx xxx xxx"
                     />
                   </PremiumField>
-
                   <PremiumField label="Staff ID" night={night}>
                     <PremiumInput
                       icon={<FileText className="h-4 w-4" />}
@@ -846,7 +844,6 @@ export default function CreateStaffPage() {
                       style={{ opacity: 0.9 }}
                     />
                   </PremiumField>
-
                   <PremiumField label="Date of Birth" night={night}>
                     <PremiumInput
                       type="date"
@@ -856,7 +853,6 @@ export default function CreateStaffPage() {
                       onChange={(e) => update("dateOfBirth", e.target.value)}
                     />
                   </PremiumField>
-
                   <PremiumField label="Password" night={night}>
                     <PremiumInput
                       icon={<Key className="h-4 w-4" />}
@@ -867,7 +863,6 @@ export default function CreateStaffPage() {
                       placeholder="Enter password"
                     />
                   </PremiumField>
-
                   <PremiumField label="NRC / ID" night={night}>
                     <PremiumInput
                       icon={<FileText className="h-4 w-4" />}
@@ -877,7 +872,6 @@ export default function CreateStaffPage() {
                       placeholder="Enter NRC or ID"
                     />
                   </PremiumField>
-
                   <PremiumField label="Address" night={night} className="sm:col-span-2">
                     <PremiumInput
                       icon={<MapPin className="h-4 w-4" />}
@@ -889,7 +883,6 @@ export default function CreateStaffPage() {
                   </PremiumField>
                 </div>
               </SectionCard>
-
               <SectionCard
                 title="Work Information"
                 subtitle="Assign role, branch, status, and salary."
@@ -901,7 +894,6 @@ export default function CreateStaffPage() {
                       {roleOptions.map((r) => {
                         const Icon = r.icon;
                         const active = form.role === r.value;
-
                         return (
                           <motion.button
                             key={r.value}
@@ -925,12 +917,11 @@ export default function CreateStaffPage() {
                       })}
                     </div>
                   </PremiumField>
-
                   <PremiumField label="Branch" night={night}>
                     <select
                       value={form.branch}
                       onChange={(e) => update("branch", e.target.value)}
-                      className="h-12 min-w-0 w-full rounded-[16px] px-4 text-base outline-none sm:text-sm"
+                      className="staff-premium-input h-12 min-w-0 w-full max-w-full box-border rounded-[16px] px-4 text-base outline-none sm:text-sm"
                       style={premiumInputStyle(night)}
                     >
                       {branchOptions.map((b) => (
@@ -938,7 +929,6 @@ export default function CreateStaffPage() {
                       ))}
                     </select>
                   </PremiumField>
-
                   <PremiumField label="Status" night={night}>
                     <div className="grid grid-cols-2 gap-2">
                       {statusOptions.map((s) => {
@@ -965,8 +955,7 @@ export default function CreateStaffPage() {
                       })}
                     </div>
                   </PremiumField>
-
-                  <PremiumField label="Start Date" night={night}>
+                  <PremiumField label="Start Date" night={night} className="sm:col-span-2 lg:col-span-1">
                     <PremiumInput
                       type="date"
                       icon={<Calendar className="h-4 w-4" />}
@@ -975,8 +964,7 @@ export default function CreateStaffPage() {
                       onChange={(e) => update("startDate", e.target.value)}
                     />
                   </PremiumField>
-
-                  <PremiumField label="Base Salary" night={night}>
+                  <PremiumField label="Base Salary" night={night} className="sm:col-span-2 lg:col-span-1">
                     <PremiumInput
                       icon={<Wallet className="h-4 w-4" />}
                       night={night}
@@ -987,7 +975,6 @@ export default function CreateStaffPage() {
                   </PremiumField>
                 </div>
               </SectionCard>
-
               <SectionCard
                 title="Emergency & Notes"
                 subtitle="Emergency contact and extra notes."
@@ -1003,7 +990,6 @@ export default function CreateStaffPage() {
                       placeholder="Contact person"
                     />
                   </PremiumField>
-
                   <PremiumField label="Emergency Phone" night={night}>
                     <PremiumInput
                       icon={<Phone className="h-4 w-4" />}
@@ -1013,7 +999,6 @@ export default function CreateStaffPage() {
                       placeholder="Phone number"
                     />
                   </PremiumField>
-
                   <PremiumField label="Notes" night={night} className="sm:col-span-2">
                     <textarea
                       value={form.note}
@@ -1026,7 +1011,6 @@ export default function CreateStaffPage() {
                 </div>
               </SectionCard>
             </div>
-
             <motion.div
               initial={{ opacity: 0, x: 26 }}
               animate={{ opacity: 1, x: 0 }}
@@ -1044,7 +1028,6 @@ export default function CreateStaffPage() {
                     </div>
                   </div>
                 </div>
-
                 <div className="space-y-4 p-4 sm:p-5">
                   <motion.div
                     layout
@@ -1077,7 +1060,6 @@ export default function CreateStaffPage() {
                         {selectedStatus.label}
                       </div>
                     </div>
-
                     <div className="mb-4 flex min-w-0 items-center gap-3 sm:gap-4">
                       <div className="relative">
                         {imagePreview ? (
@@ -1101,7 +1083,6 @@ export default function CreateStaffPage() {
                               : "NS"}
                           </div>
                         )}
-
                         <div
                           className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2"
                           style={{
@@ -1110,7 +1091,6 @@ export default function CreateStaffPage() {
                           }}
                         />
                       </div>
-
                       <div className="min-w-0">
                         <div className={`serif truncate text-[25px] leading-none sm:text-[30px] ${night ? "text-[#fff7e5]" : "text-[#2a1e0e]"}`}>
                           {form.fullName || "New Staff"}
@@ -1125,7 +1105,6 @@ export default function CreateStaffPage() {
                       </div>
                     </div>
                   </motion.div>
-
                   <div className="grid gap-2">
                     {[
                       { icon: FileText, label: "Staff ID", value: String(form.staffId || "—") },
@@ -1153,7 +1132,6 @@ export default function CreateStaffPage() {
                       </motion.div>
                     ))}
                   </div>
-
                   <motion.label
                     htmlFor="staff-image-upload"
                     whileHover={{ scale: 1.01 }}
@@ -1177,7 +1155,11 @@ export default function CreateStaffPage() {
                       onChange={handleImageChange}
                     />
                   </motion.label>
-
+                  <input ref={cameraInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={handleImageChange} aria-label="Take staff photo" />
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>button]:w-full">
+                    <PremiumButton night={night} variant="ghost" onClick={() => setCameraOpen(true)} icon={<Camera className="h-4 w-4" />}>Open Camera</PremiumButton>
+                    <PremiumButton night={night} variant="ghost" onClick={() => cameraInputRef.current?.click()} icon={<ImagePlus className="h-4 w-4" />}>Take Photo</PremiumButton>
+                  </div>
                   <div className="grid grid-cols-2 gap-2 pt-1 [&>button]:w-full">
                     <PremiumButton
                       onClick={() => window.history.back()}
@@ -1187,7 +1169,6 @@ export default function CreateStaffPage() {
                     >
                       Back
                     </PremiumButton>
-
                     <PremiumButton
                       onClick={handleSaveStaff}
                       disabled={loading || sessionStatus === "loading"}
@@ -1203,6 +1184,23 @@ export default function CreateStaffPage() {
           </div>
         </div>
       </div>
+      {cameraOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/70 p-4" onClick={() => setCameraOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="staff-camera-title" className="w-full max-w-lg min-w-0 rounded-[24px] p-5" style={{ ...glassCard(night), maxHeight: "90dvh", overflowY: "auto" }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") setCameraOpen(false); }}>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 id="staff-camera-title" className="text-lg font-bold" style={{ color: night ? "#e8dcc8" : "#1a1510" }}>Staff Photo</h2>
+              <button type="button" autoFocus onClick={() => setCameraOpen(false)} className="rounded-lg px-3 py-2" style={premiumInputStyle(night)}>Close</button>
+            </div>
+            <video ref={videoRef} autoPlay muted playsInline onLoadedData={() => setCameraReady(true)} className="aspect-[4/3] w-full rounded-[16px] bg-black object-contain" />
+            {cameraError && <p role="alert" className="mt-3 text-sm text-red-500">{cameraError}</p>}
+            {!cameraError && !cameraReady && <p className="mt-3 text-sm" style={{ color: night ? "#bca98f" : "#7d6f60" }}>Opening camera…</p>}
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 [&>button]:w-full">
+              <PremiumButton night={night} disabled={!cameraReady || !!cameraError} onClick={capturePhoto} icon={<Camera className="h-4 w-4" />}>Capture Photo</PremiumButton>
+              <PremiumButton night={night} variant="ghost" onClick={() => { setCameraOpen(false); cameraInputRef.current?.click(); }}>Take Photo / Upload</PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
