@@ -36,6 +36,7 @@ export function saveToken(token: string) {
 
   window.localStorage.setItem("pos_access_token", clean);
   window.sessionStorage.removeItem("pos_access_token");
+  window.dispatchEvent(new Event("pos-auth-change"));
 }
 
 export function clearAuthTokens() {
@@ -45,6 +46,7 @@ export function clearAuthTokens() {
     window.localStorage.removeItem(key);
     window.sessionStorage.removeItem(key);
   }
+  window.dispatchEvent(new Event("pos-auth-change"));
 }
 
 function safeCurrentPath() {

@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { normalizeCurrency } from "@/lib/currency";
+import { getCurrencyIdentity, publishCurrencySettings } from "@/components/currency-provider";
 import toast from "react-hot-toast";
 import { ReceiptText, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,24 +27,26 @@ export function ReceiptSettingsCard({
 }: {
   initialSettings: ReceiptSettings;
 }) {
-  const [settings, setSettings] = React.useState<ReceiptSettings>(initialSettings);
+  const [settings, setSettings] = React.useState<ReceiptSettings>({ ...initialSettings, ...normalizeCurrency(initialSettings) });
   const [saving, setSaving] = React.useState(false);
 
-  React.useEffect(() => setSettings(initialSettings), [initialSettings]);
+  React.useEffect(() => setSettings({ ...initialSettings, ...normalizeCurrency(initialSettings) }), [initialSettings]);
 
   function update(key: keyof ReceiptSettings, value: string) {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }
 
   async function saveReceiptSettings() {
+    const identity = getCurrencyIdentity();
     try {
       setSaving(true);
       const payload = {
         ...settings,
         taxRatePercent: Number(settings.taxRatePercent || 0),
-        currencyDecimalDigits: Number(settings.currencyDecimalDigits || 0),
+        currencyDecimalDigits: normalizeCurrency(settings).currencyDecimalDigits,
       };
       const saved = await updateReceiptSettings(payload);
+      publishCurrencySettings({ ...payload, ...saved }, identity);
       setSettings((prev) => ({ ...prev, ...saved }));
       toast.success("Receipt settings updated");
     } catch (error) {
@@ -105,7 +109,7 @@ export function ReceiptSettingsCard({
           </div>
           <div className="space-y-2">
             <Label>Currency Position</Label>
-            <Select value={settings.currencyPosition || "BEFORE"} onValueChange={(value) => update("currencyPosition", value)}>
+            <Select value={settings.currencyPosition || "AFTER"} onValueChange={(value) => update("currencyPosition", value)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>

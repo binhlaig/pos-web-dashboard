@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -64,8 +65,6 @@ const tierCfg: Record<Tier, { label: string; icon: React.FC<{ className?: string
 const TIERS   = ["All", "Platinum", "Gold", "Silver", "Bronze"];
 const BRANCHES = ["All", "Main Branch", "Branch A", "Branch B", "Online Shop"];
 const SORTS    = ["Name", "Total Spent", "Orders", "Last Order"];
-
-function money(n: number) { return `¥${n.toLocaleString()}`; }
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 type Theme = "dark" | "light";
@@ -150,6 +149,8 @@ function KpiCard({ theme, label, value, sub, icon: Icon, accentClass, valueColor
   icon: React.ComponentType<{ className?: string }>; accentClass: string;
   valueColor?: string; delay?: number;
 }) {
+  const { formatSharedMoney } = useCurrency();
+
   const t = tk(theme);
   return (
     <motion.div
@@ -171,7 +172,7 @@ function KpiCard({ theme, label, value, sub, icon: Icon, accentClass, valueColor
           </div>
           <div className={cn("text-[11px] font-bold uppercase tracking-widest mb-1.5", t.textSubtle)}>{label}</div>
           <div className={cn("text-[28px] font-black tracking-tight leading-none", valueColor || t.text)}>
-            {prefix}<CountUp end={value} duration={1.4} separator="," />
+            {prefix === "currency" ? <CountUp end={value} duration={1.4} separator="," formattingFn={formatSharedMoney} /> : <>{prefix}<CountUp end={value} duration={1.4} separator="," /></>}
           </div>
           <div className={cn("mt-2 text-[11px] font-medium", t.textSubtle)}>{sub}</div>
         </div>
@@ -182,12 +183,16 @@ function KpiCard({ theme, label, value, sub, icon: Icon, accentClass, valueColor
 
 // ─── SORT ICON ────────────────────────────────────────────────────────────────
 function SortIco({ field, sortField, sortDir, theme }: { field: string; sortField: string; sortDir: "asc" | "desc"; theme: Theme }) {
+
   if (sortField !== field) return <ArrowUpRight className={cn("h-3 w-3 opacity-25", tk(theme).tableHead)} />;
   return sortDir === "asc" ? <ChevronUp className="h-3 w-3 text-blue-400" /> : <ChevronDown className="h-3 w-3 text-blue-400" />;
 }
 
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 export default function CustomersPage() {
+  const { formatSharedMoney, formatSharedCompactMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const [q,          setQ]          = React.useState("");
   const [tierFilter, setTierFilter] = React.useState("All");
   const [branchFilter, setBranchFilter] = React.useState("All");
@@ -285,8 +290,8 @@ export default function CustomersPage() {
         {/* ── KPI ROW ───────────────────────────────────────────────────── */}
         <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
           <KpiCard theme={theme} label="Total Customers" value={customers.length} sub="Registered accounts"  icon={Users}      accentClass="bg-blue-500/18"    delay={0}    />
-          <KpiCard theme={theme} label="Total Revenue"   value={totalRevenue}    sub="Lifetime value"        icon={TrendingUp} accentClass="bg-emerald-500/18" delay={0.07} prefix="¥" />
-          <KpiCard theme={theme} label="Avg Spend"       value={avgSpend}        sub="Per customer"          icon={ShoppingBag}accentClass="bg-violet-500/18"  delay={0.14} prefix="¥" />
+          <KpiCard theme={theme} label="Total Revenue"   value={totalRevenue}    sub="Lifetime value"        icon={TrendingUp} accentClass="bg-emerald-500/18" delay={0.07} prefix="currency" />
+          <KpiCard theme={theme} label="Avg Spend"       value={avgSpend}        sub="Per customer"          icon={ShoppingBag}accentClass="bg-violet-500/18"  delay={0.14} prefix="currency" />
           <KpiCard theme={theme} label="Platinum Tier"   value={customers.filter(c=>c.tier==="platinum").length} sub="Top loyalty members" icon={Crown} accentClass="bg-sky-500/18" delay={0.21} />
         </div>
 
@@ -544,7 +549,7 @@ export default function CustomersPage() {
                               </div>
                               <div className={cn("rounded-xl border px-3 py-2.5", t.statChip)}>
                                 <div className={cn("text-[10px] font-bold uppercase tracking-widest", t.textSubtle)}>Spent</div>
-                                <div className={cn("text-[16px] font-black mt-0.5", t.text)}>¥{(c.total / 1000).toFixed(0)}k</div>
+                                <div className={cn("text-[16px] font-black mt-0.5", t.text)}>{formatSharedCompactMoney(c.total)}</div>
                               </div>
                             </div>
                             {/* Last order */}

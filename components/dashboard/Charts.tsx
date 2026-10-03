@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrency } from "@/components/currency-provider";
 import { useEffect, useRef } from "react";
 import { HOURLY_SALES, HOURLY_LABELS, CATEGORY_DATA } from "@/lib/data/data";
 
@@ -10,6 +11,8 @@ declare global {
 }
 
 export function SalesChart() {
+  const { currencySettings, formatSharedMoney, formatSharedCompactMoney } = useCurrency();
+
   const ref = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<any>(null);
 
@@ -24,7 +27,7 @@ export function SalesChart() {
         labels: HOURLY_LABELS,
         datasets: [
           {
-            label: "Sales (K MMK)",
+            label: "Sales",
             data: HOURLY_SALES,
             backgroundColor: HOURLY_SALES.map((v) =>
               v >= 130 ? "#b8922a" : v >= 80 ? "#d4a84a" : "#e8d090"
@@ -39,7 +42,7 @@ export function SalesChart() {
         maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: (c: any) => `${c.parsed.y}K MMK` } },
+          tooltip: { callbacks: { label: (c: any) => formatSharedMoney(Number(c.parsed.y) * 1000) } },
         },
         scales: {
           x: {
@@ -47,19 +50,19 @@ export function SalesChart() {
             grid: { color: "rgba(0,0,0,0.04)" },
           },
           y: {
-            ticks: { color: "#9c9b96", font: { size: 8 }, callback: (v: number) => `${v}K` },
+            ticks: { color: "#9c9b96", font: { size: 8 }, callback: (v: number) => formatSharedCompactMoney(v * 1000) },
             grid: { color: "rgba(0,0,0,0.06)" },
           },
         },
       },
     });
     return () => chartRef.current?.destroy();
-  }, []);
+  }, [currencySettings]);
 
   return (
     <div className="bg-white border border-black/8 rounded-xl overflow-hidden">
       <div className="px-4 py-2.5 border-b border-black/8 flex items-center justify-between">
-        <span className="text-[11px] font-bold text-[#1a1a18]">Hourly Sales (MMK &apos;000)</span>
+        <span className="text-[11px] font-bold text-[#1a1a18]">Hourly Sales</span>
         <span className="text-[9px] text-[#9c9b96] bg-[#f0ede8] rounded-full px-2 py-0.5">Today</span>
       </div>
       <div className="p-3 relative h-[190px]">

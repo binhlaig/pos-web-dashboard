@@ -3,7 +3,7 @@ export type Promo = {
     id: string
     title: string
     subtitle?: string
-    priceText?: string
+    priceText?: number
     badge?: string
     image: string
   }
@@ -22,7 +22,7 @@ export type Promo = {
       id: "p1",
       title: "Zinger Box",
       subtitle: "Limited Time • Free Drink",
-      priceText: "¥890",
+      priceText: 890,
       badge: "HOT",
       image:
         "https://images.unsplash.com/photo-1606755456206-b25206cde27e?auto=format&fit=crop&w=1600&q=70",
@@ -31,7 +31,7 @@ export type Promo = {
       id: "p2",
       title: "Family Set",
       subtitle: "For 3–4 persons",
-      priceText: "¥2,490",
+      priceText: 2490,
       badge: "BEST",
       image:
         "https://images.unsplash.com/photo-1550317138-10000687a72b?auto=format&fit=crop&w=1600&q=70",
@@ -40,7 +40,7 @@ export type Promo = {
       id: "p3",
       title: "Double Burger",
       subtitle: "Extra cheese included",
-      priceText: "¥680",
+      priceText: 680,
       badge: "NEW",
       image:
         "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1600&q=70",
@@ -133,4 +133,3 @@ export type Promo = {
         "https://images.unsplash.com/photo-1511920170033-f8396924c348?auto=format&fit=crop&w=1200&q=70",
     },
   ]
-  

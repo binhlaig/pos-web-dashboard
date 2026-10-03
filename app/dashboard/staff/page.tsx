@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import { useSession } from "next-auth/react";
@@ -163,14 +164,6 @@ function getStaffPageToken(session: any) {
     localStorage.getItem("jwt") ||
     ""
   );
-}
-
-function money(n: number) {
-  return n > 0 ? `¥${Number(n).toLocaleString()}` : "—";
-}
-
-function shortMoney(n: number) {
-  return n > 0 ? `¥${(Number(n) / 1000).toFixed(0)}k` : "—";
 }
 
 function normalizeRole(r: unknown): Role {
@@ -922,6 +915,10 @@ function StaffCard({
   onSelect?: (m: StaffMember) => void;
   night: boolean;
 }) {
+  const { formatSharedMoney, formatSharedCompactMoney } = useCurrency();
+
+  const shortMoney = formatSharedCompactMoney;
+
   const role = roleCfg[member.role];
   const status = statusCfg[member.status];
   const taskStats = getTaskStats(member.tasks || []);
@@ -1126,7 +1123,7 @@ function StaffCard({
             style={{ color: night ? "#94a3b8" : "#64748b" }}
           >
             {member.salary
-              ? `¥${Number(member.salary).toLocaleString()}`
+              ? formatSharedMoney(Number(member.salary))
               : "No salary"}
           </div>
 
@@ -1196,6 +1193,10 @@ function CompactCard({
   onSelect?: (m: StaffMember) => void;
   night: boolean;
 }) {
+  const { formatSharedCompactMoney } = useCurrency();
+
+  const shortMoney = formatSharedCompactMoney;
+
   const role = roleCfg[member.role];
   const status = statusCfg[member.status];
 
@@ -1293,6 +1294,9 @@ function DetailPanel({
   onClose: () => void;
   night: boolean;
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const [tab, setTab] = React.useState<"profile" | "tasks">("profile");
 
   return (
@@ -1503,7 +1507,7 @@ function DetailPanel({
                   icon: Wallet,
                   label: "Salary",
                   value: member.salary
-                    ? `¥${Number(member.salary).toLocaleString()}`
+                    ? formatSharedMoney(Number(member.salary))
                     : "—",
                 },
                 {

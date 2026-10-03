@@ -1,3 +1,5 @@
+"use client";
+import { useCurrency } from "@/components/currency-provider";
 import type { Task, StockItem } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +10,8 @@ interface KpiGridProps {
 }
 
 export default function KpiGrid({ tasks, stocks, onStockClick }: KpiGridProps) {
+  const { formatSharedCompactMoney } = useCurrency();
+
   const done = tasks.filter((t) => t.status === "Done").length;
   const total = tasks.length;
   const pct = Math.round((done / total) * 100);
@@ -16,8 +20,8 @@ export default function KpiGrid({ tasks, stocks, onStockClick }: KpiGridProps) {
   const cards = [
     {
       label: "Today's Sales",
-      value: "1,245K",
-      sub: "MMK",
+      value: formatSharedCompactMoney(1245000),
+      sub: "Sales",
       trend: "▲ 12.4% vs yesterday",
       trendColor: "text-green-700",
       accent: "border-t-[#b8922a]",

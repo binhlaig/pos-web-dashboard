@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import Link from "next/link";
@@ -154,23 +155,6 @@ function useMounted() {
   const [m, setM] = React.useState(false);
   React.useEffect(() => setM(true), []);
   return m;
-}
-
-function earningsFmt(v: number) {
-  const currency = guessCurrency();
-  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(v || 0);
-}
-
-function guessCurrency(): string {
-  if (typeof window === "undefined") return "USD";
-  try {
-    const l = (Intl.DateTimeFormat().resolvedOptions().locale || navigator?.language || "").toLowerCase();
-    if (l.includes("ja")) return "JPY";
-    if (l.includes("en-us")) return "USD";
-    if (l.includes("en-gb")) return "GBP";
-    if (l.includes("de") || l.includes("fr") || l.includes("es")) return "EUR";
-  } catch { }
-  return "USD";
 }
 
 function csvEscape(s: string) {
@@ -377,6 +361,7 @@ function EntriesTable({ shifts, now, getEmployee, staffMap, onSelectStaff, onEdi
   onEdit: (s: Shift) => void;
   onDelete: (s: Shift) => void;
 }) {
+
   if (shifts.length === 0) return <EmptyState label="No entries" />;
   const totalBreak = shifts.reduce((a, s) => a + breakMs(s, now), 0);
   const totalWork = shifts.reduce((a, s) => a + workMs(s, now), 0);
@@ -819,6 +804,9 @@ function AllStaffDialog({
 
 /* ===== Main Page ===== */
 export default function TimecardPro() {
+  const { formatSharedMoney } = useCurrency();
+  const earningsFmt = formatSharedMoney;
+
   const mounted = useMounted();
   const { data: session } = useSession();
   const accessToken = (session as any)?.accessToken as string | null;

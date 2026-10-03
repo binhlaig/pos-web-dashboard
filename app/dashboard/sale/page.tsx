@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -81,14 +82,6 @@ const ACCENT = {
   rose: "#f43f5e",
   violet: "#a78bfa",
 };
-
-function fmt(v: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "JPY",
-    maximumFractionDigits: 0,
-  }).format(Number.isFinite(v) ? v : 0);
-}
 
 function numberFmt(v: number) {
   return new Intl.NumberFormat("en-US", {
@@ -470,6 +463,9 @@ function MainDropCard({
   mainTab: MainTab;
   setMainTab: React.Dispatch<React.SetStateAction<MainTab>>;
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const fmt = formatSharedMoney;
+
   const { setNodeRef, isOver } = useDroppable({
     id: "main-drop-card",
   });
@@ -747,6 +743,10 @@ function MainDropCard({
                     />
 
                     <Tooltip
+                      formatter={(value, _name, item) => {
+                        const label = item.payload?.label;
+                        return [label === "Price" ? fmt(droppedRow.product_price) : label === "Revenue" ? fmt(droppedRow.total_amount) : value, label];
+                      }}
                       contentStyle={{
                         background: theme.isDark ? "#140d05" : "#ffffff",
                         border: `1px solid ${theme.borderStrong}`,
@@ -784,6 +784,9 @@ function DraggableTableRow({
   onSelect: () => void;
   theme: ReturnType<typeof getThemeTokens>;
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const fmt = formatSharedMoney;
+
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: `row:${item.productId}`,
@@ -1097,6 +1100,9 @@ function SalesPagination({
 }
 
 export default function SalesKanbanPage() {
+  const { formatSharedMoney } = useCurrency();
+  const fmt = formatSharedMoney;
+
   const { data: session, status } = useSession();
 
   const [range, setRange] = useState<Range>("1h");

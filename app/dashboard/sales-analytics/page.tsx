@@ -1,5 +1,6 @@
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
@@ -193,7 +194,7 @@ const THEME: Record<ThemeMode, ThemeTokens> = {
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────────
-const money = (n: number) => `¥${Number(n || 0).toLocaleString()}`;
+
 const numberFmt = (n: number) => Number(n || 0).toLocaleString();
 
 function toNumber(value: unknown, fallback = 0) {
@@ -536,6 +537,7 @@ function AnimatedNumber({ value, format }: { value: number; format: (n: number) 
 // Mini Sparkline
 // ────────────────────────────────────────────────────────────────────────────
 function Sparkline({ data, color, id }: { data: number[]; color: string; id: string }) {
+
   if (!data.length) return null;
   const max = Math.max(...data, 1);
   const w = 80;
@@ -567,6 +569,8 @@ function Sparkline({ data, color, id }: { data: number[]; color: string; id: str
 // Custom Tooltip
 // ────────────────────────────────────────────────────────────────────────────
 function CustomTooltip({ active, payload, label, metric, theme }: any) {
+  const { formatSharedMoney: money } = useCurrency();
+
   if (!active || !payload?.length) return null;
   const t = THEME[(theme as ThemeMode) || "night"];
 
@@ -668,6 +672,8 @@ function SortableStatCard({ item, theme }: { item: StatCardItem; theme: ThemeMod
 // Hourly Heatmap
 // ────────────────────────────────────────────────────────────────────────────
 function HourlyHeatmap({ sales, metric, theme }: { sales: Sale[]; metric: Metric; theme: ThemeMode }) {
+  const { formatSharedMoney: money } = useCurrency();
+
   const weekStart = startOfWeek(new Date());
   const buckets = buildHourBuckets();
   const t = THEME[theme];
@@ -712,6 +718,8 @@ function HourlyHeatmap({ sales, metric, theme }: { sales: Sale[]; metric: Metric
 // Top Hours List
 // ────────────────────────────────────────────────────────────────────────────
 function TopHours({ sales, metric, theme }: { sales: Sale[]; metric: Metric; theme: ThemeMode }) {
+  const { formatSharedMoney: money } = useCurrency();
+
   const weekStart = startOfWeek(new Date());
   const buckets = buildHourBuckets();
   const t = THEME[theme];
@@ -754,6 +762,8 @@ function TopHours({ sales, metric, theme }: { sales: Sale[]; metric: Metric; the
 // Main Component
 // ────────────────────────────────────────────────────────────────────────────
 function SalesAnalyticsDashboardContent() {
+  const { currencySettings, formatSharedCompactMoney , formatSharedMoney: money } = useCurrency();
+
   const { data: session, status } = useSession();
 
   const token =
@@ -1022,7 +1032,7 @@ function SalesAnalyticsDashboardContent() {
     ];
     const map = new Map(all.map((item) => [item.id, item]));
     return cardOrder.map((id) => map.get(id)).filter(Boolean) as StatCardItem[];
-  }, [analytics, cardOrder, revenueGrowth, ordersGrowth, revenueSparkData, ordersSparkData]);
+  }, [analytics, cardOrder, revenueGrowth, ordersGrowth, revenueSparkData, ordersSparkData, currencySettings]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -1301,7 +1311,7 @@ function SalesAnalyticsDashboardContent() {
                     axisLine={false}
                     tick={{ fill: t.chartTick, fontSize: 11 }}
                     width={60}
-                    tickFormatter={(v) => (metric === "revenue" ? `¥${(Number(v) / 1000).toFixed(0)}k` : String(v))}
+                    tickFormatter={(v) => (metric === "revenue" ? formatSharedCompactMoney(Number(v)) : String(v))}
                   />
                   <Tooltip content={<CustomTooltip metric={metric} theme={theme} />} />
                   <Area dataKey="lastWeek" type="monotone" stroke="#64748b" fill="url(#gradLast)" strokeWidth={1.5} strokeDasharray="4 4" />

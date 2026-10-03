@@ -1233,6 +1233,7 @@
 
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import { useSession } from "next-auth/react";
@@ -2016,6 +2017,8 @@ function ChartTip({
   theme,
   accent = "#60a5fa",
 }: TooltipProps<number, string> & { theme: Theme; accent?: string }) {
+  const { formatSharedMoney } = useCurrency();
+
   const t = tk(theme);
 
   if (!active || !payload?.length) return null;
@@ -2046,7 +2049,7 @@ function ChartTip({
           </span>
 
           <span className={cn("font-bold", t.text)}>
-            ¥{Number(p.value ?? 0).toLocaleString()}
+            {formatSharedMoney(Number(p.value ?? 0))}
           </span>
         </div>
       ))}
@@ -2100,6 +2103,8 @@ function GlowAreaChartCard({
   compareName?: string;
   height?: number;
 }) {
+  const { formatSharedCompactMoney } = useCurrency();
+
   const t = tk(theme);
   const gid = `ga-${accent.replace(/[^a-zA-Z0-9]/g, "")}`;
   const filterId = `gf-${accent.replace(/[^a-zA-Z0-9]/g, "")}`;
@@ -2151,7 +2156,7 @@ function GlowAreaChartCard({
               axisLine={false}
               tickLine={false}
             />
-            <YAxis
+            <YAxis tickFormatter={formatSharedCompactMoney}
               tick={{ fill: t.cAxis, fontSize: 11, fontWeight: 600 }}
               axisLine={false}
               tickLine={false}
@@ -2208,6 +2213,8 @@ function GlowBarChartCard({
   accent: string;
   height?: number;
 }) {
+  const { formatSharedCompactMoney } = useCurrency();
+
   const t = tk(theme);
   const max = Math.max(...data.map((d) => Number(d[yKey] ?? 0)), 1);
 
@@ -2232,7 +2239,7 @@ function GlowBarChartCard({
               axisLine={false}
               tickLine={false}
             />
-            <YAxis
+            <YAxis tickFormatter={formatSharedCompactMoney}
               tick={{ fill: t.cAxis, fontSize: 10, fontWeight: 600 }}
               axisLine={false}
               tickLine={false}
@@ -2284,6 +2291,8 @@ function KpiCard({
   barTo: string;
   delay?: number;
 }) {
+  const { formatSharedMoney } = useCurrency();
+
   const t = tk(theme);
 
   return (
@@ -2324,14 +2333,19 @@ function KpiCard({
           </div>
 
           <div className={cn("text-[30px] font-black leading-none tracking-tight", t.text)}>
-            {prefix}
-            <CountUp
+            {prefix === "currency" ? <CountUp
               end={value}
               duration={1.2}
               decimals={decimals}
               separator=","
               preserveValue
-            />
+            formattingFn={formatSharedMoney} /> : <>{prefix}<CountUp
+              end={value}
+              duration={1.2}
+              decimals={decimals}
+              separator=","
+              preserveValue
+            /></>}
             {suffix}
           </div>
 
@@ -2401,6 +2415,8 @@ async function readErrorMessage(res: Response) {
 }
 
 export default function AnalyticsPage() {
+  const { formatSharedMoney, formatSharedCompactMoney } = useCurrency();
+
   const { data: session, status: sessionStatus } = useSession();
 
   const [range, setRange] = React.useState<RangeKey>("7d");
@@ -2604,7 +2620,6 @@ export default function AnalyticsPage() {
                       Dashboard
                     </button>
 
-
                   <h1 className={cn("serif text-[40px] font-normal leading-[0.95] md:text-[54px]", t.text)}>
                     Analytics
                     <span className={cn("ml-3 text-[18px] font-medium md:text-[24px]", t.textMuted)}>
@@ -2706,7 +2721,7 @@ export default function AnalyticsPage() {
               theme={theme}
               label="Total Revenue"
               value={analytics.revenue}
-              prefix="¥"
+              prefix="currency"
               change="+ Live"
               up
               icon={DollarSign}
@@ -2733,7 +2748,7 @@ export default function AnalyticsPage() {
               theme={theme}
               label="Avg Order Value"
               value={analytics.avg}
-              prefix="¥"
+              prefix="currency"
               change="+ Avg"
               up
               icon={Package}
@@ -2967,14 +2982,14 @@ export default function AnalyticsPage() {
                               <div>
                                 <span className={cn("text-[13px] font-bold", t.text)}>{b.name}</span>
                                 <span className={cn("ml-2 text-[11px]", t.textSubtle)}>
-                                  ¥{b.target.toLocaleString()}
+                                  {formatSharedMoney(b.target)}
                                 </span>
                               </div>
                             </div>
 
                             <div className="flex items-center gap-2">
                               <span className={cn("text-[13px] font-bold", t.text)}>
-                                ¥{b.value.toLocaleString()}
+                                {formatSharedMoney(b.value)}
                               </span>
 
                               <span
@@ -3062,8 +3077,7 @@ export default function AnalyticsPage() {
 
                             <div className="shrink-0 text-right">
                               <div className={cn("text-[13px] font-bold", t.text)}>
-                                ¥{(p.revenue / 1000).toFixed(0)}k
-                              </div>
+                                {formatSharedCompactMoney(p.revenue)}</div>
                               <span className={cn("text-[10px] font-bold", p.trend === "up" ? "text-emerald-500" : "text-rose-500")}>
                                 {p.trend === "up" ? "↑" : "↓"}
                               </span>
@@ -3162,7 +3176,7 @@ export default function AnalyticsPage() {
                                 </span>
                               </td>
                               <td className={cn("px-3 py-3.5 text-right text-[13px] font-black", t.text)}>
-                                ¥{tx.amount.toLocaleString()}
+                                {formatSharedMoney(tx.amount)}
                               </td>
                               <td className="px-3 py-3.5">
                                 <span

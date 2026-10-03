@@ -1359,6 +1359,7 @@
 
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -1933,6 +1934,8 @@ async function cropImageToSquare(file: File): Promise<File> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function ProductEditPage() {
+  const { formatSharedMoney } = useCurrency();
+
   const router                                    = useRouter();
   const params                                    = useParams();
   const productId                                 = String(params?.id ?? "");
@@ -2437,7 +2440,7 @@ export default function ProductEditPage() {
                         <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
                           {[
                             { l: "SKU", v: suggestion.sku }, { l: "Category", v: suggestion.category },
-                            { l: "Type", v: suggestion.product_type }, { l: "Price", v: suggestion.suggested_price },
+                            { l: "Type", v: suggestion.product_type }, { l: "Price", v: formatSharedMoney(Number(suggestion.suggested_price)) },
                             { l: "Barcode", v: suggestion.barcode.slice(0, 10) + "..." },
                           ].map((item) => (
                             <div key={item.l} className={cn("rounded-xl border p-2", t.sugItem, t.card)}>
@@ -2511,7 +2514,7 @@ export default function ProductEditPage() {
                     {(["product_price", "product_discount"] as const).map((key) => (
                       <div key={key} className="space-y-1.5">
                         <Label className={cn("text-[11px] font-bold uppercase tracking-wider", t.textSubtle)}>
-                          {key === "product_price" ? "Price (MMK)" : "Discount"}
+                          {key === "product_price" ? "Price" : "Discount"}
                         </Label>
                         <Input type="number" min="0" step="0.01" value={form[key]}
                           onChange={(e) => setField(key, e.target.value)}
@@ -2713,7 +2716,7 @@ export default function ProductEditPage() {
 
                   <div className="mb-3 grid grid-cols-3 gap-2">
                     {[
-                      { label: "Price", value: form.product_price || "0", icon: CircleDollarSign, dirty: dirtyFields.has("product_price") },
+                      { label: "Price", value: formatSharedMoney(Number(form.product_price || "0")), icon: CircleDollarSign, dirty: dirtyFields.has("product_price") },
                       { label: "Remaining", value: form.product_quantity_amount || "0", icon: Boxes, dirty: false },
                       { label: "Type",  value: form.product_type || "OTHER", icon: Package2, dirty: dirtyFields.has("product_type") },
                     ].map((item) => (

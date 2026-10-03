@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import type { TransactionItem, ThemeMode } from "@/lib/dashboard-data";
@@ -26,6 +27,8 @@ export function TransactionTable({
   onPageChange: (v: number) => void;
   theme: ThemeMode;
 }) {
+  const { formatSharedMoney } = useCurrency();
+
   const pageSize = 5;
 
   const searchedRows = React.useMemo(() => {
@@ -133,7 +136,7 @@ export function TransactionTable({
                     {tx.time}
                   </td>
                   <td className={theme === "dark" ? "px-3 py-4 text-right font-semibold text-white" : "px-3 py-4 text-right font-semibold text-slate-900"}>
-                    ¥{tx.amount.toLocaleString()}
+                    {formatSharedMoney(tx.amount)}
                   </td>
                 </tr>
               ))}

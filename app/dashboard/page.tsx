@@ -1,6 +1,5 @@
 
 "use client";
-
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import Link from "next/link";
 import {
@@ -22,14 +21,12 @@ import {
   YAxis,
 } from "recharts";
 import { getStoredToken } from "@/lib/auth";
-
+import { useCurrency } from "@/components/currency-provider";
 type SalesRange = "daily" | "weekly" | "monthly";
-
 type SalesItem = {
   label: string;
   value: number;
 };
-
 type Product = {
   id: number | string;
   sku?: string;
@@ -45,7 +42,6 @@ type Product = {
   quantity?: number;
   stock?: number;
 };
-
 type ReceiptItem = {
   productId?: number | string;
   product_id?: number | string;
@@ -60,7 +56,6 @@ type ReceiptItem = {
   price?: number;
   total?: number;
 };
-
 type Receipt = {
   id?: number;
   receiptNo?: string;
@@ -74,14 +69,12 @@ type Receipt = {
   receiptItems?: ReceiptItem[];
   receipt_items?: ReceiptItem[];
 };
-
 const API_BASE = (
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://localhost:8080"
 ).replace(/\/+$/, "");
 const LOW_STOCK_LIMIT = 10;
-
 async function fetchApi<T>(path: string): Promise<T> {
   const token = getStoredToken();
   const response = await fetch(`${API_BASE}${path}`, {
@@ -92,12 +85,9 @@ async function fetchApi<T>(path: string): Promise<T> {
     },
     cache: "no-store",
   });
-
   const text = await response.text();
-
   if (!response.ok) {
     let message = text;
-
     try {
       const data = JSON.parse(text) as {
         message?: string;
@@ -108,29 +98,23 @@ async function fetchApi<T>(path: string): Promise<T> {
     } catch {
       // Keep a non-JSON backend response as-is.
     }
-
     throw new Error(
       `${path}: ${message || "API request failed"} (${response.status})`,
     );
   }
-
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
 }
-
 function listFrom<T>(payload: T[] | { content?: T[]; data?: T[]; receipts?: T[] }): T[] {
   if (Array.isArray(payload)) return payload;
   return payload.content ?? payload.data ?? payload.receipts ?? [];
 }
-
 function receiptTotal(receipt: Receipt) {
   return Number(receipt.grandTotal ?? receipt.total ?? 0);
 }
-
 function receiptDate(receipt: Receipt) {
   return receipt.createdAt ? new Date(receipt.createdAt) : new Date(0);
 }
-
 const salesInformation: Record<
   SalesRange,
   {
@@ -155,33 +139,13 @@ const salesInformation: Record<
     change: "+18.2%",
   },
 };
-
-function formatYen(value: number) {
-  return new Intl.NumberFormat("ja-JP", {
-    style: "currency",
-    currency: "JPY",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatChartValue(value: number) {
-  if (value >= 1_000_000) {
-    return `¥${(value / 1_000_000).toFixed(1)}M`;
-  }
-
-  if (value >= 1_000) {
-    return `¥${Math.round(value / 1_000)}K`;
-  }
-
-  return `¥${value}`;
-}
-
 const DashboardPage = () => {
   const [salesRange, setSalesRange] = useState<SalesRange>("weekly");
   const [products, setProducts] = useState<Product[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { formatSharedMoney: formatMoney, formatSharedCompactMoney: formatChartValue } = useCurrency();
 
   useEffect(() => {
     let active = true;
@@ -372,7 +336,7 @@ const DashboardPage = () => {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         <SummaryCard
           title="Today Sales"
-          value={loading ? "—" : formatYen(todaySales)}
+          value={loading ? "—" : formatMoney(todaySales)}
           change={`${salesChange >= 0 ? "+" : ""}${salesChange.toFixed(1)}%`}
           comparison="vs yesterday"
           icon={TrendingUp}
@@ -456,7 +420,7 @@ const DashboardPage = () => {
               </p>
 
               <p className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">
-                {formatYen(totalSales)}
+                {formatMoney(totalSales)}
               </p>
             </div>
 
@@ -541,7 +505,7 @@ const DashboardPage = () => {
                     strokeWidth: 1,
                     strokeDasharray: "4 4",
                   }}
-                  formatter={(value) => [formatYen(Number(value)), "Sales"]}
+                  formatter={(value) => [formatMoney(Number(value)), "Sales"]}
                   labelFormatter={(label) =>
                     salesRange === "daily" ? `Time: ${label}` : `${label}`
                   }
@@ -611,7 +575,7 @@ const DashboardPage = () => {
             >
               <div className="absolute inset-8 flex flex-col items-center justify-center rounded-full bg-white transition-colors dark:bg-black">
                 <p className="text-xl font-bold text-slate-950 dark:text-white">
-                  {formatYen(categoryTotal)}
+                  {formatMoney(categoryTotal)}
                 </p>
 
                 <p className="text-[10px] text-slate-500 dark:text-slate-400">
@@ -628,7 +592,7 @@ const DashboardPage = () => {
                   key={category.title}
                   color={["bg-blue-600", "bg-green-500", "bg-orange-500", "bg-violet-500", "bg-slate-300"][index]}
                   title={category.title}
-                  value={formatYen(category.value)}
+                  value={formatMoney(category.value)}
                   percent={`${(categoryTotal ? (category.value / categoryTotal) * 100 : 0).toFixed(1)}%`}
                 />
               ))}
@@ -698,7 +662,7 @@ const DashboardPage = () => {
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-slate-900 dark:text-white">
-                      {formatYen(receiptTotal(transaction))}
+                      {formatMoney(receiptTotal(transaction))}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 text-slate-600 dark:text-slate-300">

@@ -12,6 +12,7 @@ import {
 import type { RevenuePoint, MetricMode, ThemeMode } from "@/lib/dashboard-data";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCurrency } from "@/components/currency-provider";
 
 const themeChart = {
   dark: {
@@ -41,6 +42,7 @@ export function RevenueChart({
   onModeChange: (v: MetricMode) => void;
   theme: ThemeMode;
 }) {
+  const { formatSharedMoney, formatSharedCompactMoney } = useCurrency();
   const dataKey = mode === "revenue" ? "revenue" : "profit";
   const t = themeChart[theme];
 
@@ -83,11 +85,13 @@ export function RevenueChart({
                 tickLine={false}
               />
               <YAxis
+                tickFormatter={formatSharedCompactMoney}
                 tick={{ fill: t.tick, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
+                formatter={(value) => formatSharedMoney(Number(value))}
                 contentStyle={{
                   background: t.tooltipBg,
                   border: t.tooltipBorder,

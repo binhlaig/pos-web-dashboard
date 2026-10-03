@@ -119,6 +119,7 @@ export function savePosSession(data: SavePosSessionData) {
   window.localStorage.setItem("pos_plan", String(user.subscriptionPlan || ""));
   writeJson("pos_features", features);
   writeJson("pos_limits", limits);
+  window.dispatchEvent(new Event("pos-auth-change"));
 }
 
 export function getPosUser(): PosSessionUser | null {
@@ -148,4 +149,5 @@ export function clearPosSession() {
     "pos_features",
     "pos_limits",
   ].forEach((key) => window.localStorage.removeItem(key));
+  window.dispatchEvent(new Event("pos-auth-change"));
 }

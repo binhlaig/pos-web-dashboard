@@ -70,6 +70,7 @@
 
 
 "use client"
+import { useCurrency } from "@/components/currency-provider";
 
 import Image from "next/image"
 import { Card } from "@/components/ui/card"
@@ -83,6 +84,8 @@ type Props = {
 }
 
 export default function MenuCard({ name, price, image, badge }: Props) {
+  const { formatSharedMoney } = useCurrency();
+
   return (
     <Card className="group relative overflow-hidden border-border bg-card/70 backdrop-blur-xl">
       {/* shine */}
@@ -111,7 +114,7 @@ export default function MenuCard({ name, price, image, badge }: Props) {
 
         {/* price pill */}
         <div className="absolute bottom-3 right-3 rounded-xl border border-foreground/10 bg-background/75 px-3 py-2 text-xl font-black text-foreground shadow-sm backdrop-blur">
-          ¥{price.toLocaleString()}
+          {formatSharedMoney(price)}
         </div>
       </div>
 

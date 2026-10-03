@@ -98,6 +98,7 @@
 
 "use client"
 
+import { useCurrency } from "@/components/currency-provider";
 import Image from "next/image"
 import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
@@ -106,7 +107,7 @@ type Promo = {
   id: string
   title: string
   subtitle?: string
-  priceText?: string
+  priceText?: number
   badge?: string
   image: string
 }
@@ -118,6 +119,8 @@ export default function HeroBanner({
   promos: Promo[]
   intervalMs?: number
 }) {
+  const { formatSharedMoney } = useCurrency();
+
   const safePromos = useMemo(() => promos ?? [], [promos])
   const [index, setIndex] = useState(0)
 
@@ -175,11 +178,11 @@ export default function HeroBanner({
               </div>
             ) : null}
 
-            {p.priceText ? (
+            {p.priceText != null ? (
               <div className="mt-5 inline-flex items-baseline gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-5 py-4 shadow-sm backdrop-blur">
                 <span className="text-sm text-muted-foreground">From</span>
                 <span className="text-3xl font-black text-foreground md:text-4xl">
-                  {p.priceText}
+                  {formatSharedMoney(p.priceText)}
                 </span>
               </div>
             ) : null}

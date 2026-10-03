@@ -50,6 +50,7 @@ export function clearStoredAuth() {
   ].forEach((key) => window.localStorage.removeItem(key));
 
   window.sessionStorage.removeItem("pos_user");
+  window.dispatchEvent(new Event("pos-auth-change"));
 }
 
 export function redirectToLogin() {

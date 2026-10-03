@@ -1,4 +1,6 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
+
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
@@ -285,13 +287,7 @@ function NightParticles() {
 function numberFormat(n: number) {
   return new Intl.NumberFormat().format(n || 0);
 }
-function formattedPrice(p?: number) {
-  if (p == null) return "-";
-  return new Intl.NumberFormat("ja-JP", {
-    style: "currency",
-    currency: "JPY",
-  }).format(p);
-}
+
 function stockBadge(stock: number) {
   if (stock <= 0) {
     return {
@@ -390,6 +386,9 @@ function SummaryBar({
   theme: Theme;
   products: Product[];
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const formattedPrice = (value?: number) => value == null ? "-" : formatSharedMoney(value);
+
   const t = tk(theme);
   const inStock = products.filter((p) => p.product_quantity_amount > 0).length;
   const lowStock = products.filter(
@@ -486,6 +485,9 @@ function ProductRow({
   selected?: boolean;
   onSelect: (p: Product) => void;
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const formattedPrice = (value?: number) => value == null ? "-" : formatSharedMoney(value);
+
   const t = tk(theme);
   const badge = stockBadge(product.product_quantity_amount);
   return (
@@ -571,6 +573,9 @@ function ProductDetailDialog({
   apiBase: string;
   onClose: () => void;
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const formattedPrice = (value?: number) => value == null ? "-" : formatSharedMoney(value);
+
   const t = tk(theme);
   if (!product) return null;
   const badge = stockBadge(product.product_quantity_amount);
@@ -887,6 +892,9 @@ function ProductBarcodeScannerDialog({
   );
 }
 export default function ProductCheckPage() {
+  const { formatSharedMoney } = useCurrency();
+  const formattedPrice = (value?: number) => value == null ? "-" : formatSharedMoney(value);
+
   const { resolvedTheme, setTheme: setNextTheme } = useTheme();
   const [theme, setTheme] = React.useState<Theme>("dark");
   const [q, setQ] = React.useState("");

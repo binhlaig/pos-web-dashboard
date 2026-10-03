@@ -1,5 +1,6 @@
 
 "use client"
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -248,10 +249,6 @@ const sidebarItems = [
   { label: "Tasks", icon: CheckSquare, href: "/dashboard/tasks" },
   { label: "Shop Settings", icon: Settings, href: "/dashboard/settings" },
 ];
-
-function money(n: number) {
-  return `¥${n.toLocaleString()}`;
-}
 
 function t(theme: ThemeMode) {
   if (theme === "dark") {
@@ -763,6 +760,7 @@ function ShootingStars() {
 // ── BACKGROUND FX ──────────────────────────────────────────────────────────────
 // dark theme ကို ပိုမှောင်ပြီး deep purple-navy-black ဆိုတဲ့ feel ပေးမယ်
 function BackgroundFX({ theme }: { theme: ThemeMode }) {
+
   if (theme === "dark") {
     return (
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -896,6 +894,9 @@ function DashboardSkeleton({ theme }: { theme: ThemeMode }) {
 }
 
 function AnalyticsStrip({ theme, todaySales, todayOrders, activeStaff, lowStock }: { theme: ThemeMode; todaySales: number; todayOrders: number; activeStaff: number; lowStock: number }) {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const tk = t(theme);
   const items = [
     {
@@ -989,6 +990,9 @@ function CustomTooltip({
   label,
   theme,
 }: TooltipProps<number, string> & { theme: ThemeMode }) {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   if (!active || !payload || payload.length === 0) return null;
   return (
     <div
@@ -1093,6 +1097,8 @@ function AnimatedStatCard({
   sub: string;
   gradient: string;
 }) {
+  const { formatSharedMoney } = useCurrency();
+
   return (
     <motion.div
       whileHover={{ y: -5, scale: 1.015 }}
@@ -1114,13 +1120,17 @@ function AnimatedStatCard({
                 {title}
               </CardDescription>
               <CardTitle className="mt-2 text-2xl font-bold tracking-tight 2xl:text-[28px]">
-                {prefix}
-                <CountUp
+                {prefix === "currency" ? <CountUp
                   end={value}
                   duration={1.5}
                   decimals={decimals}
                   separator=","
-                />
+                formattingFn={formatSharedMoney} /> : <>{prefix}<CountUp
+                  end={value}
+                  duration={1.5}
+                  decimals={decimals}
+                  separator=","
+                /></>}
                 {suffix}
               </CardTitle>
             </div>
@@ -1321,6 +1331,9 @@ function DesktopSidebar({
 }
 
 export default function DashboardPage() {
+  const { formatSharedMoney , formatSharedCompactMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const [theme, setTheme] = React.useState<ThemeMode>("dark");
   const [loading, setLoading] = React.useState(true);
   const [range, setRange] = React.useState("30d");
@@ -1812,7 +1825,7 @@ export default function DashboardPage() {
                     <div
                       className={cn("text-3xl font-bold 2xl:text-4xl", tk.text)}
                     >
-                      ¥<CountUp end={todaySales} duration={1.4} separator="," />
+                      {formatSharedMoney(todaySales)}
                     </div>
 
                     <div className="mt-2 flex items-center gap-1.5 text-sm text-emerald-500 font-medium">
@@ -1874,7 +1887,7 @@ export default function DashboardPage() {
                   theme={theme}
                   title="Today Sales"
                   value={todaySales}
-                  prefix="¥"
+                  prefix="currency"
                   change={`${salesChange >= 0 ? "+" : ""}${salesChange.toFixed(1)}%`}
                   positive={salesChange >= 0}
                   icon={TrendingUp}
@@ -2005,7 +2018,7 @@ export default function DashboardPage() {
                               axisLine={false}
                               tickLine={false}
                             />
-                            <YAxis
+                            <YAxis tickFormatter={formatSharedCompactMoney}
                               tick={{
                                 fill:
                                   theme === "dark"

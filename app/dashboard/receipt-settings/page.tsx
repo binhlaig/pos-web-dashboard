@@ -1081,6 +1081,8 @@
 
 
 "use client";
+import { formatCurrencyAmount, normalizeCurrency } from "@/lib/currency";
+import { getCurrencyIdentity, publishCurrencySettings } from "@/components/currency-provider";
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1181,7 +1183,7 @@ function createDefaultSetting(): ReceiptSetting {
     currencyCode: "MMK",
     currencySymbol: "Ks",
     currencyDecimalDigits: 0,
-    currencyPosition: "BEFORE",
+    currencyPosition: "AFTER",
     taxPercent: 0,
 
     ads: [
@@ -1229,18 +1231,7 @@ function formatMoney(
     ReceiptSetting,
     "currencySymbol" | "currencyDecimalDigits" | "currencyPosition"
   >,
-) {
-  const value = Number(amount || 0).toLocaleString("en-US", {
-    minimumFractionDigits: setting.currencyDecimalDigits,
-    maximumFractionDigits: setting.currencyDecimalDigits,
-  });
-
-  if (setting.currencyPosition === "AFTER") {
-    return `${value} ${setting.currencySymbol}`;
-  }
-
-  return `${setting.currencySymbol} ${value}`;
-}
+) { return formatCurrencyAmount(amount, setting); }
 
 function ReceiptSettingsPageContent() {
   const { data: session, status: authStatus } = useSession();
@@ -1320,6 +1311,7 @@ function ReceiptSettingsPageContent() {
 
     setSetting((prev) => ({
       ...prev,
+      ...normalizeCurrency(data),
       shopName: data.shopName || prev.shopName || "My POS Shop",
       address: data.address || "",
       phone: data.phone || "",
@@ -1362,18 +1354,12 @@ function ReceiptSettingsPageContent() {
       address: data.address || prev.address,
       phone: data.phone || prev.phone,
 
-      currencyCode: data.currencyCode || "MMK",
-      currencySymbol: data.currencySymbol || "Ks",
-      currencyDecimalDigits:
-        typeof data.currencyDecimalDigits === "number"
-          ? data.currencyDecimalDigits
-          : 0,
-      currencyPosition: data.currencyPosition === "AFTER" ? "AFTER" : "BEFORE",
       taxPercent: Number(data.taxPercent ?? 0),
     }));
   }
 
   async function saveReceiptSetting() {
+    const identity = getCurrencyIdentity();
     try {
       setSaving(true);
       setNotice(null);
@@ -1386,7 +1372,7 @@ function ReceiptSettingsPageContent() {
         return;
       }
 
-      await Promise.all([saveReceiptOnly(), saveShopCurrencyOnly()]);
+      await Promise.all([saveReceiptOnly(identity), saveShopCurrencyOnly()]);
 
       setNotice({
         type: "success",
@@ -1408,8 +1394,9 @@ function ReceiptSettingsPageContent() {
     }
   }
 
-  async function saveReceiptOnly() {
+  async function saveReceiptOnly(identity: string) {
     const payload = {
+      ...normalizeCurrency(setting),
       shopName: setting.shopName.trim(),
       address: setting.address.trim(),
       phone: setting.phone.trim(),
@@ -1435,6 +1422,7 @@ function ReceiptSettingsPageContent() {
     if (!res.ok) {
       throw new Error(getErrorMessage(res.status));
     }
+    publishCurrencySettings(setting, identity);
   }
 
   async function saveShopCurrencyOnly() {
@@ -1445,7 +1433,7 @@ function ReceiptSettingsPageContent() {
 
       currencyCode: setting.currencyCode.trim().toUpperCase(),
       currencySymbol: setting.currencySymbol.trim(),
-      currencyDecimalDigits: Number(setting.currencyDecimalDigits || 0),
+      currencyDecimalDigits: normalizeCurrency(setting).currencyDecimalDigits,
       currencyPosition: setting.currencyPosition,
       taxPercent: Number(setting.taxPercent || 0),
     };

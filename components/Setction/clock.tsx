@@ -1,4 +1,6 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
+
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
@@ -89,6 +91,8 @@ const saveShifts = (list: Shift[]) => {
 
 // ===== Page =====
 export default function Page() {
+  const { formatSharedMoney } = useCurrency();
+
   const [now, setNow] = useState(new Date());
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [note, setNote] = useState("");
@@ -353,7 +357,7 @@ export default function Page() {
                           value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} />
                         {earnings !== undefined && (
                           <Badge className="border border-emerald-300/60 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-200">
-                            Est. earnings: {new Intl.NumberFormat(undefined, { style: "currency", currency: guessCurrency() }).format(earnings)}
+                            Est. earnings: {formatSharedMoney(earnings)}
                           </Badge>
                         )}
                       </div>
@@ -552,6 +556,7 @@ function EmptyState({ label }: { label: string }) {
 }
 
 function EntriesTable({ shifts, now }: { shifts: Shift[]; now: number }) {
+
   if (shifts.length === 0) return <EmptyState label="No entries" />;
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
@@ -588,13 +593,4 @@ function EntriesTable({ shifts, now }: { shifts: Shift[]; now: number }) {
       </table>
     </div>
   );
-}
-
-function guessCurrency(): string {
-  const l = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase();
-  if (l.includes("jp")) return "JPY";
-  if (l.includes("en-us")) return "USD";
-  if (l.includes("en-gb")) return "GBP";
-  if (l.includes("de") || l.includes("fr") || l.includes("es")) return "EUR";
-  return "USD";
 }

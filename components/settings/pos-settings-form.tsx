@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -323,6 +324,7 @@ function ToggleRow({
 }
 
 function SectionContent({ id, theme }: { id: SectionId; theme: ThemeMode }) {
+  const { currencySettings } = useCurrency();
   switch (id) {
     case "general":
       return (
@@ -333,7 +335,10 @@ function SectionContent({ id, theme }: { id: SectionId; theme: ThemeMode }) {
             </Field>
 
             <Field label="Currency" theme={theme}>
-              <Select theme={theme} defaultValue="JPY">
+              <Select key={currencySettings.currencyCode} theme={theme} defaultValue={currencySettings.currencyCode}>
+                {!["JPY", "MMK", "USD"].includes(currencySettings.currencyCode) && (
+                  <option value={currencySettings.currencyCode}>{currencySettings.currencyCode}</option>
+                )}
                 <option value="JPY">JPY</option>
                 <option value="MMK">MMK</option>
                 <option value="USD">USD</option>
@@ -791,6 +796,7 @@ function MetricCard({
 }
 
 export default function PosSettingsForm(): React.JSX.Element {
+  const { currencySettings } = useCurrency();
   const [theme, setTheme] = React.useState<ThemeMode>("dark");
   const [sections, setSections] = React.useState<SectionItem[]>(sectionsSeed);
   const [saving, setSaving] = React.useState(false);
@@ -959,7 +965,7 @@ export default function PosSettingsForm(): React.JSX.Element {
               <MetricCard
                 icon={BadgeJapaneseYen}
                 title="Currency Profile"
-                value="JPY / Tax 10%"
+                value={`${currencySettings.currencyCode} / Tax 10%`}
                 sub="Default tax and pricing rules"
                 theme={theme}
               />

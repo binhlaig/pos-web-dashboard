@@ -4,11 +4,13 @@ import CountUp from "react-countup";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useCurrency } from "@/components/currency-provider";
 
 export function StatCard({
   title,
   value,
   prefix = "",
+  monetary = Boolean(prefix),
   change,
   positive,
   sub,
@@ -17,19 +19,24 @@ export function StatCard({
   title: string;
   value: number;
   prefix?: string;
+  monetary?: boolean;
   change: string;
   positive: boolean;
   sub: string;
   icon: React.ComponentType<{ className?: string }>;
 }) {
+  const { formatSharedMoney } = useCurrency();
   return (
     <Card className="border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.16)]">
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
         <div>
           <CardDescription className="text-white/60">{title}</CardDescription>
           <CardTitle className="mt-2 text-2xl font-bold tracking-tight text-white">
-            {prefix}
-            <CountUp end={value} duration={1.2} separator="," />
+            {monetary ? (
+              <CountUp end={value} duration={1.2} separator="," formattingFn={formatSharedMoney} />
+            ) : (
+              <>{prefix}<CountUp end={value} duration={1.2} separator="," /></>
+            )}
           </CardTitle>
         </div>
 

@@ -2958,6 +2958,7 @@
 
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -2981,7 +2982,7 @@ interface MenuItem {
 }
 interface Promo {
   id: number; title: string; subtitle: string; tag: string;
-  price?: string; emoji: string; accent: string; gradient: string; image?: string;
+  price?: number; emoji: string; accent: string; gradient: string; image?: string;
 }
 
 const ORDER_LINK = "https://your-real-order-page.example.com";
@@ -2989,10 +2990,10 @@ const ORDER_QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=700x700&m
 
 /* ── Data ───────────────────────────────────── */
 const PROMOS_INITIAL: Promo[] = [
-  { id:1, title:"Double Crispy Chicken", subtitle:"Golden fried, twice the crunch — today only", tag:"LIMITED TIME", price:"¥890", emoji:"🍗", accent:"#FF9A3D", gradient:"linear-gradient(135deg,#2b0d00,#7a2e00)", image:"https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?q=80&w=1800&auto=format&fit=crop" },
-  { id:2, title:"Wagyu Smash Burger", subtitle:"Premium Japanese Wagyu with deep smoky finish", tag:"CHEF'S PICK", price:"¥1,280", emoji:"🍔", accent:"#FF5B57", gradient:"linear-gradient(135deg,#2b0008,#7a1018)", image:"https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=1800&auto=format&fit=crop" },
-  { id:3, title:"Premium Set Lunch", subtitle:"Main + Side + Drink — fast, rich, complete", tag:"LUNCH SET", price:"¥1,050", emoji:"🍱", accent:"#3FE089", gradient:"linear-gradient(135deg,#07130d,#19442d)", image:"https://images.unsplash.com/photo-1515003197210-e0cd71810b5f?q=80&w=1800&auto=format&fit=crop" },
-  { id:4, title:"Matcha Latte Special", subtitle:"Ceremonial grade matcha with oat milk", tag:"NEW ARRIVAL", price:"¥650", emoji:"🍵", accent:"#55E0B7", gradient:"linear-gradient(135deg,#081312,#15483f)", image:"https://images.unsplash.com/photo-1515823662972-da6a2e4d3002?q=80&w=1800&auto=format&fit=crop" },
+  { id:1, title:"Double Crispy Chicken", subtitle:"Golden fried, twice the crunch — today only", tag:"LIMITED TIME", price:890, emoji:"🍗", accent:"#FF9A3D", gradient:"linear-gradient(135deg,#2b0d00,#7a2e00)", image:"https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?q=80&w=1800&auto=format&fit=crop" },
+  { id:2, title:"Wagyu Smash Burger", subtitle:"Premium Japanese Wagyu with deep smoky finish", tag:"CHEF'S PICK", price:1280, emoji:"🍔", accent:"#FF5B57", gradient:"linear-gradient(135deg,#2b0008,#7a1018)", image:"https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=1800&auto=format&fit=crop" },
+  { id:3, title:"Premium Set Lunch", subtitle:"Main + Side + Drink — fast, rich, complete", tag:"LUNCH SET", price:1050, emoji:"🍱", accent:"#3FE089", gradient:"linear-gradient(135deg,#07130d,#19442d)", image:"https://images.unsplash.com/photo-1515003197210-e0cd71810b5f?q=80&w=1800&auto=format&fit=crop" },
+  { id:4, title:"Matcha Latte Special", subtitle:"Ceremonial grade matcha with oat milk", tag:"NEW ARRIVAL", price:650, emoji:"🍵", accent:"#55E0B7", gradient:"linear-gradient(135deg,#081312,#15483f)", image:"https://images.unsplash.com/photo-1515823662972-da6a2e4d3002?q=80&w=1800&auto=format&fit=crop" },
 ];
 
 const MENU_ITEMS_INITIAL: MenuItem[] = [
@@ -4465,6 +4466,8 @@ function HighlightProgressBar({duration,progressKey}:{duration:number;progressKe
 
 function MenuCard({item,highlight,direction,effect,itemChangeMs}:
   {item:MenuItem;highlight:boolean;direction:1|-1;effect:Effect3D;itemChangeMs:number}) {
+  const { formatSharedMoney } = useCurrency();
+
   const [progressKey,setProgressKey] = useState(0);
   const config = item.badge ? BADGE_CONFIG[item.badge] : null;
   const Icon = config?.icon;
@@ -4513,7 +4516,7 @@ function MenuCard({item,highlight,direction,effect,itemChangeMs}:
         <div className={`card-status ${item.available===false?"out":""}`}>
           {item.available===false?"😔 Sold Out":"✅ Available"}
         </div>
-        <div className="card-price-float">¥{item.price.toLocaleString()}</div>
+        <div className="card-price-float">{formatSharedMoney(item.price)}</div>
       </div>
 
       <div className="card-body">
@@ -4521,7 +4524,7 @@ function MenuCard({item,highlight,direction,effect,itemChangeMs}:
         {item.nameJp&&<div className="card-jp">{item.nameJp}</div>}
         <div className="card-desc">{item.desc}</div>
         <div className="card-footer">
-          <div className="card-main-price">¥{item.price.toLocaleString()}</div>
+          <div className="card-main-price">{formatSharedMoney(item.price)}</div>
           <div className="card-meta">
             {item.calories!=null&&<div className="card-cal"><Flame size={8}/>{item.calories} kcal</div>}
             <SpiceRow level={item.spicyLevel}/>
@@ -4640,6 +4643,7 @@ function AdminOverlay({category,setCategory,autoMove,setAutoMove,autoCategory,se
    MAIN DISPLAY PAGE
 ════════════════════════════════════════ */
 export default function DisplayPage() {
+  const { formatSharedMoney } = useCurrency();
   const [category,setCategory] = useState<Cat>("All");
   const [promoIndex,setPromoIndex] = useState(0);
   const [adminOpen,setAdminOpen] = useState(false);
@@ -4768,7 +4772,7 @@ export default function DisplayPage() {
                   <div className="hero-title">{currentPromo.emoji} {currentPromo.title}</div>
                   <div className="hero-sub">{currentPromo.subtitle}</div>
                   <div className="hero-price-row">
-                    <div className="hero-price">{currentPromo.price}</div>
+                    <div className="hero-price">{currentPromo.price == null ? "" : formatSharedMoney(currentPromo.price)}</div>
                     <div className="hero-price-label">limited showcase offer 🎉</div>
                   </div>
                 </div>

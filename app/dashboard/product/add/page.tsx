@@ -1,5 +1,6 @@
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -1837,6 +1838,8 @@ function ProductBarcodeScanner({
 }
 
 export default function ProductCreatePage() {
+  const { formatSharedMoney } = useCurrency();
+
   const router = useRouter();
   const { data: session, status } = useSession();
   const { resolvedTheme } = useTheme();
@@ -3110,7 +3113,7 @@ export default function ProductCreatePage() {
                           {[
                             { l: "SKU", v: suggestion.sku },
                             { l: "Category", v: suggestion.category },
-                            { l: "Price", v: suggestion.suggested_price },
+                            { l: "Price", v: formatSharedMoney(Number(suggestion.suggested_price)) },
                             {
                               l: "Barcode",
                               v: suggestion.barcode.slice(0, 10) + "...",
@@ -3672,7 +3675,7 @@ export default function ProductCreatePage() {
                     {[
                       {
                         label: "Price",
-                        value: form.product_price || "0",
+                        value: formatSharedMoney(Number(form.product_price || "0")),
                         icon: CircleDollarSign,
                       },
                       {

@@ -252,6 +252,7 @@
 
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -330,8 +331,6 @@ type OrderRow = {
   total: number;
   itemDetails: OrderItemRow[];
 };
-
-function money(n: number) { return `¥${n.toLocaleString()}`; }
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 type Theme = "dark" | "light";
@@ -414,6 +413,8 @@ function KpiCard({ theme, label, value, prefix = "", sub, icon: Icon, accentClas
   theme: Theme; label: string; value: number; prefix?: string; sub: string;
   icon: React.ComponentType<{ className?: string }>; accentClass: string; delay?: number;
 }) {
+  const { formatSharedMoney } = useCurrency();
+
   const t = tk(theme);
   return (
     <motion.div
@@ -433,7 +434,7 @@ function KpiCard({ theme, label, value, prefix = "", sub, icon: Icon, accentClas
           </div>
           <div className={cn("text-[11px] font-bold uppercase tracking-widest mb-1.5", t.textSubtle)}>{label}</div>
           <div className={cn("text-[28px] font-black tracking-tight leading-none", t.text)}>
-            {prefix}<CountUp end={value} duration={1.4} separator="," />
+            {prefix === "currency" ? <CountUp end={value} duration={1.4} separator="," formattingFn={formatSharedMoney} /> : <>{prefix}<CountUp end={value} duration={1.4} separator="," /></>}
           </div>
           <div className={cn("mt-2 text-[11px] font-medium", t.textSubtle)}>{sub}</div>
         </div>
@@ -664,6 +665,9 @@ async function fetchOrdersFromApi(token?: string | null): Promise<OrderRow[]> {
 
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 export default function OrdersPage() {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const { data: session, status: sessionStatus } = useSession();
   const [query,  setQuery]  = React.useState("");
   const [tab,    setTab]    = React.useState("All");
@@ -821,7 +825,7 @@ export default function OrdersPage() {
           <KpiCard theme={theme} label="Total Orders"   value={orders.length} sub="Loaded from API"       icon={Receipt}       accentClass="bg-blue-500/18"    delay={0}    />
           <KpiCard theme={theme} label="Paid Orders"    value={paidOrders}    sub="Successfully paid"     icon={Wallet}        accentClass="bg-emerald-500/18" delay={0.07} />
           <KpiCard theme={theme} label="Pending Orders" value={pendingOrders} sub="Awaiting payment"      icon={Clock3}        accentClass="bg-amber-500/18"   delay={0.14} />
-          <KpiCard theme={theme} label="Revenue" value={revenue} prefix="¥" sub="Receipt total" icon={TrendingUp} accentClass="bg-violet-500/18" delay={0.21} />
+          <KpiCard theme={theme} label="Revenue" value={revenue} prefix="currency" sub="Receipt total" icon={TrendingUp} accentClass="bg-violet-500/18" delay={0.21} />
         </div>
 
         {/* ── QUICK STATS STRIP ─────────────────────────────────────────── */}

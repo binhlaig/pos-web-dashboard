@@ -2117,6 +2117,8 @@
 
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
+
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -2210,15 +2212,7 @@ function toNumber(value: unknown, fallback = 0) {
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : fallback;
 }
-function money(n: number) {
-  return `¥${numberFormat(n || 0)}`;
-}
-function shortMoney(n: number) {
-  if (!n) return "¥0";
-  if (n >= 1_000_000) return `¥${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `¥${(n / 1_000).toFixed(0)}k`;
-  return `¥${n}`;
-}
+
 function safeParseJson(value: unknown) {
   if (typeof value !== "string") return value;
   try {
@@ -2559,6 +2553,10 @@ stats,
     totalValue: number;
   };
 }) {
+  const { formatSharedCompactMoney } = useCurrency();
+
+  const shortMoney = formatSharedCompactMoney;
+
   const t = tk(theme);
   const items = [
     {
@@ -2644,6 +2642,10 @@ onSelect,
   selected?: boolean;
   onSelect: (p: Product) => void;
 }) {
+  const { formatSharedCompactMoney } = useCurrency();
+
+  const shortMoney = formatSharedCompactMoney;
+
   const t = tk(theme);
   const badge = stockBadge(product.productQuantityAmount);
   return (
@@ -2772,6 +2774,9 @@ disabled,
   onCheckedChange: (id: string) => void;
   onSelect: (p: Product) => void;
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const t = tk(theme);
   const badge = stockBadge(product.productQuantityAmount);
   return (
@@ -2845,6 +2850,9 @@ onDelete,
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const t = tk(theme);
   if (!product) return null;
   const badge = stockBadge(product.productQuantityAmount);
@@ -4125,6 +4133,7 @@ onPageSizeChange={(size) => {
   );
 }
 export default function ProductsPage() {
+
   return (
     <FeaturePageGuard featureKey="productsEnabled">
       <ProductsPageContent />

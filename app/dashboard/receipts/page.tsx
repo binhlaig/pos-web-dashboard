@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -104,9 +105,10 @@ const receiptNo = (receipt: Receipt) => receipt.receiptNo ?? receipt.receipt_no 
 const receiptDate = (receipt: Receipt) => new Date(receipt.createdAt ?? receipt.created_at ?? 0);
 const method = (receipt: Receipt) => (receipt.paymentMethod ?? receipt.payment_method ?? "UNKNOWN").toUpperCase();
 const items = (receipt: Receipt) => receipt.items ?? receipt.receiptItems ?? receipt.receipt_items ?? [];
-const money = (amount: number) => new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 }).format(amount);
 
 export default function ReceiptsPage() {
+  const { formatSharedMoney: money } = useCurrency();
+
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -234,8 +236,15 @@ function PaymentBadge({ payment }: { payment: string }) {
 }
 
 function ReceiptDialog({ receipt, onClose, onPrint }: { receipt: Receipt; onClose: () => void; onPrint: () => void }) {
+  const { formatSharedMoney: money } = useCurrency();
+
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl dark:bg-slate-950"><div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 dark:border-white/10 dark:bg-slate-950"><div><h2 className="font-bold text-slate-950 dark:text-white">Receipt Details</h2><p className="mt-0.5 text-xs text-blue-600">{receiptNo(receipt)}</p></div><button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} /></button></div><div className="p-5"><div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-xs dark:bg-white/[0.04]"><Detail label="Date" value={receiptDate(receipt).toLocaleString()} /><Detail label="Staff" value={receipt.staffName ?? receipt.staff_name ?? "—"} /><Detail label="Staff ID" value={String(receipt.staffId ?? receipt.staff_id ?? "—")} /><Detail label="Payment" value={method(receipt)} /></div><div className="mt-5 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10"><table className="w-full"><thead className="bg-slate-50 text-left text-[11px] text-slate-500 dark:bg-white/[0.04]"><tr><th className="px-3 py-2.5">Item</th><th className="px-3 py-2.5 text-center">Qty</th><th className="px-3 py-2.5 text-right">Amount</th></tr></thead><tbody className="divide-y divide-slate-100 text-xs dark:divide-white/[0.06]">{items(receipt).map((item, index) => { const qty = number(item.qty ?? item.quantity); return <tr key={item.id ?? index}><td className="px-3 py-3 font-medium text-slate-800 dark:text-slate-200">{item.productName ?? item.product_name ?? item.name ?? `Product #${item.productId ?? item.product_id ?? "—"}`}</td><td className="px-3 py-3 text-center text-slate-500">{qty}</td><td className="px-3 py-3 text-right font-semibold dark:text-white">{money(number(item.total) || number(item.price) * qty)}</td></tr>; })}{items(receipt).length === 0 && <tr><td colSpan={3} className="py-7 text-center text-slate-400">No item details</td></tr>}</tbody></table></div><div className="ml-auto mt-5 w-full max-w-xs space-y-2 text-sm"><Amount label="Subtotal" amount={number(receipt.subtotal)} /><Amount label="Tax" amount={number(receipt.taxAmount ?? receipt.tax_amount)} /><Amount label="Service charge" amount={number(receipt.serviceCharge ?? receipt.service_charge)} /><Amount label="Discount" amount={number(receipt.discount)} /><div className="flex justify-between border-t border-slate-200 pt-3 text-lg font-bold dark:border-white/10"><span>Total</span><span className="text-blue-600">{money(value(receipt))}</span></div>{method(receipt) === "CASH" && <><Amount label="Cash received" amount={number(receipt.cashReceived ?? receipt.cash_received ?? receipt.cashGiven ?? receipt.cash_given)} /><Amount label="Change" amount={number(receipt.change ?? receipt.changeAmount ?? receipt.change_amount)} /></>}</div></div><div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-white/10"><button type="button" onClick={onClose} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-semibold dark:border-white/10">Close</button><button type="button" onClick={onPrint} className="flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"><Printer size={16} />Reprint</button></div></div></div>;
 }
 
-function Detail({ label, value: text }: { label: string; value: string }) { return <div><p className="text-slate-400">{label}</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{text}</p></div>; }
-function Amount({ label, amount }: { label: string; amount: number }) { return <div className="flex justify-between text-slate-600 dark:text-slate-300"><span>{label}</span><span className="font-semibold">{money(amount)}</span></div>; }
+function Detail({ label, value: text }: { label: string; value: string }) {
+
+return <div><p className="text-slate-400">{label}</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{text}</p></div>; }
+function Amount({ label, amount }: { label: string; amount: number }) {
+  const { formatSharedMoney: money } = useCurrency();
+
+return <div className="flex justify-between text-slate-600 dark:text-slate-300"><span>{label}</span><span className="font-semibold">{money(amount)}</span></div>; }

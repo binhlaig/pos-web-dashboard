@@ -4,6 +4,7 @@ import * as React from "react";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "@/components/theme-provider";
 import ToasterProvider from "@/lib/Toasterprovider";
+import { CurrencyProvider } from "@/components/currency-provider";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -15,7 +16,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
-        {children}
+        <CurrencyProvider>{children}</CurrencyProvider>
       </ThemeProvider>
     </SessionProvider>
   );

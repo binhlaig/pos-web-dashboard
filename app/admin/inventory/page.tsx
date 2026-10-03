@@ -1,4 +1,5 @@
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -437,6 +438,8 @@ function PaginationButton({
 }
 
 export default function InventoryPage() {
+  const { formatSharedMoney } = useCurrency();
+
   const router = useRouter();
 
   const [products, setProducts] = React.useState<Product[]>([]);
@@ -717,7 +720,6 @@ export default function InventoryPage() {
         >
           <div>
 
-
             <div className="pb-2">
               <div
                 className={cn(
@@ -741,8 +743,6 @@ export default function InventoryPage() {
               </button>
 
             </div>
-
-
 
             <h1
               className={cn(
@@ -1170,7 +1170,7 @@ export default function InventoryPage() {
                             <span
                               className={cn("text-[13px] font-bold", t.text)}
                             >
-                              ¥{p.price.toLocaleString()}
+                              {formatSharedMoney(p.price)}
                             </span>
                           </td>
 

@@ -1,5 +1,6 @@
 
 "use client";
+import { useCurrency } from "@/components/currency-provider";
 
 import React, {
   useEffect,
@@ -135,10 +136,6 @@ function cn(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
 }
 
-function money(n: number) {
-  return Number(n || 0).toLocaleString("en-US");
-}
-
 function normalizeReceiptsResponse(data: any): ReceiptApi[] {
   if (Array.isArray(data)) return data;
 
@@ -228,6 +225,7 @@ function groupKey(d: Date, g: Granularity) {
 
 /* ─── Highlight ───────────────────────────────────────────────────── */
 function Highlight({ text, q }: { text: string; q: string }) {
+
   if (!q.trim()) return <>{text}</>;
   const i = text.toLowerCase().indexOf(q.toLowerCase());
   if (i < 0) return <>{text}</>;
@@ -284,6 +282,9 @@ type StatContentProps = {
 };
 
 function StatContent({ id, view, allRows, totalRevenue, totalQty, totalOrders }: StatContentProps) {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   if (view === "info") {
     if (id === "revenue")
       return (
@@ -291,7 +292,7 @@ function StatContent({ id, view, allRows, totalRevenue, totalQty, totalOrders }:
           <div className="text-3xl font-black tracking-tight text-amber-400 font-mono">
             {money(totalRevenue)}
           </div>
-          <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">MMK / Total</div>
+          <div className="text-xs text-zinc-500 mt-1 uppercase tracking-widest">Total</div>
         </>
       );
     if (id === "qty")
@@ -448,6 +449,9 @@ function useAggregation(sales: Sale[]) {
 const PAGE_SIZE = 20;
 
 export default function SalesByProductPage() {
+  const { formatSharedMoney } = useCurrency();
+  const money = formatSharedMoney;
+
   const { data: session, status } = useSession();
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(false);
