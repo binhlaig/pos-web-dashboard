@@ -240,8 +240,8 @@ function mapApiStaffToUi(staff: any): StaffMember {
       : imageUrl
         ? `${API_BASE_URL}${imageUrl}`
         : `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(
-            name,
-          )}&backgroundColor=b6e3f4`;
+          name,
+        )}&backgroundColor=b6e3f4`;
 
   const staffId = staff.staffId ?? staff.staff_id ?? "";
   const dbId = staff.id ?? staff.staffId ?? staff.staff_id ?? name;
@@ -342,9 +342,8 @@ function FontImport() {
 function glassCard(night: boolean, extra?: React.CSSProperties): React.CSSProperties {
   return {
     background: night ? "rgba(14,10,6,0.84)" : "rgba(255,255,255,0.90)",
-    border: `1px solid ${
-      night ? "rgba(200,137,42,0.18)" : "rgba(216,203,184,0.55)"
-    }`,
+    border: `1px solid ${night ? "rgba(200,137,42,0.18)" : "rgba(216,203,184,0.55)"
+      }`,
     boxShadow: night
       ? "0 32px 80px rgba(0,0,0,0.6), 0 0 60px rgba(200,137,42,0.07)"
       : "0 24px 64px rgba(26,21,16,0.10)",
@@ -356,9 +355,8 @@ function glassCard(night: boolean, extra?: React.CSSProperties): React.CSSProper
 function premiumInputStyle(night: boolean): React.CSSProperties {
   return {
     background: night ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.72)",
-    border: `1.5px solid ${
-      night ? "rgba(46,32,16,1)" : "rgba(216,203,184,1)"
-    }`,
+    border: `1.5px solid ${night ? "rgba(46,32,16,1)" : "rgba(216,203,184,1)"
+      }`,
     color: night ? "#e8dcc8" : "#1a1510",
     boxShadow: "none",
   };
@@ -871,13 +869,12 @@ function PremiumPill({
             ? "rgba(255,255,255,0.03)"
             : "rgba(255,255,255,0.7)",
         color: active ? "#140d05" : night ? "#bca98f" : "#7d6f60",
-        border: `1px solid ${
-          active
+        border: `1px solid ${active
             ? "rgba(212,163,82,0.65)"
             : night
               ? "rgba(255,255,255,0.05)"
               : "rgba(216,203,184,0.7)"
-        }`,
+          }`,
         boxShadow: active ? "0 10px 24px rgba(200,137,42,0.18)" : "none",
       }}
     >
@@ -921,13 +918,12 @@ function StaffCard({
       className="w-full cursor-pointer overflow-hidden rounded-[24px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8892a]/70"
       style={{
         ...glassCard(night),
-        border: `1px solid ${
-          selected
+        border: `1px solid ${selected
             ? "rgba(212,163,82,0.55)"
             : night
               ? "rgba(200,137,42,0.18)"
               : "rgba(216,203,184,0.55)"
-        }`,
+          }`,
       }}
     >
       <div className="relative p-4 sm:p-5">
@@ -1001,9 +997,8 @@ function StaffCard({
               className="rounded-[14px] p-2 text-center sm:rounded-[16px] sm:p-3"
               style={{
                 background: night ? "rgba(255,255,255,0.025)" : "rgba(255,255,255,0.65)",
-                border: `1px solid ${
-                  night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
-                }`,
+                border: `1px solid ${night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
+                  }`,
               }}
             >
               <div
@@ -1052,9 +1047,8 @@ function StaffCard({
           className="rounded-[18px] p-3"
           style={{
             background: night ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.60)",
-            border: `1px solid ${
-              night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
-            }`,
+            border: `1px solid ${night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
+              }`,
           }}
         >
           <div className="mb-2 flex items-center justify-between">
@@ -1089,9 +1083,8 @@ function StaffCard({
                 className="flex h-9 w-9 items-center justify-center rounded-full"
                 style={{
                   background: night ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.78)",
-                  border: `1px solid ${
-                    night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
-                  }`,
+                  border: `1px solid ${night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
+                    }`,
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
@@ -1163,13 +1156,12 @@ function CompactCard({
       className="w-full rounded-[22px] p-4 text-left"
       style={{
         ...glassCard(night),
-        border: `1px solid ${
-          selected
+        border: `1px solid ${selected
             ? "rgba(212,163,82,0.55)"
             : night
               ? "rgba(200,137,42,0.18)"
               : "rgba(216,203,184,0.55)"
-        }`,
+          }`,
       }}
     >
       <div className="flex items-center gap-3 sm:gap-4">
@@ -1247,9 +1239,8 @@ function DetailPanel({
       <div
         className="px-5 py-4"
         style={{
-          borderBottom: `1px solid ${
-            night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
-          }`,
+          borderBottom: `1px solid ${night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
+            }`,
         }}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -1276,9 +1267,8 @@ function DetailPanel({
             className="flex gap-1 rounded-full p-1"
             style={{
               background: night ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.6)",
-              border: `1px solid ${
-                night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
-              }`,
+              border: `1px solid ${night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
+                }`,
             }}
           >
             {(["profile", "tasks"] as const).map((tb) => (
@@ -1413,9 +1403,8 @@ function DetailPanel({
                   className="rounded-[14px] p-3"
                   style={{
                     background: night ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.6)",
-                    border: `1px solid ${
-                      night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
-                    }`,
+                    border: `1px solid ${night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
+                      }`,
                   }}
                 >
                   <div
@@ -1441,9 +1430,8 @@ function DetailPanel({
                 className="rounded-[14px] p-3 md:col-span-2"
                 style={{
                   background: night ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.6)",
-                  border: `1px solid ${
-                    night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
-                  }`,
+                  border: `1px solid ${night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
+                    }`,
                 }}
               >
                 <div
@@ -1468,9 +1456,8 @@ function DetailPanel({
                 className="rounded-[14px] p-3 md:col-span-2"
                 style={{
                   background: night ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.6)",
-                  border: `1px solid ${
-                    night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
-                  }`,
+                  border: `1px solid ${night ? "rgba(255,255,255,0.04)" : "rgba(216,203,184,0.7)"
+                    }`,
                 }}
               >
                 <div
@@ -1602,9 +1589,8 @@ function PaginationBar({
             className="rounded-full px-4 py-2 text-[12px] font-bold"
             style={{
               background: night ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.7)",
-              border: `1px solid ${
-                night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
-              }`,
+              border: `1px solid ${night ? "rgba(255,255,255,0.05)" : "rgba(216,203,184,0.7)"
+                }`,
               color: night ? "#bca98f" : "#7d6f60",
             }}
           >
@@ -1628,9 +1614,8 @@ function PaginationBar({
                 style={{
                   background: pageSize === size ? "linear-gradient(135deg,#a07020,#d4a352)" : "transparent",
                   color: pageSize === size ? "#140d05" : night ? "#bca98f" : "#7d6f60",
-                  border: `1px solid ${
-                    pageSize === size ? "rgba(212,163,82,0.65)" : "transparent"
-                  }`,
+                  border: `1px solid ${pageSize === size ? "rgba(212,163,82,0.65)" : "transparent"
+                    }`,
                 }}
               >
                 {size}
@@ -1681,9 +1666,8 @@ function PaginationBar({
                         ? "linear-gradient(135deg,#a07020,#d4a352)"
                         : "transparent",
                     color: currentPage === page ? "#140d05" : night ? "#bca98f" : "#7d6f60",
-                    border: `1px solid ${
-                      currentPage === page ? "rgba(212,163,82,0.65)" : "transparent"
-                    }`,
+                    border: `1px solid ${currentPage === page ? "rgba(212,163,82,0.65)" : "transparent"
+                      }`,
                   }}
                 >
                   {page}
@@ -2006,6 +1990,21 @@ export default function StaffPage() {
               )}
               Refresh
             </button>
+
+            <Link
+              href="/dashboard"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-[12px] font-black sm:px-5 sm:text-[13px]"
+              style={{
+                background: "linear-gradient(135deg,#a07020,#d4a352)",
+                color: "#140d05",
+                boxShadow: "0 12px 28px rgba(200,137,42,0.22)",
+              }}
+            >
+              {/* <dashboard className="h-4 w-4" /> */}
+              Dashboard
+            </Link>
+
+
 
             <button
               type="button"
