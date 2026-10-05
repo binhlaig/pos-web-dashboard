@@ -1,4 +1,5 @@
 "use client";
+import { formatDeviceLocation, deviceLocationDetail } from "@/lib/device-location-display";
 
 import * as React from "react";
 
@@ -1006,6 +1007,13 @@ type DeviceSession = {
   deviceName: string;
   ipAddress?: string | null;
   countryCode?: string | null;
+  country?: string | null;
+  district?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationAccuracy?: number | null;
+  locationSource?: "GPS" | "IP" | "NONE" | string | null;
+  locationUpdatedAt?: string | null;
   region?: string | null;
   city?: string | null;
   userAgent?: string | null;
@@ -1075,13 +1083,7 @@ function deviceDate(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleString();
 }
 
-function deviceLocation(row: DeviceSession) {
-  const parts = [row.city, row.region, row.countryCode]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
-
-  return parts.length > 0 ? parts.join(", ") : "Location unavailable";
-}
+function deviceLocation(row: DeviceSession) { return formatDeviceLocation(row); }
 
 function deviceBrowser(userAgent?: string | null) {
   if (!userAgent) return "Browser information unavailable";
@@ -1215,6 +1217,8 @@ function DevicesPanel({
               typeof row.accountId === "number" &&
               (row.ipAddress == null || typeof row.ipAddress === "string") &&
               (row.countryCode == null || typeof row.countryCode === "string") &&
+              ["country", "district", "locationSource", "locationUpdatedAt"].every(key => row[key] == null || typeof row[key] === "string") &&
+              ["latitude", "longitude", "locationAccuracy"].every(key => row[key] == null || (typeof row[key] === "number" && Number.isFinite(row[key]))) &&
               (row.region == null || typeof row.region === "string") &&
               (row.city == null || typeof row.city === "string") &&
               (row.userAgent == null || typeof row.userAgent === "string") &&
@@ -1463,10 +1467,7 @@ function DevicesPanel({
               </div>
 
               <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-xs leading-5 text-muted-foreground">
-                Location သည် backend မှ IP / Cloudflare metadata ကိုအသုံးပြုသော
-                approximate location ဖြစ်ပါသည်။ GPS exact location မဟုတ်ပါ။
-                Device ID တူသော USER / STAFF sessions များကို device တစ်ခုအဖြစ်
-                စုပြထားပါသည်။
+                Location is recorded only when location permission is granted. If unavailable, an approximate network location may be shown. Location is captured at login, not continuously tracked.
               </div>
 
               {loading ? (
@@ -1502,8 +1503,8 @@ function DevicesPanel({
                 );
 
                 const representative =
-                  rows.find((row) => row.sessionId === currentSessionId) ||
-                  rows[0];
+                  rows.find((row) => row.sessionId === currentSessionId && row.locationSource === "GPS") ||
+                  rows.find((row) => row.locationSource === "GPS") || rows[0];
 
                 return (
                   <article
@@ -1550,11 +1551,12 @@ function DevicesPanel({
                         <div className="rounded-xl border bg-muted/20 p-3">
                           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                             <MapPin className="h-3.5 w-3.5" />
-                            Approx. location
+                            Location
                           </p>
                           <p className="mt-1.5 text-sm font-semibold">
                             {deviceLocation(representative)}
                           </p>
+                          <p className="mt-1 text-xs text-muted-foreground">{deviceLocationDetail(representative)}</p>
                         </div>
 
                         <div className="rounded-xl border bg-muted/20 p-3">
