@@ -1,5 +1,9 @@
+"use client";
 
 // "use client";
+import { formatShopTime, getShopTimezone } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 
 // import React, { useEffect, useMemo, useRef, useState } from "react";
 // import { AnimatePresence, motion } from "framer-motion";
@@ -2948,16 +2952,6 @@
 //   );
 // }
 
-
-
-
-
-
-
-
-
-
-"use client";
 import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -4438,17 +4432,19 @@ function getCardVariants(effect:Effect3D){
 
 /* ── Sub-components ─────────────────────── */
 function LiveClock() {
+  const shopTimezone = useShopTimezone();
   const [time, setTime] = useState("");
   useEffect(() => {
-    const tick = () => setTime(new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"}));
+    const tick = () => setTime(formatShopTime(new Date(), getShopTimezone(), {hour:"2-digit",minute:"2-digit"}, "ja-JP"));
     tick();
     const id = window.setInterval(tick,1000);
     return ()=>window.clearInterval(id);
-  }, []);
+  }, [shopTimezone]);
   return <div className="clock">{time}</div>;
 }
 
 function SpiceRow({ level=0 }:{level?:number}) {
+  const shopTimezone = useShopTimezone();
   return (
     <div className="spice-row">
       {[0,1,2].map(i=><span key={i} className={`spice-pip ${i<level?"on":""}`}/>)}
@@ -4457,6 +4453,7 @@ function SpiceRow({ level=0 }:{level?:number}) {
 }
 
 function HighlightProgressBar({duration,progressKey}:{duration:number;progressKey:number}) {
+  const shopTimezone = useShopTimezone();
   return (
     <motion.div key={progressKey} className="highlight-progress-bar"
       initial={{width:"100%"}} animate={{width:"0%"}}
@@ -4466,6 +4463,7 @@ function HighlightProgressBar({duration,progressKey}:{duration:number;progressKe
 
 function MenuCard({item,highlight,direction,effect,itemChangeMs}:
   {item:MenuItem;highlight:boolean;direction:1|-1;effect:Effect3D;itemChangeMs:number}) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
 
   const [progressKey,setProgressKey] = useState(0);
@@ -4475,7 +4473,7 @@ function MenuCard({item,highlight,direction,effect,itemChangeMs}:
   const cardVariants = getCardVariants(effect);
   const cardRef = useRef<HTMLDivElement|null>(null);
 
-  useEffect(()=>{ if(highlight) setProgressKey(p=>p+1); },[highlight,itemChangeMs]);
+  useEffect(()=>{ if(highlight) setProgressKey(p=>p+1); },[highlight,itemChangeMs, shopTimezone]);
 
   useEffect(()=>{
     const el=cardRef.current; if(!el) return;
@@ -4489,7 +4487,7 @@ function MenuCard({item,highlight,direction,effect,itemChangeMs}:
     el.addEventListener("mousemove",handleMove);
     el.addEventListener("mouseleave",reset);
     return ()=>{ el.removeEventListener("mousemove",handleMove); el.removeEventListener("mouseleave",reset); };
-  },[]);
+  },[shopTimezone]);
 
   return (
     <motion.div ref={cardRef} variants={cardVariants as never} custom={direction}
@@ -4543,6 +4541,7 @@ function AdminOverlay({category,setCategory,autoMove,setAutoMove,autoCategory,se
    setEffect3d:React.Dispatch<React.SetStateAction<Effect3D>>;highlightIndex:number;
    setHighlightIndex:React.Dispatch<React.SetStateAction<number>>;visibleCount:number;
    onClose:()=>void;onSkipNext:()=>void}) {
+  const shopTimezone = useShopTimezone();
   const fillPct=((itemChangeMs-1500)/(12000-1500))*100;
   return(
     <div className="admin-overlay">
@@ -4643,6 +4642,7 @@ function AdminOverlay({category,setCategory,autoMove,setAutoMove,autoCategory,se
    MAIN DISPLAY PAGE
 ════════════════════════════════════════ */
 export default function DisplayPage() {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const [category,setCategory] = useState<Cat>("All");
   const [promoIndex,setPromoIndex] = useState(0);
@@ -4669,7 +4669,7 @@ export default function DisplayPage() {
   const visibleItems = useMemo(()=>{
     const f = category==="All" ? MENU_ITEMS_INITIAL : MENU_ITEMS_INITIAL.filter(i=>i.category===category);
     return category==="All" ? f.slice(0,12) : f;
-  },[category]);
+  },[category, shopTimezone]);
 
   const currentPromo = PROMOS_INITIAL[promoIndex];
 
@@ -4678,19 +4678,19 @@ export default function DisplayPage() {
     setHighlightIndex(p=>(p+1)%visibleItems.length);
   };
 
-  useEffect(()=>{ window.localStorage.setItem("tv-item-ms",String(itemChangeMs)); },[itemChangeMs]);
-  useEffect(()=>{ if(!visibleItems.length) return; setHighlightIndex(p=>Math.min(p,visibleItems.length-1)); },[visibleItems.length]);
+  useEffect(()=>{ window.localStorage.setItem("tv-item-ms",String(itemChangeMs)); },[itemChangeMs, shopTimezone]);
+  useEffect(()=>{ if(!visibleItems.length) return; setHighlightIndex(p=>Math.min(p,visibleItems.length-1)); },[visibleItems.length, shopTimezone]);
 
   useEffect(()=>{
     if(!autoMove||!visibleItems.length) return;
     const id=window.setInterval(()=>setHighlightIndex(p=>(p+1)%visibleItems.length),itemChangeMs);
     return ()=>window.clearInterval(id);
-  },[autoMove,visibleItems.length,itemChangeMs]);
+  },[autoMove,visibleItems.length,itemChangeMs, shopTimezone]);
 
   useEffect(()=>{
     const id=window.setInterval(()=>setPromoIndex(p=>(p+1)%PROMOS_INITIAL.length),6000);
     return ()=>window.clearInterval(id);
-  },[]);
+  },[shopTimezone]);
 
   useEffect(()=>{
     if(!autoCategory) return;
@@ -4698,13 +4698,13 @@ export default function DisplayPage() {
       setCategory(prev=>{ const i=CATS.indexOf(prev); const n=CATS[(i+1)%CATS.length]; setNavDirection(1); return n; });
     },18000);
     return ()=>window.clearInterval(id);
-  },[autoCategory]);
+  },[autoCategory, shopTimezone]);
 
   useEffect(()=>{
     const el=scrollRef.current; if(!el) return;
     if(category!=="All"){ el.scrollTo({top:Math.max(0,highlightIndex*(288+12)-20),behavior:"smooth"}); }
     else { el.scrollTo({top:0,behavior:"smooth"}); }
-  },[highlightIndex,category]);
+  },[highlightIndex,category, shopTimezone]);
 
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
@@ -4720,7 +4720,7 @@ export default function DisplayPage() {
     };
     window.addEventListener("keydown",onKey);
     return ()=>window.removeEventListener("keydown",onKey);
-  },[category,visibleItems.length]);
+  },[category,visibleItems.length, shopTimezone]);
 
   return (
     <div className="page">

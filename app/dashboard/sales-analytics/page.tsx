@@ -1,5 +1,8 @@
-
 "use client";
+
+import { formatShopDate, calendarDateKey, getShopTimezone, shopCalendarDate, parseTimestamp } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -281,7 +284,7 @@ function normalizeReceiptToSale(receipt: any, index: number): Sale | null {
     receipt?.timestamp ??
     null;
 
-  const date = rawDate ? new Date(rawDate) : new Date();
+  const date = shopCalendarDate(rawDate);
 
   if (Number.isNaN(date.getTime())) return null;
 
@@ -318,7 +321,7 @@ function normalizeReceiptToSale(receipt: any, index: number): Sale | null {
         receipt?.id ??
         `${date.toISOString()}-${index}`
     ),
-    created_at: date.toISOString(),
+    created_at: String(rawDate),
     total,
   };
 }
@@ -410,27 +413,27 @@ async function fetchReceiptsFromApi(token?: string | null): Promise<Sale[]> {
 
 function startOfWeek(d: Date) {
   const date = new Date(d);
-  date.setDate(date.getDate() - date.getDay());
-  date.setHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() - date.getUTCDay());
+  date.setUTCHours(0, 0, 0, 0);
   return date;
 }
 
 function toDateInputValue(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
 function startOfDay(date: Date) {
   const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
+  next.setUTCHours(0, 0, 0, 0);
   return next;
 }
 
 function endOfDay(date: Date) {
   const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
+  next.setUTCHours(23, 59, 59, 999);
   return next;
 }
 
@@ -439,31 +442,31 @@ function resolveDateRange(
   customStart: string,
   customEnd: string,
 ) {
-  const now = new Date();
+  const now = shopCalendarDate();
   let start = startOfDay(now);
   let end = endOfDay(now);
 
   if (preset === "yesterday") {
     const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
     start = startOfDay(yesterday);
     end = endOfDay(yesterday);
   }
 
   if (preset === "7d") {
     start = startOfDay(now);
-    start.setDate(start.getDate() - 6);
+    start.setUTCDate(start.getUTCDate() - 6);
     end = endOfDay(now);
   }
 
   if (preset === "month") {
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     end = endOfDay(now);
   }
 
   if (preset === "custom") {
-    const parsedStart = customStart ? new Date(`${customStart}T00:00:00`) : null;
-    const parsedEnd = customEnd ? new Date(`${customEnd}T23:59:59.999`) : null;
+    const parsedStart = customStart ? new Date(`${customStart}T00:00:00Z`) : null;
+    const parsedEnd = customEnd ? new Date(`${customEnd}T23:59:59.999Z`) : null;
 
     if (parsedStart && !Number.isNaN(parsedStart.getTime())) {
       start = parsedStart;
@@ -478,7 +481,7 @@ function resolveDateRange(
 }
 
 function isSaleInRange(sale: Sale, start: Date, end: Date) {
-  const date = new Date(sale.created_at);
+  const date = shopCalendarDate(sale.created_at);
   if (Number.isNaN(date.getTime())) return false;
   return date >= start && date <= end;
 }
@@ -516,6 +519,7 @@ function loadTheme(): ThemeMode {
 // Animated Counter
 // ────────────────────────────────────────────────────────────────────────────
 function AnimatedNumber({ value, format }: { value: number; format: (n: number) => string }) {
+  const shopTimezone = useShopTimezone();
   const ref = useRef<HTMLSpanElement>(null);
   const motionVal = useMotionValue(0);
 
@@ -528,7 +532,7 @@ function AnimatedNumber({ value, format }: { value: number; format: (n: number) 
       },
     });
     return controls.stop;
-  }, [format, motionVal, value]);
+  }, [format, motionVal, value, shopTimezone]);
 
   return <span ref={ref}>{format(0)}</span>;
 }
@@ -537,6 +541,7 @@ function AnimatedNumber({ value, format }: { value: number; format: (n: number) 
 // Mini Sparkline
 // ────────────────────────────────────────────────────────────────────────────
 function Sparkline({ data, color, id }: { data: number[]; color: string; id: string }) {
+  const shopTimezone = useShopTimezone();
 
   if (!data.length) return null;
   const max = Math.max(...data, 1);
@@ -569,6 +574,7 @@ function Sparkline({ data, color, id }: { data: number[]; color: string; id: str
 // Custom Tooltip
 // ────────────────────────────────────────────────────────────────────────────
 function CustomTooltip({ active, payload, label, metric, theme }: any) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney: money } = useCurrency();
 
   if (!active || !payload?.length) return null;
@@ -594,6 +600,7 @@ function CustomTooltip({ active, payload, label, metric, theme }: any) {
 // Sortable KPI Card
 // ────────────────────────────────────────────────────────────────────────────
 function SortableStatCard({ item, theme }: { item: StatCardItem; theme: ThemeMode }) {
+  const shopTimezone = useShopTimezone();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const Icon = item.icon;
   const isPositive = item.change >= 0;
@@ -672,17 +679,18 @@ function SortableStatCard({ item, theme }: { item: StatCardItem; theme: ThemeMod
 // Hourly Heatmap
 // ────────────────────────────────────────────────────────────────────────────
 function HourlyHeatmap({ sales, metric, theme }: { sales: Sale[]; metric: Metric; theme: ThemeMode }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney: money } = useCurrency();
 
-  const weekStart = startOfWeek(new Date());
+  const weekStart = startOfWeek(shopCalendarDate());
   const buckets = buildHourBuckets();
   const t = THEME[theme];
 
   for (const s of sales) {
-    const d = new Date(s.created_at);
+    const d = shopCalendarDate(s.created_at);
     if (d >= weekStart) {
-      buckets[d.getHours()].revenue += s.total;
-      buckets[d.getHours()].orders += 1;
+      buckets[d.getUTCHours()].revenue += s.total;
+      buckets[d.getUTCHours()].orders += 1;
     }
   }
 
@@ -718,6 +726,7 @@ function HourlyHeatmap({ sales, metric, theme }: { sales: Sale[]; metric: Metric
 // Top Hours List
 // ────────────────────────────────────────────────────────────────────────────
 function TopHours({ sales, metric, theme }: { sales: Sale[]; metric: Metric; theme: ThemeMode }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney: money } = useCurrency();
 
   const weekStart = startOfWeek(new Date());
@@ -725,10 +734,10 @@ function TopHours({ sales, metric, theme }: { sales: Sale[]; metric: Metric; the
   const t = THEME[theme];
 
   for (const s of sales) {
-    const d = new Date(s.created_at);
+    const d = shopCalendarDate(s.created_at);
     if (d >= weekStart) {
-      buckets[d.getHours()].revenue += s.total;
-      buckets[d.getHours()].orders += 1;
+      buckets[d.getUTCHours()].revenue += s.total;
+      buckets[d.getUTCHours()].orders += 1;
     }
   }
 
@@ -762,6 +771,7 @@ function TopHours({ sales, metric, theme }: { sales: Sale[]; metric: Metric; the
 // Main Component
 // ────────────────────────────────────────────────────────────────────────────
 function SalesAnalyticsDashboardContent() {
+  const shopTimezone = useShopTimezone();
   const { currencySettings, formatSharedCompactMoney , formatSharedMoney: money } = useCurrency();
 
   const { data: session, status } = useSession();
@@ -779,8 +789,8 @@ function SalesAnalyticsDashboardContent() {
   const [metric, setMetric] = useState<Metric>("revenue");
   const [sales, setSales] = useState<Sale[]>([]);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
-  const [customStartDate, setCustomStartDate] = useState(() => toDateInputValue(new Date()));
-  const [customEndDate, setCustomEndDate] = useState(() => toDateInputValue(new Date()));
+  const [customStartDate, setCustomStartDate] = useState(() => toDateInputValue(shopCalendarDate()));
+  const [customEndDate, setCustomEndDate] = useState(() => toDateInputValue(shopCalendarDate()));
   const [cardOrder, setCardOrder] = useState(["revenue", "orders", "average", "peak"]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [apiError, setApiError] = useState("");
@@ -796,7 +806,7 @@ function SalesAnalyticsDashboardContent() {
 
   const selectedDateRange = useMemo(
     () => resolveDateRange(datePreset, customStartDate, customEndDate),
-    [datePreset, customStartDate, customEndDate],
+    [datePreset, customStartDate, customEndDate, shopTimezone],
   );
 
   const filteredSales = useMemo(
@@ -804,24 +814,24 @@ function SalesAnalyticsDashboardContent() {
       sales.filter((sale) =>
         isSaleInRange(sale, selectedDateRange.start, selectedDateRange.end),
       ),
-    [sales, selectedDateRange],
+    [sales, selectedDateRange, shopTimezone],
   );
 
   const dateRangeLabel = useMemo(() => {
-    const start = selectedDateRange.start.toLocaleDateString();
-    const end = selectedDateRange.end.toLocaleDateString();
+    const start = formatShopDate(calendarDateKey(selectedDateRange.start), getShopTimezone(), undefined, undefined);
+    const end = formatShopDate(calendarDateKey(selectedDateRange.end), getShopTimezone(), undefined, undefined);
 
     if (datePreset === "today") return "Today";
     if (datePreset === "yesterday") return "Yesterday";
     if (datePreset === "7d") return "Last 7 days";
     if (datePreset === "month") return "This month";
     return start === end ? start : `${start} - ${end}`;
-  }, [datePreset, selectedDateRange]);
+  }, [datePreset, selectedDateRange, shopTimezone]);
 
   useEffect(() => {
     setTheme(loadTheme());
     setCardOrder(loadCardOrder(["revenue", "orders", "average", "peak"]));
-  }, []);
+  }, [shopTimezone]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -833,7 +843,7 @@ function SalesAnalyticsDashboardContent() {
     }
 
     void loadSalesFromApi(token);
-  }, [status, token]);
+  }, [status, token, shopTimezone]);
 
   function toggleTheme() {
     setTheme((prev) => {
@@ -888,14 +898,14 @@ function SalesAnalyticsDashboardContent() {
     const hourBuckets = buildHourBuckets();
 
     for (const s of sales) {
-      const d = new Date(s.created_at);
+      const d = shopCalendarDate(s.created_at);
       if (Number.isNaN(d.getTime())) continue;
 
       if (d >= selectedDateRange.start && d <= selectedDateRange.end) {
         thisWeekRevenue += s.total;
         thisWeekOrders++;
-        hourBuckets[d.getHours()].revenue += s.total;
-        hourBuckets[d.getHours()].orders++;
+        hourBuckets[d.getUTCHours()].revenue += s.total;
+        hourBuckets[d.getUTCHours()].orders++;
       } else if (d >= previousStart && d <= previousEnd) {
         lastWeekRevenue += s.total;
         lastWeekOrders++;
@@ -918,7 +928,7 @@ function SalesAnalyticsDashboardContent() {
       peakHour,
       hourBuckets,
     };
-  }, [sales, selectedDateRange]);
+  }, [sales, selectedDateRange, shopTimezone]);
 
   // ── Chart data ─────────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -926,8 +936,8 @@ function SalesAnalyticsDashboardContent() {
       const buckets = buildHourBuckets();
 
       for (const s of filteredSales) {
-        const d = new Date(s.created_at);
-        const h = d.getHours();
+        const d = shopCalendarDate(s.created_at);
+        const h = d.getUTCHours();
         buckets[h].revenue += s.total;
         buckets[h].orders++;
       }
@@ -942,13 +952,13 @@ function SalesAnalyticsDashboardContent() {
     const map = new Map<string, { label: string; thisWeek: number; lastWeek: number }>();
 
     for (const s of filteredSales) {
-      const d = new Date(s.created_at);
+      const d = shopCalendarDate(s.created_at);
       const key =
         granularity === "day"
           ? d.toISOString().slice(0, 10)
           : granularity === "month"
             ? d.toISOString().slice(0, 7)
-            : String(d.getFullYear());
+            : String(d.getUTCFullYear());
 
       const row = map.get(key) ?? { label: key, thisWeek: 0, lastWeek: 0 };
       row.thisWeek += metric === "revenue" ? s.total : 1;
@@ -956,7 +966,7 @@ function SalesAnalyticsDashboardContent() {
     }
 
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [filteredSales, granularity, metric]);
+  }, [filteredSales, granularity, metric, shopTimezone]);
 
   const growthPct = useMemo(() => {
     const prev = metric === "revenue" ? analytics.lastWeekRevenue : analytics.lastWeekOrders;
@@ -964,21 +974,21 @@ function SalesAnalyticsDashboardContent() {
     if (prev <= 0 && curr > 0) return 100;
     if (prev <= 0) return 0;
     return ((curr - prev) / prev) * 100;
-  }, [analytics, metric]);
+  }, [analytics, metric, shopTimezone]);
 
   const revenueGrowth = useMemo(() => {
     const { thisWeekRevenue: c, lastWeekRevenue: p } = analytics;
     if (p <= 0 && c > 0) return 100;
     if (p <= 0) return 0;
     return ((c - p) / p) * 100;
-  }, [analytics]);
+  }, [analytics, shopTimezone]);
 
   const ordersGrowth = useMemo(() => {
     const { thisWeekOrders: c, lastWeekOrders: p } = analytics;
     if (p <= 0 && c > 0) return 100;
     if (p <= 0) return 0;
     return ((c - p) / p) * 100;
-  }, [analytics]);
+  }, [analytics, shopTimezone]);
 
   const revenueSparkData = analytics.hourBuckets.filter((_, i) => i % 2 === 0).map((b) => b.revenue);
   const ordersSparkData = analytics.hourBuckets.filter((_, i) => i % 2 === 0).map((b) => b.orders);
@@ -1032,7 +1042,7 @@ function SalesAnalyticsDashboardContent() {
     ];
     const map = new Map(all.map((item) => [item.id, item]));
     return cardOrder.map((id) => map.get(id)).filter(Boolean) as StatCardItem[];
-  }, [analytics, cardOrder, revenueGrowth, ordersGrowth, revenueSparkData, ordersSparkData, currencySettings]);
+  }, [analytics, cardOrder, revenueGrowth, ordersGrowth, revenueSparkData, ordersSparkData, currencySettings, shopTimezone]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -1434,5 +1444,6 @@ function SalesAnalyticsDashboardContent() {
 }
 
 export default function SalesAnalyticsDashboard() {
+  const shopTimezone = useShopTimezone();
   return <SalesAnalyticsDashboardContent />;
 }

@@ -1,5 +1,8 @@
-
 "use client";
+
+import { shopDateFormatter, formatShopTime, getShopTimezone } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +11,7 @@ import { cn } from "@/lib/utils"; // Shadcn utility function (optional)
 import TimeClock from "./clock";
 
 export default function Time_Clock() {
+  const shopTimezone = useShopTimezone();
   const [time, setTime] = useState("");
   const [date, setDate] = useState("");
 
@@ -16,20 +20,20 @@ export default function Time_Clock() {
     const updateClock = () => {
       const now = new Date();
       setTime(
-        now.toLocaleTimeString("en-US", {
+        formatShopTime(now, getShopTimezone(), {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
-        })
+        }, "en-US")
       );
       setDate(
-        new Intl.DateTimeFormat("en-US", { dateStyle: "full" }).format(now)
+        shopDateFormatter("en-US", { dateStyle: "full" }).format(now)
       );
     };
     updateClock();
     const interval = setInterval(updateClock, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [shopTimezone]);
 
   return (
     <section className="flex size-full flex-col gap-5 text-white">

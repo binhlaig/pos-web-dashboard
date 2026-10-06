@@ -1,7 +1,11 @@
+"use client";
 
 
 
 // "use client";
+import { shopDateFormatter, shopCalendarDate } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 
 // import * as React from "react";
 // import { motion, AnimatePresence } from "framer-motion";
@@ -1227,12 +1231,6 @@
 //   );
 // }
 
-
-
-
-
-
-"use client";
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -1432,9 +1430,9 @@ function toNumber(value: unknown, fallback = 0) {
 
 function getReceiptDate(receipt: ApiReceipt) {
   const raw = receipt.createdAt || receipt.created_at || receipt.date;
-  const d = raw ? new Date(raw) : new Date();
+  const d = raw ? shopCalendarDate(raw) : new Date(NaN);
 
-  if (Number.isNaN(d.getTime())) return new Date();
+  if (Number.isNaN(d.getTime())) return new Date(NaN);
   return d;
 }
 
@@ -1509,10 +1507,10 @@ function rangeToDays(range: RangeKey) {
 
 function filterReceiptsByRange(receipts: ApiReceipt[], range: RangeKey) {
   const days = rangeToDays(range);
-  const now = new Date();
+  const now = shopCalendarDate();
   const start = new Date(now);
-  start.setDate(now.getDate() - days + 1);
-  start.setHours(0, 0, 0, 0);
+  start.setUTCDate(now.getUTCDate() - days + 1);
+  start.setUTCHours(0, 0, 0, 0);
 
   return receipts.filter((receipt) => getReceiptDate(receipt) >= start);
 }
@@ -1531,8 +1529,10 @@ function formatAgo(date: Date) {
   return `${days}d`;
 }
 
+function calendarDateKey(d: Date) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`; }
+
 function formatDayLabel(date: Date) {
-  return new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date);
+  return shopDateFormatter("en-US", { weekday: "short" }, "UTC").format(date);
 }
 
 function buildSalesTrend(receipts: ApiReceipt[], range: RangeKey): SalesPoint[] {
@@ -1548,7 +1548,7 @@ function buildSalesTrend(receipts: ApiReceipt[], range: RangeKey): SalesPoint[] 
 
     receipts.forEach((receipt) => {
       const d = getReceiptDate(receipt);
-      const h = d.getHours();
+      const h = d.getUTCHours();
       const bucket = hours.reduce((best, item) => {
         return Math.abs(item.key - h) < Math.abs(best.key - h) ? item : best;
       }, hours[0]);
@@ -1569,12 +1569,12 @@ function buildSalesTrend(receipts: ApiReceipt[], range: RangeKey): SalesPoint[] 
 
   const buckets = Array.from({ length: days }, (_, index) => {
     const d = new Date(now);
-    d.setDate(now.getDate() - (days - 1 - index));
-    d.setHours(0, 0, 0, 0);
+    d.setUTCDate(now.getUTCDate() - (days - 1 - index));
+    d.setUTCHours(0, 0, 0, 0);
 
     return {
-      key: d.toISOString().slice(0, 10),
-      day: days <= 7 ? formatDayLabel(d) : `${d.getMonth() + 1}/${d.getDate()}`,
+      key: calendarDateKey(d),
+      day: days <= 7 ? formatDayLabel(d) : `${d.getUTCMonth() + 1}/${d.getUTCDate()}`,
       sales: 0,
       prev: 0,
       target: 0,
@@ -1583,7 +1583,7 @@ function buildSalesTrend(receipts: ApiReceipt[], range: RangeKey): SalesPoint[] 
 
   receipts.forEach((receipt) => {
     const d = getReceiptDate(receipt);
-    const key = d.toISOString().slice(0, 10);
+    const key = calendarDateKey(d);
     const bucket = buckets.find((item) => item.key === key);
 
     if (bucket) bucket.sales += getReceiptTotal(receipt);
@@ -1605,7 +1605,7 @@ function buildHourlyFlow(receipts: ApiReceipt[]): HourPoint[] {
 
   receipts.forEach((receipt) => {
     const d = getReceiptDate(receipt);
-    const h = d.getHours();
+    const h = d.getUTCHours();
     const bucket = buckets.find((item) => Number(item.h) === h);
 
     if (bucket) bucket.v += getReceiptTotal(receipt);
@@ -1768,6 +1768,7 @@ function calcAnalytics(receipts: ApiReceipt[]) {
 /* ─── THEME ───────────────────────────────────────────────────────────────── */
 
 function FontImport() {
+  const shopTimezone = useShopTimezone();
   return (
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;700;900&display=swap');
@@ -1867,6 +1868,7 @@ function LanternMark({
   size?: number;
   glow?: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   const h = size * 1.5;
 
   return (
@@ -1933,6 +1935,7 @@ function LanternToggle({
   dark: boolean;
   onToggle: () => void;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <motion.button
       type="button"
@@ -1981,6 +1984,7 @@ function LanternToggle({
 }
 
 function NightParticles() {
+  const shopTimezone = useShopTimezone();
   const particles = Array.from({ length: 28 }).map((_, i) => ({
     id: i,
     left: `${(i * 31 + 9) % 100}%`,
@@ -2017,6 +2021,7 @@ function ChartTip({
   theme,
   accent = "#60a5fa",
 }: TooltipProps<number, string> & { theme: Theme; accent?: string }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
 
   const t = tk(theme);
@@ -2066,6 +2071,7 @@ function Card({
   className?: string;
   theme: Theme;
 }) {
+  const shopTimezone = useShopTimezone();
   const t = tk(theme);
 
   return (
@@ -2103,6 +2109,7 @@ function GlowAreaChartCard({
   compareName?: string;
   height?: number;
 }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedCompactMoney } = useCurrency();
 
   const t = tk(theme);
@@ -2213,6 +2220,7 @@ function GlowBarChartCard({
   accent: string;
   height?: number;
 }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedCompactMoney } = useCurrency();
 
   const t = tk(theme);
@@ -2291,6 +2299,7 @@ function KpiCard({
   barTo: string;
   delay?: number;
 }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
 
   const t = tk(theme);
@@ -2374,6 +2383,7 @@ function Segmented({
   onChange: (v: RangeKey) => void;
   theme: Theme;
 }) {
+  const shopTimezone = useShopTimezone();
   const t = tk(theme);
 
   return (
@@ -2415,6 +2425,7 @@ async function readErrorMessage(res: Response) {
 }
 
 export default function AnalyticsPage() {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney, formatSharedCompactMoney } = useCurrency();
 
   const { data: session, status: sessionStatus } = useSession();
@@ -2497,7 +2508,7 @@ export default function AnalyticsPage() {
         setRefreshing(false);
       }
     },
-    [session, sessionStatus],
+    [session, sessionStatus, shopTimezone],
   );
 
   React.useEffect(() => {
@@ -2514,46 +2525,46 @@ export default function AnalyticsPage() {
       setLoading(false);
       setError("Please sign in again.");
     }
-  }, [fetchReceipts, session, sessionStatus]);
+  }, [fetchReceipts, session, sessionStatus, shopTimezone]);
 
   const rangedReceipts = React.useMemo(
     () => filterReceiptsByRange(receipts, range),
-    [receipts, range],
+    [receipts, range, shopTimezone],
   );
 
   const analytics = React.useMemo(
     () => calcAnalytics(rangedReceipts),
-    [rangedReceipts],
+    [rangedReceipts, shopTimezone],
   );
 
   const salesTrend = React.useMemo(
     () => buildSalesTrend(rangedReceipts, range),
-    [rangedReceipts, range],
+    [rangedReceipts, range, shopTimezone],
   );
 
   const hourlyFlow = React.useMemo(
     () => buildHourlyFlow(rangedReceipts),
-    [rangedReceipts],
+    [rangedReceipts, shopTimezone],
   );
 
   const branchData = React.useMemo(
     () => buildBranchData(rangedReceipts),
-    [rangedReceipts],
+    [rangedReceipts, shopTimezone],
   );
 
   const categoryMix = React.useMemo(
     () => buildCategoryMix(rangedReceipts),
-    [rangedReceipts],
+    [rangedReceipts, shopTimezone],
   );
 
   const topProducts = React.useMemo(
     () => buildTopProducts(rangedReceipts),
-    [rangedReceipts],
+    [rangedReceipts, shopTimezone],
   );
 
   const recentTx = React.useMemo(
     () => buildRecentTransactions(rangedReceipts),
-    [rangedReceipts],
+    [rangedReceipts, shopTimezone],
   );
 
   const filtered = React.useMemo(() => {
@@ -2567,7 +2578,7 @@ export default function AnalyticsPage() {
         tx.id.toLowerCase().includes(q) ||
         tx.branch.toLowerCase().includes(q),
     );
-  }, [recentTx, search]);
+  }, [recentTx, search, shopTimezone]);
   const router = useRouter();
 
   return (

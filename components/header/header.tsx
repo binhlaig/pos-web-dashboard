@@ -1,8 +1,8 @@
-
-
-
-
 "use client";
+
+import { shopDateFormatter } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
@@ -111,6 +111,7 @@ function UserDropdown({
   shopCode?: string;
   onLogout: () => void;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -201,6 +202,7 @@ function UserDropdown({
 }
 
 export default function Header() {
+  const shopTimezone = useShopTimezone();
   const { data, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -227,7 +229,7 @@ export default function Header() {
     } catch {
       setSyncedUser(null);
     }
-  }, []);
+  }, [shopTimezone]);
 
   const mergedUser = {
     ...syncedUser,
@@ -275,7 +277,7 @@ export default function Header() {
 
       doLogout();
     }
-  }, [mounted, status, sessionError, router]);
+  }, [mounted, status, sessionError, router, shopTimezone]);
 
   const onLogout = useMemo(
     () => async () => {
@@ -284,11 +286,11 @@ export default function Header() {
       await signOut({ redirect: false });
       router.replace("/Sign_in");
     },
-    [router]
+    [router, shopTimezone]
   );
 
 function formatShortDate(d: Date) {
-  return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(d);
+  return shopDateFormatter("en-US", { weekday: "short", month: "short", day: "numeric" }).format(d);
 }
 
 
@@ -299,7 +301,7 @@ function getGreeting(h: number) {
 }
 
 function formatClock(d: Date) {
-  return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" }).format(d);
+  return shopDateFormatter("en-US", { hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
   const pageTitle = useMemo(() => {
@@ -307,7 +309,7 @@ function formatClock(d: Date) {
     if (pathname?.startsWith("/settings/profile")) return "Profile";
     if (pathname?.startsWith("/dashboard")) return "Dashboard";
     return "Supermarket System";
-  }, [pathname]);
+  }, [pathname, shopTimezone]);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800 bg-white/85 dark:bg-slate-950/80 backdrop-blur-xl">

@@ -1,4 +1,7 @@
+"use client";
 // "use client";
+import { formatShopDateTime } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
 
 // import * as React from "react";
 // import {
@@ -115,6 +118,7 @@
 // }
 
 // export default function OrdersPage() {
+  useShopTimezone();
 //   const [query, setQuery] = React.useState("");
 
 //   const filtered = React.useMemo(() => {
@@ -249,9 +253,6 @@
 //   );
 // }
 
-
-
-"use client";
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -496,17 +497,7 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function formatOrderDate(value: unknown) {
-  const date = value ? new Date(String(value)) : new Date();
-  if (Number.isNaN(date.getTime())) return String(value || "");
-
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mi = String(date.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-}
+function formatOrderDate(value: unknown) { return formatShopDateTime(value ? String(value) : null); }
 
 function normalizePaymentStatus(value: unknown): PayStatus {
   const status = String(value || "").toUpperCase();
@@ -593,7 +584,7 @@ function normalizeReceiptToOrder(receipt: any, index: number): OrderRow | null {
     items: Math.max(0, toNumber(receipt?.itemCount ?? receipt?.item_count ?? receipt?.totalItems ?? itemDetails.length)),
     paymentStatus: normalizePaymentStatus(receipt?.paymentStatus ?? receipt?.payment_status ?? receipt?.status),
     orderStatus: normalizeOrderStatus(receipt?.orderStatus ?? receipt?.order_status ?? receipt?.status),
-    createdAt: formatOrderDate(
+    createdAt: String(
       receipt?.createdAt ??
         receipt?.created_at ??
         receipt?.createdDate ??
@@ -1001,7 +992,7 @@ export default function OrdersPage() {
                           {/* Date */}
                           <td className="px-4 py-4">
                             <div className={cn("text-[12px]", t.textSubtle)}>
-                              <div>{order.createdAt.split(" ")[0]}</div>
+                              <div>{formatOrderDate(order.createdAt).split(" ")[0]}</div>
                               <div className="mt-0.5 font-semibold">{order.createdAt.split(" ")[1]}</div>
                             </div>
                           </td>
@@ -1178,7 +1169,7 @@ export default function OrdersPage() {
                   {[
                     ["Customer", selectedOrder.customer],
                     ["Branch", selectedOrder.branch],
-                    ["Created", selectedOrder.createdAt],
+                    ["Created", formatOrderDate(selectedOrder.createdAt)],
                     ["Total", money(selectedOrder.total)],
                   ].map(([label, value]) => (
                     <div key={label} className={cn("rounded-2xl border p-4", t.card)}>

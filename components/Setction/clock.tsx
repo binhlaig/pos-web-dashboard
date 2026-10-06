@@ -1,4 +1,8 @@
 "use client";
+
+import { shopDateFormatter, getShopTimezone, shopCalendarDate, shopDateKey } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -46,7 +50,7 @@ interface Shift {
 
 // ===== Helpers =====
 const LS_KEY = "employment_timecard_v1";
-const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 
 const fmtHM = (ms: number) => {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -55,14 +59,9 @@ const fmtHM = (ms: number) => {
   const s = totalSec % 60;
   return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 };
-const toYmd = (d = new Date()) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,"0");
-  const day = String(d.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
-};
+const toYmd = (d = new Date()) => shopDateKey(d);
 const prettyTime = (t: number) =>
-  new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(t);
+  shopDateFormatter(undefined, { hour: "2-digit", minute: "2-digit" }).format(t);
 const calcBreakMs = (sh: Shift, now = Date.now()) =>
   sh.breaks.reduce((acc, b) => acc + ((b.end ?? now) - b.start), 0);
 const calcShiftMs = (sh: Shift, now = Date.now()) => {
@@ -71,10 +70,10 @@ const calcShiftMs = (sh: Shift, now = Date.now()) => {
 };
 const isOnBreak = (sh?: Shift) => !!sh && sh.breaks.some(b => b.end === undefined);
 const weekStart = (d = new Date()) => {
-  const n = new Date(d);
-  const day = (n.getDay() + 6) % 7; // Mon=0
-  n.setHours(0,0,0,0);
-  n.setDate(n.getDate() - day);
+  const n = shopCalendarDate(d);
+  const day = (n.getUTCDay() + 6) % 7; // Mon=0
+  n.setUTCHours(0,0,0,0);
+  n.setUTCDate(n.getUTCDate() - day);
   return n;
 };
 
@@ -91,6 +90,8 @@ const saveShifts = (list: Shift[]) => {
 
 // ===== Page =====
 export default function Page() {
+  const shopTimezone = useShopTimezone();
+  const tz = shopTimezone;
   const { formatSharedMoney } = useCurrency();
 
   const [now, setNow] = useState(new Date());
@@ -101,41 +102,41 @@ export default function Page() {
   const prefersReduced = useReducedMotion();
 
   // tick
-  useEffect(() => { const id = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(id); }, []);
+  useEffect(() => { const id = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(id); }, [shopTimezone]);
   // storage
-  useEffect(() => setShifts(loadShifts()), []);
-  useEffect(() => saveShifts(shifts), [shifts]);
+  useEffect(() => setShifts(loadShifts()), [shopTimezone]);
+  useEffect(() => saveShifts(shifts), [shifts, shopTimezone]);
 
-  const activeShift = useMemo(() => shifts.find(s => !s.clockOut), [shifts]);
-  const todayShifts = useMemo(() => shifts.filter(s => s.date === toYmd(now)), [shifts, now]);
+  const activeShift = useMemo(() => shifts.find(s => !s.clockOut), [shifts, shopTimezone]);
+  const todayShifts = useMemo(() => shifts.filter(s => s.date === toYmd(now)), [shifts, now, shopTimezone]);
 
   const weekRange = useMemo(() => {
     const ws = weekStart(now);
-    const we = new Date(ws); we.setDate(ws.getDate()+6);
+    const we = new Date(ws); we.setUTCDate(ws.getUTCDate()+6);
     return { ws, we };
-  }, [now]);
+  }, [now, shopTimezone]);
 
   const weeklyShifts = useMemo(() => {
     const { ws, we } = weekRange;
     return shifts.filter(s => {
-      const d = new Date(s.date + "T00:00:00");
+      const d = new Date(s.date + "T00:00:00Z");
       return d >= ws && d <= we;
     });
-  }, [shifts, weekRange]);
+  }, [shifts, weekRange, shopTimezone]);
 
   const todayTotalMs = useMemo(
     () => todayShifts.reduce((acc, s) => acc + calcShiftMs(s, +now), 0),
-    [todayShifts, now]
+    [todayShifts, now, shopTimezone]
   );
   const weekTotalMs = useMemo(
     () => weeklyShifts.reduce((acc, s) => acc + calcShiftMs(s, +now), 0),
-    [weeklyShifts, now]
+    [weeklyShifts, now, shopTimezone]
   );
 
   const earnings = useMemo(() => {
     const rate = parseFloat(hourlyRate);
     return Number.isFinite(rate) ? (weekTotalMs / 3600000) * rate : undefined;
-  }, [weekTotalMs, hourlyRate]);
+  }, [weekTotalMs, hourlyRate, shopTimezone]);
 
   // ===== Actions =====
   const clockIn = () => {
@@ -209,9 +210,9 @@ export default function Page() {
   const activeBreakMs = isActive ? calcBreakMs(activeShift, +now) : 0;
 
   const heroTime = useMemo(() =>
-    new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(now), [now]);
+    shopDateFormatter(undefined, { hour: "2-digit", minute: "2-digit" }).format(now), [now, shopTimezone]);
   const heroDate = useMemo(() =>
-    new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(now), [now]);
+    shopDateFormatter(undefined, { dateStyle: "full" }).format(now), [now, shopTimezone]);
 
   return (
     <section className="relative min-h-screen overflow-hidden bg-white text-slate-900 dark:bg-black dark:text-neutral-200">
@@ -517,6 +518,7 @@ export default function Page() {
 
 /* ===== UI bits ===== */
 function GridBackground() {
+  const shopTimezone = useShopTimezone();
   return <div className="grid-bg pointer-events-none absolute inset-0" aria-hidden="true" />;
 }
 
@@ -527,6 +529,7 @@ function ScanLines({
   dir?: "ltr" | "rtl" | "ttb" | "btt";
   className?: string;
 }) {
+  const shopTimezone = useShopTimezone();
   const base =
     dir === "rtl" ? "scan-rtl" : dir === "ttb" ? "scan-ttb" : dir === "btt" ? "scan-btt" : "scan-ltr";
   return (
@@ -539,6 +542,7 @@ function ScanLines({
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 text-center dark:border-white/10 dark:bg-black/30">
       <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-white/50">{label}</p>
@@ -548,6 +552,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function EmptyState({ label }: { label: string }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div className="flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-sm text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-white/60">
       {label}
@@ -556,6 +561,7 @@ function EmptyState({ label }: { label: string }) {
 }
 
 function EntriesTable({ shifts, now }: { shifts: Shift[]; now: number }) {
+  const shopTimezone = useShopTimezone();
 
   if (shifts.length === 0) return <EmptyState label="No entries" />;
   return (

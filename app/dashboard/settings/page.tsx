@@ -1,4 +1,9 @@
 "use client";
+
+import { ShopTimezoneSettings } from "@/components/shop-timezone-settings";
+import { formatShopDateTime, getShopTimezone } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 import { formatDeviceLocation, deviceLocationDetail } from "@/lib/device-location-display";
 
 import * as React from "react";
@@ -286,6 +291,7 @@ function ViewOnlyRow({
   type?: RowType;
 
 }) {
+  const shopTimezone = useShopTimezone();
 
   const [imageFailed, setImageFailed] = React.useState(false);
 
@@ -400,6 +406,7 @@ function ReadOnlyDialog({
   onClose: () => void;
 
 }) {
+  const shopTimezone = useShopTimezone();
 
   if (!section) return null;
 
@@ -1080,7 +1087,7 @@ function displayDeviceName(
 function deviceDate(value: string | null | undefined) {
   if (!value) return "Not available";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? "Not available" : formatShopDateTime(date, getShopTimezone(), undefined, undefined);
 }
 
 function deviceLocation(row: DeviceSession) { return formatDeviceLocation(row); }
@@ -1115,6 +1122,7 @@ function DevicesPanel({
   maxDevices: unknown;
   refreshKey: number;
 }) {
+  const shopTimezone = useShopTimezone();
   const [sessions, setSessions] = React.useState<DeviceSession[] | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -1152,7 +1160,7 @@ function DevicesPanel({
       sessionId: typeof context.sid === "string" ? context.sid : "",
       base,
     };
-  }, []);
+  }, [shopTimezone]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -1247,7 +1255,7 @@ function DevicesPanel({
 
     void load();
     return () => controller.abort();
-  }, [getDeviceApiContext, refreshKey, reload]);
+  }, [getDeviceApiContext, refreshKey, reload, shopTimezone]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -1265,7 +1273,7 @@ function DevicesPanel({
       document.body.style.overflow = before;
       document.removeEventListener("keydown", keydown);
     };
-  }, [open]);
+  }, [open, shopTimezone]);
 
   const devices = React.useMemo(() => {
     const groups = new Map<string, DeviceSession[]>();
@@ -1282,7 +1290,7 @@ function DevicesPanel({
         Number(b === currentDeviceId) -
           Number(a === currentDeviceId) || a.localeCompare(b)
     );
-  }, [sessions, currentDeviceId]);
+  }, [sessions, currentDeviceId, shopTimezone]);
 
   const limit =
     maxDevices == null || maxDevices === "" ? null : Number(maxDevices);
@@ -1690,6 +1698,7 @@ function DevicesPanel({
 
 
 export default function DashboardSettingsPage() {
+  const shopTimezone = useShopTimezone();
 
   const [data, setData] = React.useState<PageData | null>(null);
 
@@ -1837,7 +1846,7 @@ export default function DashboardSettingsPage() {
 
     loadSettings();
 
-  }, []);
+  }, [shopTimezone]);
 
   const role = data?.profile.role || storageProfile().role || "Staff";
 
@@ -1867,7 +1876,7 @@ export default function DashboardSettingsPage() {
 
                   <Sparkles className="h-3.5 w-3.5" />
 
-                  View Only Settings
+                  Shop Settings
 
                 </div>
 
@@ -1903,6 +1912,7 @@ export default function DashboardSettingsPage() {
 
           </div>
 
+          <ShopTimezoneSettings canEdit={String(role).toUpperCase() === "ADMIN"} />
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
 
             {[

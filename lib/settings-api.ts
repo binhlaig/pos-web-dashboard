@@ -11,6 +11,7 @@ export type ProfileSettings = {
 };
 
 export type ShopSettings = {
+  timezone?: string | null;
   shopName?: string | null;
   address?: string | null;
   phone?: string | null;

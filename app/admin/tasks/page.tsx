@@ -1,5 +1,9 @@
 "use client";
 
+import { formatShopDate, getShopTimezone } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
+
 import * as React from "react";
 import { useSession, signOut } from "next-auth/react";
 import {
@@ -435,6 +439,7 @@ function Badge({
   bg: string;
   border: string;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <span
       className="status-pill"
@@ -470,6 +475,7 @@ function DraggableTaskChip({
   onDelete: () => void;
   actionLoading?: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
     data: { task },
@@ -694,6 +700,7 @@ function DraggableTaskChip({
 /* Task Ghost                                                                */
 /* ────────────────────────────────────────────────────────────────────────── */
 function TaskGhost({ task, allStaff }: { task: Task; allStaff: Staff[] }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div style={{ width: 320, transform: "rotate(2deg)" }}>
       <DraggableTaskChip
@@ -723,6 +730,7 @@ function DroppableStaffCard({
   onStatusChange: (id: string, s: TaskStatus) => void;
   actionTaskId: string | null;
 }) {
+  const shopTimezone = useShopTimezone();
   const { setNodeRef } = useDroppable({
     id: `staff-${staff.id}`,
     data: { staffId: staff.id },
@@ -1154,6 +1162,7 @@ function Pagination({
   onChange: (page: number) => void;
   label: string;
 }) {
+  const shopTimezone = useShopTimezone();
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   return (
@@ -1249,6 +1258,7 @@ function CreateModal({
   onSubmit: (task: Omit<Task, "id">) => Promise<void> | void;
   submitting: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   const [form, setForm] = React.useState<Omit<Task, "id">>({
     title: "",
     description: "",
@@ -1271,7 +1281,7 @@ function CreateModal({
         assignedTo: null,
       });
     }
-  }, [open]);
+  }, [open, shopTimezone]);
 
   if (!open) return null;
 
@@ -1481,6 +1491,7 @@ function CreateModal({
 /* Main App                                                                  */
 /* ────────────────────────────────────────────────────────────────────────── */
 export default function TasksPage() {
+  const shopTimezone = useShopTimezone();
   const { data: session, status: sessionStatus } = useSession();
 
   const [tasks, setTasks] = React.useState<Task[]>([]);
@@ -1510,7 +1521,7 @@ export default function TasksPage() {
   const handleUnauthorized = React.useCallback(async () => {
     setPageError("Session expired. Please sign in again.");
     await signOut({ callbackUrl: "/sign_in" });
-  }, []);
+  }, [shopTimezone]);
 
   const fetchTasks = React.useCallback(async () => {
     if (!accessToken) {
@@ -1550,7 +1561,7 @@ export default function TasksPage() {
     } finally {
       setTasksLoading(false);
     }
-  }, [accessToken, handleUnauthorized]);
+  }, [accessToken, handleUnauthorized, shopTimezone]);
 
   const fetchStaff = React.useCallback(
     async (refresh = false) => {
@@ -1596,13 +1607,13 @@ export default function TasksPage() {
         setRefreshing(false);
       }
     },
-    [accessToken, sessionStatus, handleUnauthorized],
+    [accessToken, sessionStatus, handleUnauthorized, shopTimezone],
   );
 
   const reloadAll = React.useCallback(async () => {
     setPageError(null);
     await Promise.all([fetchTasks(), fetchStaff(true)]);
-  }, [fetchTasks, fetchStaff]);
+  }, [fetchTasks, fetchStaff, shopTimezone]);
 
   React.useEffect(() => {
     if (sessionStatus === "authenticated" && accessToken) {
@@ -1616,7 +1627,7 @@ export default function TasksPage() {
       setStaffLoading(false);
       setPageError("Please sign in again.");
     }
-  }, [sessionStatus, accessToken, fetchTasks, fetchStaff]);
+  }, [sessionStatus, accessToken, fetchTasks, fetchStaff, shopTimezone]);
 
   const poolTasks = React.useMemo(() => {
     const q = poolQuery.trim().toLowerCase();
@@ -1628,7 +1639,7 @@ export default function TasksPage() {
           t.subject.toLowerCase().includes(q) ||
           t.description.toLowerCase().includes(q)),
     );
-  }, [tasks, poolQuery]);
+  }, [tasks, poolQuery, shopTimezone]);
 
   const filteredStaff = React.useMemo(() => {
     const q = staffQuery.trim().toLowerCase();
@@ -1643,7 +1654,7 @@ export default function TasksPage() {
           (s.email || "").toLowerCase().includes(q) ||
           (s.phone || "").toLowerCase().includes(q)),
     );
-  }, [staff, staffQuery, attFilter]);
+  }, [staff, staffQuery, attFilter, shopTimezone]);
 
   const pagedStaff = filteredStaff.slice(
     (staffPage - 1) * PER_PAGE,
@@ -1652,7 +1663,7 @@ export default function TasksPage() {
 
   React.useEffect(() => {
     setStaffPage(1);
-  }, [staffQuery, attFilter]);
+  }, [staffQuery, attFilter, shopTimezone]);
 
   const getStaffTasks = (id: string) =>
     tasks.filter((t) => t.assignedTo === id);
@@ -1860,12 +1871,12 @@ export default function TasksPage() {
     absent: staff.filter((s) => s.attendance === "Absent").length,
   };
 
-  const today = new Date().toLocaleDateString("en-GB", {
+  const today = formatShopDate(new Date(), getShopTimezone(), {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
-  });
+  }, "en-GB");
 
   const onDragStart = (e: DragStartEvent) => {
     setActiveTask(e.active.data.current?.task ?? null);

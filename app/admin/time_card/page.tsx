@@ -1,4 +1,8 @@
 "use client";
+
+import { shopDateFormatter, formatShopTime, getShopTimezone, shopDateKey, shopCalendarDate, parseTimestamp, shopLocalInput, shopLocalInputToInstant } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -76,6 +80,8 @@ export interface Shift {
   employeeId: string;
   date: string;
   clockIn: number;
+  clockInRaw?: string;
+  clockOutRaw?: string;
   clockOut?: number;
   breaks: BreakSpan[];
   note?: string;
@@ -103,30 +109,30 @@ type Staff = {
 };
 
 /* ===== helpers ===== */
-const toYmd = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const toYmd = (d = new Date()) => shopDateKey(d);
 
 export const prettyHM = (ms: number) => {
+  if (!Number.isFinite(ms)) return "-";
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 };
 
-export const prettyClock = (t: number | Date) =>
-  new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" }).format(t);
+export const prettyClock = (t: number | Date, raw?: string) =>
+  formatShopTime(raw && !Number.isFinite(Number(t)) ? raw : t, getShopTimezone(), {hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
 
 export const breakMs = (sh: Shift, now = Date.now()) =>
   sh.breaks.reduce((a, b) => a + ((b.end ?? now) - b.start), 0);
 
 export const workMs = (sh: Shift, now = Date.now()) =>
-  Math.max(0, (sh.clockOut ?? now) - sh.clockIn - breakMs(sh, now));
+  Number.isFinite(sh.clockIn) ? Math.max(0, (sh.clockOut ?? now) - sh.clockIn - breakMs(sh, now)) : NaN;
 
 export const onBreak = (sh?: Shift) => !!sh && sh.breaks.some((b) => b.end === undefined);
 
 const weekStart = (d = new Date()) => {
-  const n = new Date(d);
-  const day = (n.getDay() + 6) % 7;
-  n.setHours(0, 0, 0, 0);
-  n.setDate(n.getDate() - day);
+  const n = shopCalendarDate(d);
+  const day = (n.getUTCDay() + 6) % 7;
+  n.setUTCHours(0, 0, 0, 0);
+  n.setUTCDate(n.getUTCDate() - day);
   return n;
 };
 
@@ -135,14 +141,16 @@ function mapApiShift(s: ApiShift): Shift {
     id: String(s.id),
     employeeId: String(s.employeeId),
     date: s.workDate,
-    clockIn: new Date(s.clockInTime).getTime(),
-    clockOut: s.clockOutTime ? new Date(s.clockOutTime).getTime() : undefined,
+    clockIn: parseTimestamp(s.clockInTime).getTime(),
+    clockInRaw: s.clockInTime,
+    clockOutRaw: s.clockOutTime ?? undefined,
+    clockOut: s.clockOutTime ? parseTimestamp(s.clockOutTime).getTime() : undefined,
     note: s.note ?? "",
     shopId: s.shopId != null ? String(s.shopId) : "",
     shopCode: s.shopCode ?? "",
     breaks: (s.breaks ?? []).map((b) => ({
-      start: new Date(b.startTime).getTime(),
-      end: b.endTime ? new Date(b.endTime).getTime() : undefined,
+      start: parseTimestamp(b.startTime).getTime(),
+      end: b.endTime ? parseTimestamp(b.endTime).getTime() : undefined,
     })),
   };
 }
@@ -170,15 +178,12 @@ function downloadText(text: string, filename: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-function toLocalInput(ms: number) {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-function fromLocalInput(v: string) { return new Date(v).getTime(); }
+function toLocalInput(ms: number) { return shopLocalInput(ms); }
+function fromLocalInput(v: string) { return shopLocalInputToInstant(v); }
 
 /* ===== Lantern SVG ===== */
 function LanternMark({ size = 34, glow = false }: { size?: number; glow?: boolean }) {
+  const shopTimezone = useShopTimezone();
   const h = size * 1.5;
   return (
     <svg width={size} height={h} viewBox="0 0 32 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -221,6 +226,7 @@ function LanternMark({ size = 34, glow = false }: { size?: number; glow?: boolea
 
 /* ===== ThemeToggle ===== */
 function ThemeToggle() {
+  const shopTimezone = useShopTimezone();
   const mounted = useMounted();
   const { resolvedTheme, setTheme } = useTheme();
   if (!mounted) return <div className="h-10 w-14 rounded-2xl" />;
@@ -251,6 +257,7 @@ function ActionButton({ onClick, disabled, icon: Icon, label, intent = "default"
   onClick: () => void; disabled?: boolean; icon: React.ComponentType<any>;
   label: string; intent?: "default" | "primary" | "danger";
 }) {
+  const shopTimezone = useShopTimezone();
   const base = intent === "primary"
     ? "border border-[rgba(212,163,82,0.45)] bg-gradient-to-r from-[#a07020] to-[#d4a352] text-[#140d05] hover:from-[#b37a22] hover:to-[#deb25a] disabled:opacity-50"
     : intent === "danger"
@@ -265,6 +272,7 @@ function ActionButton({ onClick, disabled, icon: Icon, label, intent = "default"
 
 /* ===== SessionPill ===== */
 function SessionPill({ active, now }: { active?: Shift; now: number }) {
+  const shopTimezone = useShopTimezone();
   const net = active ? workMs(active, now) : 0;
   const br = active ? breakMs(active, now) : 0;
   const total = net + br;
@@ -280,7 +288,7 @@ function SessionPill({ active, now }: { active?: Shift; now: number }) {
           </Badge>
           {active && (
             <span className="text-xs text-slate-500 dark:text-[#8a7a65]">
-              Started {prettyClock(active.clockIn)}
+              Started {prettyClock(active.clockIn, active.clockInRaw)}
             </span>
           )}
         </div>
@@ -304,6 +312,7 @@ function SessionPill({ active, now }: { active?: Shift; now: number }) {
 
 /* ===== EmptyState ===== */
 function EmptyState({ label }: { label: string }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div className="flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-sm text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-white/60">
       {label}
@@ -313,6 +322,7 @@ function EmptyState({ label }: { label: string }) {
 
 /* ===== InsightsChip ===== */
 function InsightsChip({ icon: Icon, label, value }: { icon: React.ComponentType<any>; label: string; value: string }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 dark:border-white/10 dark:bg-white/5">
       <Icon className="h-4 w-4 text-sky-600 dark:text-[#c8892a]" />
@@ -324,6 +334,7 @@ function InsightsChip({ icon: Icon, label, value }: { icon: React.ComponentType<
 
 /* ===== UtilizationRing ===== */
 function UtilizationRing({ worked, breakPct }: { worked: number; breakPct: number }) {
+  const shopTimezone = useShopTimezone();
   const size = 88, stroke = 8;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
@@ -361,6 +372,7 @@ function EntriesTable({ shifts, now, getEmployee, staffMap, onSelectStaff, onEdi
   onEdit: (s: Shift) => void;
   onDelete: (s: Shift) => void;
 }) {
+  const shopTimezone = useShopTimezone();
 
   if (shifts.length === 0) return <EmptyState label="No entries" />;
   const totalBreak = shifts.reduce((a, s) => a + breakMs(s, now), 0);
@@ -414,8 +426,8 @@ function EntriesTable({ shifts, now, getEmployee, staffMap, onSelectStaff, onEdi
                 {[
                   { label: "Date", val: s.date },
                   { label: "Worked", val: prettyHM(wk) },
-                  { label: "Clock In", val: prettyClock(s.clockIn) },
-                  { label: "Clock Out", val: s.clockOut ? prettyClock(s.clockOut) : "—" },
+                  { label: "Clock In", val: prettyClock(s.clockIn, s.clockInRaw) },
+                  { label: "Clock Out", val: s.clockOut ? prettyClock(s.clockOut, s.clockOutRaw) : "—" },
                   { label: "Break", val: prettyHM(br) },
                   { label: "Note", val: s.note ?? "—" },
                 ].map(({ label, val }) => (
@@ -502,8 +514,8 @@ function EntriesTable({ shifts, now, getEmployee, staffMap, onSelectStaff, onEdi
                       <div className={cn("font-medium", staff || emp ? "text-slate-900 dark:text-white" : "text-rose-700 dark:text-rose-300")}>{String(displayName)}</div>
                       <div className="text-xs text-slate-500 dark:text-white/60">{displayStaffId ? `Staff ID: ${String(displayStaffId)}` : emp?.dept ?? ""}{s.shopCode ? ` • Shop Code: ${s.shopCode}` : ""}</div>
                     </td>
-                    <td className="px-4 py-3 text-slate-800 dark:text-white/90">{prettyClock(s.clockIn)}</td>
-                    <td className="px-4 py-3 text-slate-800 dark:text-white/90">{s.clockOut ? prettyClock(s.clockOut) : "—"}</td>
+                    <td className="px-4 py-3 text-slate-800 dark:text-white/90">{prettyClock(s.clockIn, s.clockInRaw)}</td>
+                    <td className="px-4 py-3 text-slate-800 dark:text-white/90">{s.clockOut ? prettyClock(s.clockOut, s.clockOutRaw) : "—"}</td>
                     <td className="px-4 py-3 text-slate-700 dark:text-white/80">{prettyHM(br)}</td>
                     <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{prettyHM(wk)}</td>
                     <td className="px-4 py-3 text-slate-700 whitespace-pre-wrap dark:text-white/70">{s.note ?? ""}</td>
@@ -536,6 +548,7 @@ function EntriesTable({ shifts, now, getEmployee, staffMap, onSelectStaff, onEdi
 function Keypad({ onPress, onBackspace, onClear }: {
   onPress: (n: string) => void; onBackspace: () => void; onClear: () => void;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div className="grid grid-cols-3 gap-3">
       {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => (
@@ -561,12 +574,13 @@ function AllStaffDialog({
   roleFilter: string; setRoleFilter: React.Dispatch<React.SetStateAction<string>>;
   shopId: string;
 }) {
+  const shopTimezone = useShopTimezone();
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(15);
 
   const roles = React.useMemo(
     () => Array.from(new Set(staff.map((s) => String(s.role ?? "")).filter(Boolean))),
-    [staff]
+    [staff, shopTimezone]
   );
 
   const filtered = React.useMemo(() => {
@@ -580,9 +594,9 @@ function AllStaffDialog({
       ].join(" ").toLowerCase();
       return roleOk && (!q || text.includes(q));
     });
-  }, [staff, query, roleFilter]);
+  }, [staff, query, roleFilter, shopTimezone]);
 
-  React.useEffect(() => { setPage(1); }, [query, roleFilter, open]);
+  React.useEffect(() => { setPage(1); }, [query, roleFilter, open, shopTimezone]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safeP = Math.min(page, totalPages);
@@ -818,6 +832,7 @@ function AllStaffDialog({
 
 /* ===== Main Page ===== */
 export default function TimecardPro() {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const earningsFmt = formatSharedMoney;
 
@@ -855,15 +870,15 @@ export default function TimecardPro() {
     "clock-in" | "clock-out" | "break-start" | "break-end" | null
   >(null);
 
-  const getEmployeeLocal = React.useCallback((id: string) => EMPLOYEES.find((e) => e.id === id) ?? null, []);
-  const localEmployee = React.useMemo(() => getEmployeeLocal(staffPkId || employeeId), [staffPkId, employeeId, getEmployeeLocal]);
-  const selectedPkId = React.useMemo(() => String(staff?.id ?? staffPkId ?? ""), [staff, staffPkId]);
+  const getEmployeeLocal = React.useCallback((id: string) => EMPLOYEES.find((e) => e.id === id) ?? null, [shopTimezone]);
+  const localEmployee = React.useMemo(() => getEmployeeLocal(staffPkId || employeeId), [staffPkId, employeeId, getEmployeeLocal, shopTimezone]);
+  const selectedPkId = React.useMemo(() => String(staff?.id ?? staffPkId ?? ""), [staff, staffPkId, shopTimezone]);
   const staffMap = React.useMemo(() => {
     const map: Record<string, Staff> = {};
     for (const s of allStaff) map[String(s.id)] = s;
     if (staff?.id) map[String(staff.id)] = staff;
     return map;
-  }, [allStaff, staff]);
+  }, [allStaff, staff, shopTimezone]);
 
   const currentShopStaffIds = React.useMemo(() => {
     if (!shopId) return new Set<string>();
@@ -872,14 +887,14 @@ export default function TimecardPro() {
         .filter((s) => String(s.shopId ?? s.shop_id ?? "") === shopId)
         .map((s) => String(s.id))
     );
-  }, [allStaff, shopId]);
+  }, [allStaff, shopId, shopTimezone]);
 
   React.useEffect(() => {
     if (!mounted) return;
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
-  }, [mounted]);
+  }, [mounted, shopTimezone]);
 
   React.useEffect(() => {
     (async () => {
@@ -900,7 +915,7 @@ export default function TimecardPro() {
         if (payload?.username) setSelectedStaffName(String(payload.username));
       } catch { }
     })();
-  }, [accessToken]);
+  }, [accessToken, shopTimezone]);
 
   const fetchAllStaff = React.useCallback(async () => {
     setStaffLoadingList(true);
@@ -928,13 +943,13 @@ export default function TimecardPro() {
     } finally {
       setStaffLoadingList(false);
     }
-  }, [accessToken, shopId]);
+  }, [accessToken, shopId, shopTimezone]);
 
   // Keep the signed-in shop's staff available so every Today row can resolve
   // the employee primary key to a real staff name and Staff ID.
   React.useEffect(() => {
     if (shopId || browseOpen) void fetchAllStaff();
-  }, [shopId, browseOpen, fetchAllStaff]);
+  }, [shopId, browseOpen, fetchAllStaff, shopTimezone]);
 
   // fetchShiftsForId - direct call with explicit params to avoid stale closure timing issues
   const fetchShiftsForId = React.useCallback(async (pkId: string | null, all: boolean, sid?: string) => {
@@ -960,7 +975,7 @@ export default function TimecardPro() {
       setShifts((res || []).map(mapApiShift));
     } catch (e: any) { toast.error(e?.message || "Failed to load shifts"); }
     finally { setLoadingShifts(false); }
-  }, [shopId, accessToken]);
+  }, [shopId, accessToken, shopTimezone]);
 
   const fetchTodayShopShifts = React.useCallback(async () => {
     if (!shopId) {
@@ -991,14 +1006,14 @@ export default function TimecardPro() {
     } finally {
       setLoadingTodayShifts(false);
     }
-  }, [shopId, accessToken]);
+  }, [shopId, accessToken, shopTimezone]);
 
   const fetchShifts = React.useCallback(() => {
     void fetchShiftsForId(selectedPkId || null, showAll);
     void fetchTodayShopShifts();
-  }, [fetchShiftsForId, fetchTodayShopShifts, selectedPkId, showAll]);
+  }, [fetchShiftsForId, fetchTodayShopShifts, selectedPkId, showAll, shopTimezone]);
 
-  React.useEffect(() => { fetchShifts(); }, [fetchShifts]);
+  React.useEffect(() => { fetchShifts(); }, [fetchShifts, shopTimezone]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1029,7 +1044,7 @@ export default function TimecardPro() {
       finally { if (!cancelled) setStaffLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [employeeId]);
+  }, [employeeId, shopTimezone]);
 
   const selectStaffFromEntry = React.useCallback(
     (employeePkId: string) => {
@@ -1064,26 +1079,26 @@ export default function TimecardPro() {
       });
       toast.success(`${staffDisplayName(selected)} selected`);
     },
-    [staffMap, fetchAllStaff, fetchShiftsForId, shopId]
+    [staffMap, fetchAllStaff, fetchShiftsForId, shopId, shopTimezone]
   );
 
-  const effectiveEmployeeId = React.useMemo(() => (selectedPkId ? Number(selectedPkId) : 0), [selectedPkId]);
-  const employeeExists = React.useMemo(() => effectiveEmployeeId > 0, [effectiveEmployeeId]);
+  const effectiveEmployeeId = React.useMemo(() => (selectedPkId ? Number(selectedPkId) : 0), [selectedPkId, shopTimezone]);
+  const employeeExists = React.useMemo(() => effectiveEmployeeId > 0, [effectiveEmployeeId, shopTimezone]);
   const active = React.useMemo(() => {
     if (showAll) {
       return shifts.find((s) => !s.clockOut);
     }
     if (!selectedPkId) return undefined;
     return shifts.find((s) => s.employeeId === selectedPkId && !s.clockOut);
-  }, [shifts, selectedPkId, showAll]);
+  }, [shifts, selectedPkId, showAll, shopTimezone]);
 
   const staffDialogPkId = React.useMemo(
     () => (staffDialog?.id != null ? String(staffDialog.id) : ""),
-    [staffDialog]
+    [staffDialog, shopTimezone]
   );
   const staffDialogActiveShift = React.useMemo(
     () => shifts.find((s) => s.employeeId === staffDialogPkId && !s.clockOut),
-    [shifts, staffDialogPkId]
+    [shifts, staffDialogPkId, shopTimezone]
   );
   const staffDialogShifts = React.useMemo(
     () =>
@@ -1092,7 +1107,7 @@ export default function TimecardPro() {
         .slice()
         .sort((a, b) => b.clockIn - a.clockIn)
         .slice(0, 7),
-    [shifts, staffDialogPkId]
+    [shifts, staffDialogPkId, shopTimezone]
   );
   const staffDialogOnBreak = onBreak(staffDialogActiveShift);
 
@@ -1109,36 +1124,36 @@ export default function TimecardPro() {
         : true;
       return empOk && deptOk && shopOk;
     });
-  }, [shifts, selectedPkId, showAll, deptFilter, getEmployeeLocal, shopId, currentShopStaffIds]);
+  }, [shifts, selectedPkId, showAll, deptFilter, getEmployeeLocal, shopId, currentShopStaffIds, shopTimezone]);
 
   // Today shows every employee who clocked in for the signed-in shop,
   // independent of the employee currently selected for All/This Week.
   const todays = React.useMemo(
     () => todayShopShifts.slice().sort((a, b) => b.clockIn - a.clockIn),
-    [todayShopShifts]
+    [todayShopShifts, shopTimezone]
   );
 
-  const ws = React.useMemo(() => weekStart(now ?? new Date()), [now]);
-  const we = React.useMemo(() => { const t = new Date(ws); t.setDate(ws.getDate() + 6); return t; }, [ws]);
+  const ws = React.useMemo(() => weekStart(now ?? new Date()), [now, shopTimezone]);
+  const we = React.useMemo(() => { const t = new Date(ws); t.setUTCDate(ws.getUTCDate() + 6); return t; }, [ws, shopTimezone]);
 
   // This week
   const weekly = React.useMemo(() => allFiltered.filter((s) => {
-    const d = new Date(s.date + "T00:00:00");
+    const d = new Date(s.date + "T00:00:00Z");
     return d >= ws && d <= we;
-  }), [allFiltered, ws, we]);
+  }), [allFiltered, ws, we, shopTimezone]);
 
-  const todayTotal = React.useMemo(() => todays.reduce((a, s) => a + workMs(s, nowMs), 0), [todays, nowMs]);
+  const todayTotal = React.useMemo(() => todays.reduce((a, s) => a + workMs(s, nowMs), 0), [todays, nowMs, shopTimezone]);
   const todayOvertime = React.useMemo(
     () => todays.reduce((sum, shift) => sum + Math.max(0, workMs(shift, nowMs) - 8 * 3600000), 0),
-    [todays, nowMs]
+    [todays, nowMs, shopTimezone]
   );
-  const weekTotal = React.useMemo(() => weekly.reduce((a, s) => a + workMs(s, nowMs), 0), [weekly, nowMs]);
-  const weekBreak = React.useMemo(() => weekly.reduce((a, s) => a + breakMs(s, nowMs), 0), [weekly, nowMs]);
-  const effectiveRate = React.useMemo(() => parseFloat(hourlyRate) || (localEmployee?.rate ?? 0), [hourlyRate, localEmployee]);
-  const weekGross = React.useMemo(() => effectiveRate * (weekTotal / 3600000), [effectiveRate, weekTotal]);
-  const weekDailyOverMs = React.useMemo(() => weekly.reduce((sum, s) => sum + Math.max(0, workMs(s, nowMs) - 8 * 3600000), 0), [weekly, nowMs]);
-  const weekOverMs = React.useMemo(() => Math.max(0, weekTotal - 40 * 3600000), [weekTotal]);
-  const weekOverGross = React.useMemo(() => effectiveRate * 1.25 * (Math.max(weekDailyOverMs, weekOverMs) / 3600000), [effectiveRate, weekDailyOverMs, weekOverMs]);
+  const weekTotal = React.useMemo(() => weekly.reduce((a, s) => a + workMs(s, nowMs), 0), [weekly, nowMs, shopTimezone]);
+  const weekBreak = React.useMemo(() => weekly.reduce((a, s) => a + breakMs(s, nowMs), 0), [weekly, nowMs, shopTimezone]);
+  const effectiveRate = React.useMemo(() => parseFloat(hourlyRate) || (localEmployee?.rate ?? 0), [hourlyRate, localEmployee, shopTimezone]);
+  const weekGross = React.useMemo(() => effectiveRate * (weekTotal / 3600000), [effectiveRate, weekTotal, shopTimezone]);
+  const weekDailyOverMs = React.useMemo(() => weekly.reduce((sum, s) => sum + Math.max(0, workMs(s, nowMs) - 8 * 3600000), 0), [weekly, nowMs, shopTimezone]);
+  const weekOverMs = React.useMemo(() => Math.max(0, weekTotal - 40 * 3600000), [weekTotal, shopTimezone]);
+  const weekOverGross = React.useMemo(() => effectiveRate * 1.25 * (Math.max(weekDailyOverMs, weekOverMs) / 3600000), [effectiveRate, weekDailyOverMs, weekOverMs, shopTimezone]);
   const weekWorkedRatio = weekTotal === 0 ? 0 : weekTotal / (weekTotal + weekBreak);
   const weekBreakRatio = weekTotal === 0 ? 0 : weekBreak / (weekTotal + weekBreak);
 
@@ -1332,7 +1347,7 @@ export default function TimecardPro() {
     const source = showAll ? allFiltered : shifts.filter((s) => s.employeeId === targetId);
     const rows = source.slice().sort((a, b) => a.clockIn - b.clockIn).map((s) => {
       const cols = [s.date, ...(showAll ? [getEmployeeLocal(s.employeeId)?.name ?? s.employeeId] : []),
-      prettyClock(s.clockIn), s.clockOut ? prettyClock(s.clockOut) : "",
+      prettyClock(s.clockIn, s.clockInRaw), s.clockOut ? prettyClock(s.clockOut, s.clockOutRaw) : "",
       String(Math.round(breakMs(s) / 60000)), prettyHM(workMs(s)), (s.note ?? "").replaceAll("\n", " ")];
       return cols.map(csvEscape);
     });
@@ -1365,15 +1380,15 @@ export default function TimecardPro() {
 
   const heroTime = React.useMemo(() => {
     if (!now) return "--:--:--";
-    return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
-  }, [now]);
+    return shopDateFormatter(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
+  }, [now, shopTimezone]);
 
   const heroDate = React.useMemo(() => {
     if (!now) return "";
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(now);
-  }, [now]);
+    return shopDateFormatter(undefined, { dateStyle: "full" }).format(now);
+  }, [now, shopTimezone]);
 
-  const tz = React.useMemo(() => mounted ? Intl.DateTimeFormat().resolvedOptions().timeZone : "—", [mounted]);
+  const tz = React.useMemo(() => mounted ? getShopTimezone() : "—", [mounted, shopTimezone]);
 
   return (
     <section className="relative min-h-screen overflow-hidden bg-[#f6f1e9] text-slate-900 dark:bg-[#05060d] dark:text-[#f3e7d2]">
@@ -1917,7 +1932,7 @@ export default function TimecardPro() {
                           <tr key={shift.id} className="text-slate-700 dark:text-white/80">
                             <td className="whitespace-nowrap px-2 py-2.5">{shift.date}</td>
                             <td className="whitespace-nowrap px-2 py-2.5">
-                              {prettyClock(shift.clockIn)} → {shift.clockOut ? prettyClock(shift.clockOut) : "Now"}
+                              {prettyClock(shift.clockIn, shift.clockInRaw)} → {shift.clockOut ? prettyClock(shift.clockOut, shift.clockOutRaw) : "Now"}
                             </td>
                             <td className="whitespace-nowrap px-2 py-2.5 font-medium">
                               {prettyHM(workMs(shift, nowMs))}

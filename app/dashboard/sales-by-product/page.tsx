@@ -1,5 +1,7 @@
-
 "use client";
+
+import { shopCalendarDate } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
 import { useCurrency } from "@/components/currency-provider";
 
 import React, {
@@ -174,7 +176,7 @@ function normalizeSaleFromReceipt(receipt: ReceiptApi): Sale | null {
 
   return {
     id: String(receipt.id ?? receipt.receiptNo ?? receipt.receipt_no ?? crypto.randomUUID()),
-    created_at: String(receipt.createdAt ?? receipt.created_at ?? new Date().toISOString()),
+    created_at: String(receipt.createdAt ?? receipt.created_at ?? ""),
     total: Number.isFinite(total) ? total : totalFromItems,
     items,
   };
@@ -213,10 +215,10 @@ async function fetchReceiptsFromApi(accessToken?: string | null): Promise<Sale[]
 }
 
 function groupKey(d: Date, g: Granularity) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const h = String(d.getUTCHours()).padStart(2, "0");
   if (g === "year") return `${y}`;
   if (g === "month") return `${y}-${m}`;
   if (g === "day") return `${y}-${m}-${day}`;
@@ -449,6 +451,7 @@ function useAggregation(sales: Sale[]) {
 const PAGE_SIZE = 20;
 
 export default function SalesByProductPage() {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const money = formatSharedMoney;
 
@@ -494,7 +497,7 @@ export default function SalesByProductPage() {
   useEffect(() => {
     if (status === "loading") return;
     void reload();
-  }, [status, session]);
+  }, [status, session, shopTimezone]);
 
   const { allRows } = useAggregation(sales);
 
@@ -502,20 +505,20 @@ export default function SalesByProductPage() {
     const kw = q.trim().toLowerCase();
     if (!kw) return allRows;
     return allRows.filter(r => r.sku.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw));
-  }, [allRows, q]);
+  }, [allRows, q, shopTimezone]);
 
-  useEffect(() => { setPage(1); }, [q]);
+  useEffect(() => { setPage(1); }, [q, shopTimezone]);
   useEffect(() => {
     if (!selectedSku && filteredRows.length) setSelectedSku(filteredRows[0].sku);
-  }, [filteredRows]);
+  }, [filteredRows, shopTimezone]);
 
-  const totalRevenue = useMemo(() => allRows.reduce((s, r) => s + r.revenue, 0), [allRows]);
-  const totalQty = useMemo(() => allRows.reduce((s, r) => s + r.qty, 0), [allRows]);
-  const totalOrders = useMemo(() => sales.length, [sales]);
+  const totalRevenue = useMemo(() => allRows.reduce((s, r) => s + r.revenue, 0), [allRows, shopTimezone]);
+  const totalQty = useMemo(() => allRows.reduce((s, r) => s + r.qty, 0), [allRows, shopTimezone]);
+  const totalOrders = useMemo(() => sales.length, [sales, shopTimezone]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(page, 1), totalPages);
-  const pageRows = useMemo(() => filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredRows, safePage]);
+  const pageRows = useMemo(() => filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredRows, safePage, shopTimezone]);
   const selectedProduct = filteredRows.find(r => r.sku === selectedSku) || null;
 
   const series = useMemo(() => {
@@ -524,14 +527,14 @@ export default function SalesByProductPage() {
     for (const s of sales) {
       const items = s.items.filter(it => (it.sku || it.product_id) === selectedSku);
       if (!items.length) continue;
-      const k = groupKey(new Date(s.created_at), granularity);
+      const k = groupKey(shopCalendarDate(s.created_at), granularity);
       const cur = bucket.get(k) || { bucket: k, revenue: 0, qty: 0, orders: 0 };
       items.forEach(it => { cur.qty += Number(it.qty || 0); cur.revenue += Number(it.qty || 0) * Number(it.price || 0); });
       cur.orders += 1;
       bucket.set(k, cur);
     }
     return Array.from(bucket.values()).sort((a, b) => a.bucket < b.bucket ? -1 : 1);
-  }, [sales, selectedSku, granularity]);
+  }, [sales, selectedSku, granularity, shopTimezone]);
 
   function selectProduct(sku: string) {
     setSelectedSku(sku);
@@ -543,7 +546,7 @@ export default function SalesByProductPage() {
       ...c,
       view: VIEW_CYCLE[(VIEW_CYCLE.indexOf(c.view) + 1) % VIEW_CYCLE.length]
     } : c));
-  }, []);
+  }, [shopTimezone]);
 
   function handleDragStart(e: DragStartEvent) { setActiveId(e.active.id); }
   function handleDragEnd(e: DragEndEvent) {

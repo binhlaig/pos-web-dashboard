@@ -1,6 +1,10 @@
+"use client";
 
 // // components/header/TimeCard.tsx
 // "use client";
+import { shopDateFormatter, formatShopTime, getShopTimezone } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 
 // import { useEffect, useState } from "react";
 // import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -40,15 +44,11 @@
 //     </Card>
 //   );
 // }
-
-
-
-"use client";
-
 import { useEffect, useState } from "react";
 import { Clock } from "lucide-react";
 
 export default function TimeCard() {
+  const shopTimezone = useShopTimezone();
   const [time, setTime] = useState("");
   const [date, setDate] = useState("");
 
@@ -57,14 +57,14 @@ export default function TimeCard() {
       const now = new Date();
 
       setTime(
-        now.toLocaleTimeString("en-US", {
+        formatShopTime(now, getShopTimezone(), {
           hour: "2-digit",
           minute: "2-digit",
-        })
+        }, "en-US")
       );
 
       setDate(
-        new Intl.DateTimeFormat("en-US", {
+        shopDateFormatter("en-US", {
           weekday: "short",
           month: "short",
           day: "numeric",
@@ -75,7 +75,7 @@ export default function TimeCard() {
     tick();
     const id = setInterval(tick, 30_000);
     return () => clearInterval(id);
-  }, []);
+  }, [shopTimezone]);
 
   return (
     <div className="inline-flex items-center gap-3 rounded-xl bg-white/15 backdrop-blur-md px-4 py-2 text-white shadow-md">

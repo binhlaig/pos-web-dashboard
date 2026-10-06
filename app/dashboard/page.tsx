@@ -1,5 +1,8 @@
-
 "use client";
+
+import { formatShopDate, formatShopTime, getShopTimezone, shopCalendarDate } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import Link from "next/link";
 import {
@@ -113,7 +116,7 @@ function receiptTotal(receipt: Receipt) {
   return Number(receipt.grandTotal ?? receipt.total ?? 0);
 }
 function receiptDate(receipt: Receipt) {
-  return receipt.createdAt ? new Date(receipt.createdAt) : new Date(0);
+  return shopCalendarDate(receipt.createdAt);
 }
 const salesInformation: Record<
   SalesRange,
@@ -140,6 +143,7 @@ const salesInformation: Record<
   },
 };
 const DashboardPage = () => {
+  const shopTimezone = useShopTimezone();
   const [salesRange, setSalesRange] = useState<SalesRange>("weekly");
   const [products, setProducts] = useState<Product[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -168,23 +172,23 @@ const DashboardPage = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [shopTimezone]);
 
-  const now = useMemo(() => new Date(), []);
-  const startToday = useMemo(() => new Date(now.getFullYear(), now.getMonth(), now.getDate()), [now]);
-  const startTomorrow = useMemo(() => new Date(startToday.getTime() + 86_400_000), [startToday]);
-  const startYesterday = useMemo(() => new Date(startToday.getTime() - 86_400_000), [startToday]);
+  const now = useMemo(() => shopCalendarDate(), [shopTimezone]);
+  const startToday = useMemo(() => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())), [now, shopTimezone]);
+  const startTomorrow = useMemo(() => new Date(startToday.getTime() + 86_400_000), [startToday, shopTimezone]);
+  const startYesterday = useMemo(() => new Date(startToday.getTime() - 86_400_000), [startToday, shopTimezone]);
   const paidReceipts = useMemo(
     () => receipts.filter((receipt) => (receipt.status ?? "PAID").toUpperCase() !== "CANCELLED"),
-    [receipts],
+    [receipts, shopTimezone],
   );
   const todayReceipts = useMemo(
     () => paidReceipts.filter((receipt) => receiptDate(receipt) >= startToday && receiptDate(receipt) < startTomorrow),
-    [paidReceipts, startToday, startTomorrow],
+    [paidReceipts, startToday, startTomorrow, shopTimezone],
   );
   const yesterdayReceipts = useMemo(
     () => paidReceipts.filter((receipt) => receiptDate(receipt) >= startYesterday && receiptDate(receipt) < startToday),
-    [paidReceipts, startYesterday, startToday],
+    [paidReceipts, startYesterday, startToday, shopTimezone],
   );
   const todaySales = todayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
   const yesterdaySales = yesterdayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
@@ -197,20 +201,20 @@ const DashboardPage = () => {
     const daily = Array.from({ length: 24 }, (_, hour) => ({ label: `${hour.toString().padStart(2, "0")}:00`, value: 0 }));
     const weekly = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => ({ label, value: 0 }));
     const monthly = Array.from({ length: 5 }, (_, index) => ({ label: `Week ${index + 1}`, value: 0 }));
-    const mondayOffset = (now.getDay() + 6) % 7;
+    const mondayOffset = (now.getUTCDay() + 6) % 7;
     const weekStart = new Date(startToday.getTime() - mondayOffset * 86_400_000);
     paidReceipts.forEach((receipt) => {
       const date = receiptDate(receipt);
       const value = receiptTotal(receipt);
-      if (date >= startToday && date < startTomorrow) daily[date.getHours()].value += value;
+      if (date >= startToday && date < startTomorrow) daily[date.getUTCHours()].value += value;
       const weekIndex = Math.floor((date.getTime() - weekStart.getTime()) / 86_400_000);
       if (weekIndex >= 0 && weekIndex < 7) weekly[weekIndex].value += value;
-      if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
-        monthly[Math.min(4, Math.floor((date.getDate() - 1) / 7))].value += value;
+      if (date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth()) {
+        monthly[Math.min(4, Math.floor((date.getUTCDate() - 1) / 7))].value += value;
       }
     });
     return { daily, weekly, monthly };
-  }, [now, paidReceipts, startToday, startTomorrow]);
+  }, [now, paidReceipts, startToday, startTomorrow, shopTimezone]);
 
   const selectedSales = salesData[salesRange];
   const totalSales = selectedSales.reduce((total, item) => total + item.value, 0);
@@ -221,11 +225,11 @@ const DashboardPage = () => {
       stock: Number(product.productQuantityAmount ?? product.product_quantity_amount ?? product.quantity ?? product.stock ?? 0),
       color: "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400",
     })).filter((product) => product.stock <= LOW_STOCK_LIMIT).sort((a, b) => a.stock - b.stock),
-    [products],
+    [products, shopTimezone],
   );
   const recentTransactions = useMemo(
     () => [...paidReceipts].sort((a, b) => receiptDate(b).getTime() - receiptDate(a).getTime()).slice(0, 5),
-    [paidReceipts],
+    [paidReceipts, shopTimezone],
   );
   const categorySales = useMemo(() => {
     const productById = new Map(products.map((product) => [String(product.id), product]));
@@ -264,7 +268,7 @@ const DashboardPage = () => {
       });
     });
     return [...totals.entries()].map(([title, value]) => ({ title, value })).sort((a, b) => b.value - a.value).slice(0, 5);
-  }, [products, todayReceipts]);
+  }, [products, todayReceipts, shopTimezone]);
   const categoryTotal = categorySales.reduce((sum, category) => sum + category.value, 0);
   const categoryGradient = useMemo(() => {
     const colors = ["#2563eb", "#22c55e", "#f97316", "#8b5cf6", "#cbd5e1"];
@@ -277,7 +281,7 @@ const DashboardPage = () => {
       return stop;
     });
     return `conic-gradient(${stops.join(", ")})`;
-  }, [categorySales, categoryTotal]);
+  }, [categorySales, categoryTotal, shopTimezone]);
 
   return (
     <section className="py-5">
@@ -307,7 +311,7 @@ const DashboardPage = () => {
               "
           >
             <CalendarDays size={17} />
-            <span>{now.toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })}</span>
+            <span>{formatShopDate(new Date(), getShopTimezone(), { year: "numeric", month: "short", day: "numeric" }, "en-CA")}</span>
           </button>
 
           <Link
@@ -654,7 +658,7 @@ const DashboardPage = () => {
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 text-slate-600 dark:text-slate-300">
-                      {receiptDate(transaction).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatShopTime(transaction.createdAt, getShopTimezone(), { hour: "2-digit", minute: "2-digit" }, [])}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3.5 text-slate-700 dark:text-slate-200">
@@ -784,6 +788,7 @@ function SummaryCard({
   iconStyle: string;
   negative?: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-black">
       <div className="flex items-start justify-between">
@@ -828,6 +833,7 @@ function SalesRangeButton({
   active: boolean;
   onClick: () => void;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <button
       type="button"
@@ -860,6 +866,7 @@ function CategoryItem({
   value: string;
   percent: string;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div className="flex items-center gap-2 text-[11px]">
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${color}`} />

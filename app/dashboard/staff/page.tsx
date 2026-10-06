@@ -1,3 +1,6 @@
+"use client";
+import { formatShopDate } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
 // "use client";
 // import { useCurrency } from "@/components/currency-provider";
 
@@ -2434,7 +2437,7 @@
 
 
 
-"use client";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -2624,8 +2627,8 @@ function normalizeStatus(s: unknown): Status {
 }
 
 function formatDate(value?: string) {
-  if (!value) return "—";
-  return value;
+  if (!value) return "-";
+  return value.includes("T") ? formatShopDate(value) : value;
 }
 
 function makeMockTasks(name: string): StaffTask[] {
@@ -4322,6 +4325,7 @@ function PaginationBar({
 }
 
 export default function StaffPage() {
+  useShopTimezone();
   const { data: session, status: sessionStatus } = useSession();
   const { resolvedTheme } = useTheme();
   const night = resolvedTheme === "dark";

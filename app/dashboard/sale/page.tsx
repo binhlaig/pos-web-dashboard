@@ -1,4 +1,8 @@
 "use client";
+
+import { formatShopTime, getShopTimezone } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -351,6 +355,7 @@ function getThemeTokens(mode: ThemeMode) {
 }
 
 function NightParticles() {
+  const shopTimezone = useShopTimezone();
   const stars = Array.from({ length: 28 }).map((_, i) => ({
     id: i,
     left: `${(i * 31 + 9) % 100}%`,
@@ -380,6 +385,7 @@ function NightParticles() {
 }
 
 function StockBadge({ stock }: { stock: number }) {
+  const shopTimezone = useShopTimezone();
   const safeStock = Math.max(0, Number(stock || 0));
   const inStock = safeStock > 0;
 
@@ -414,6 +420,7 @@ function SummaryChip({
   accent: string;
   theme: ReturnType<typeof getThemeTokens>;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div
       className="flex min-w-[140px] items-center gap-2 rounded-2xl px-2 py-1.5"
@@ -463,6 +470,7 @@ function MainDropCard({
   mainTab: MainTab;
   setMainTab: React.Dispatch<React.SetStateAction<MainTab>>;
 }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const fmt = formatSharedMoney;
 
@@ -784,6 +792,7 @@ function DraggableTableRow({
   onSelect: () => void;
   theme: ReturnType<typeof getThemeTokens>;
 }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const fmt = formatSharedMoney;
 
@@ -935,6 +944,7 @@ function PageIconButton({
   theme: ReturnType<typeof getThemeTokens>;
   label: string;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <button
       type="button"
@@ -974,6 +984,7 @@ function SalesPagination({
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
 }) {
+  const shopTimezone = useShopTimezone();
   const pages = buildPaginationPages(currentPage, totalPages);
 
   return (
@@ -1100,6 +1111,7 @@ function SalesPagination({
 }
 
 export default function SalesKanbanPage() {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const fmt = formatSharedMoney;
 
@@ -1119,7 +1131,7 @@ export default function SalesKanbanPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  const theme = useMemo(() => getThemeTokens(themeMode), [themeMode]);
+  const theme = useMemo(() => getThemeTokens(themeMode), [themeMode, shopTimezone]);
 
   const token =
     (session as any)?.accessToken ||
@@ -1197,13 +1209,13 @@ export default function SalesKanbanPage() {
         setLoading(false);
       }
     },
-    [status, token]
+    [status, token, shopTimezone]
   );
 
   useEffect(() => {
     if (status === "loading") return;
     loadSales(range);
-  }, [loadSales, range, status]);
+  }, [loadSales, range, status, shopTimezone]);
 
   const filteredSales = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1226,22 +1238,22 @@ export default function SalesKanbanPage() {
     });
 
     return list;
-  }, [sales, search, sortBy]);
+  }, [sales, search, sortBy, shopTimezone]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(filteredSales.length / pageSize)),
-    [filteredSales.length, pageSize]
+    [filteredSales.length, pageSize, shopTimezone]
   );
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(Math.max(page, 1), totalPages));
-  }, [totalPages]);
+  }, [totalPages, shopTimezone]);
 
   const pageStartIndex = (currentPage - 1) * pageSize;
 
   const paginatedSales = useMemo(
     () => filteredSales.slice(pageStartIndex, pageStartIndex + pageSize),
-    [filteredSales, pageSize, pageStartIndex]
+    [filteredSales, pageSize, pageStartIndex, shopTimezone]
   );
 
   const displayStartIndex = filteredSales.length === 0 ? 0 : pageStartIndex + 1;
@@ -1249,12 +1261,12 @@ export default function SalesKanbanPage() {
 
   const totalQty = useMemo(
     () => filteredSales.reduce((sum, item) => sum + item.quantity_sold, 0),
-    [filteredSales]
+    [filteredSales, shopTimezone]
   );
 
   const totalAmount = useMemo(
     () => filteredSales.reduce((sum, item) => sum + item.total_amount, 0),
-    [filteredSales]
+    [filteredSales, shopTimezone]
   );
 
   const remainingStock = useMemo(
@@ -1263,12 +1275,12 @@ export default function SalesKanbanPage() {
         (sum, item) => sum + Math.max(0, item.product_quantity_amount),
         0
       ),
-    [filteredSales]
+    [filteredSales, shopTimezone]
   );
 
   const stockOutCount = useMemo(
     () => filteredSales.filter((item) => item.product_quantity_amount <= 0).length,
-    [filteredSales]
+    [filteredSales, shopTimezone]
   );
 
   const selectedProduct =
@@ -1631,7 +1643,7 @@ export default function SalesKanbanPage() {
                   <div className="text-sm">
                     Last updated:{" "}
                     <span className="font-bold">
-                      {lastUpdated ? lastUpdated.toLocaleTimeString() : "-"}
+                      {lastUpdated ? formatShopTime(lastUpdated, getShopTimezone(), undefined, undefined) : "-"}
                     </span>
                   </div>
                 </div>

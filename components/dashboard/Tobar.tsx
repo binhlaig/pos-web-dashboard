@@ -1,4 +1,6 @@
 "use client";
+import { formatShopTime, shopDateFormatter } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
 
 import { useEffect, useState } from "react";
 import type { NavPage } from "@/types";
@@ -26,21 +28,20 @@ function pad(n: number): string {
 }
 
 export default function Topbar({ activePage }: TopbarProps) {
+  const shopTimezone = useShopTimezone();
   const [time, setTime] = useState("");
   const [dateStr, setDateStr] = useState("");
 
   useEffect(() => {
     const tick = () => {
       const now = new Date();
-      setTime(`${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`);
-      const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      setDateStr(`${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}`);
+      setTime(formatShopTime(now, shopTimezone));
+      setDateStr(shopDateFormatter("en-GB", {weekday:"long",month:"short",day:"numeric"}, shopTimezone).format(now));
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [shopTimezone]);
 
   return (
     <header className="h-[50px] bg-white border-b border-black/8 flex items-center justify-between px-5 flex-shrink-0">

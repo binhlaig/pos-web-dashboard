@@ -1,14 +1,6 @@
+import { shopLocalInput } from "@/lib/date-time";
 
-export function toLocal(iso: string) {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const y = d.getFullYear();
-    const m = pad(d.getMonth() + 1);
-    const da = pad(d.getDate());
-    const h = pad(d.getHours());
-    const mi = pad(d.getMinutes());
-    return `${y}-${m}-${da}T${h}:${mi}`;
-  }
+export function toLocal(iso: string) { return shopLocalInput(iso); }
 
 
 

@@ -1,4 +1,8 @@
+"use client";
 // "use client";
+import { formatShopDate, getShopTimezone, shopCalendarDate, shopDateKey, shopLocalInputToInstant } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
+
 
 // import * as React from "react";
 // import { motion, AnimatePresence } from "framer-motion";
@@ -75,7 +79,7 @@
 
 // function nowStr() {
 //   const d = new Date();
-//   return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
+//   return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getUTCSeconds()).padStart(2,"0")}`;
 // }
 
 // function initRecord(): PunchRecord {
@@ -179,9 +183,10 @@
 //     return () => clearInterval(id);
 //   }, []);
 //   const t = tk(theme);
-//   const H = String(now.getHours()).padStart(2, "0");
-//   const M = String(now.getMinutes()).padStart(2, "0");
-//   const S = String(now.getSeconds()).padStart(2, "0");
+//   const localNow = shopCalendarDate(now);
+//   const H = String(localNow.getUTCHours()).padStart(2, "0");
+//   const M = String(localNow.getUTCMinutes()).padStart(2, "0");
+//   const S = String(localNow.getUTCSeconds()).padStart(2, "0");
 
 //   // shift progress 09:00→18:00
 //   const nowMins   = now.getHours() * 60 + now.getMinutes();
@@ -1716,13 +1721,6 @@
 //     </>
 //   );
 // }
-
-
-
-
-
-"use client";
-
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1945,12 +1943,7 @@ function timeDiffMins(from: string, to: string): number {
   );
 }
 
-function timeToDate(time: string) {
-  const [h, m, s] = time.split(":").map(Number);
-  const d = new Date();
-  d.setHours(h, m, s ?? 0, 0);
-  return d;
-}
+function timeToDate(time: string) { return new Date(shopLocalInputToInstant(`${shopDateKey()}T${time.slice(0,5)}`)); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THEME
@@ -2101,6 +2094,7 @@ function RoleIcon({
   role: string;
   className?: string;
 }) {
+  const shopTimezone = useShopTimezone();
   const icons: Record<string, React.ComponentType<{ className?: string }>> = {
     Admin: Crown,
     Manager: Shield,
@@ -2118,6 +2112,7 @@ function GradAvatar({
   member: StaffMember;
   size?: "sm" | "md" | "lg" | "xl";
 }) {
+  const shopTimezone = useShopTimezone();
   const initials = member.name
     .split(" ")
     .map((w) => w[0])
@@ -2173,12 +2168,14 @@ function LiveClock({
   theme: Theme;
   large?: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   const now = useClock();
   const t = tk(theme);
 
-  const H = String(now.getHours()).padStart(2, "0");
-  const M = String(now.getMinutes()).padStart(2, "0");
-  const S = String(now.getSeconds()).padStart(2, "0");
+  const localNow = shopCalendarDate(now);
+  const H = String(localNow.getUTCHours()).padStart(2, "0");
+  const M = String(localNow.getUTCMinutes()).padStart(2, "0");
+  const S = String(localNow.getUTCSeconds()).padStart(2, "0");
 
   return (
     <div className="flex items-end gap-1 tabular-nums">
@@ -2236,6 +2233,7 @@ function LoginScreen({
   theme: Theme;
   onLogin: (staff: StaffMember) => void;
 }) {
+  const shopTimezone = useShopTimezone();
   const t = tk(theme);
   const now = useClock();
 
@@ -2247,12 +2245,12 @@ function LoginScreen({
   const [step, setStep] = React.useState<"id" | "pin">("id");
   const [shake, setShake] = React.useState(false);
 
-  const dateStr = now.toLocaleDateString("en-US", {
+  const dateStr = formatShopDate(now, getShopTimezone(), {
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
-  });
+  }, "en-US");
 
   function triggerShake() {
     setShake(true);
@@ -2735,6 +2733,7 @@ function StaffPunchPanel({
   onClockOut: () => void;
   onLogout: () => void;
 }) {
+  const shopTimezone = useShopTimezone();
   const t = tk(theme);
   const cfg = punchCfg[record.status];
   const BtnIcon = cfg.btnIcon;
@@ -3111,6 +3110,7 @@ function AdminDashboard({
   records: Record<string, PunchRecord>;
   onSwitchToLogin: () => void;
 }) {
+  const shopTimezone = useShopTimezone();
   const t = tk(theme);
   const now = useClock();
   const [filter, setFilter] = React.useState<"all" | PunchStatus>("all");
@@ -3149,12 +3149,12 @@ function AdminDashboard({
               Today's Attendance
             </div>
             <div className={cn("mt-1 text-sm", t.textMuted)}>
-              {now.toLocaleDateString("en-US", {
+              {formatShopDate(now, getShopTimezone(), {
                 weekday: "long",
                 month: "long",
                 day: "numeric",
                 year: "numeric",
-              })}
+              }, "en-US")}
             </div>
           </div>
 
@@ -3394,6 +3394,7 @@ function AdminDashboard({
 // ROOT
 // ─────────────────────────────────────────────────────────────────────────────
 export default function TimeCardV2() {
+  const shopTimezone = useShopTimezone();
   const [theme, setTheme] = React.useState<Theme>("dark");
   const [view, setView] = React.useState<View>("login");
   const [loggedInStaff, setLoggedInStaff] = React.useState<StaffMember | null>(null);

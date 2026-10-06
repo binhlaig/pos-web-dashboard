@@ -1,5 +1,7 @@
+"use client";
+import { formatShopDateTime, formatShopDate, getShopTimezone, shopCalendarDate } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
 
-"use client"
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -122,7 +124,7 @@ async function fetchApi<T>(path: string): Promise<T> {
 }
 function apiList<T>(payload: ApiList<T>): T[] { return Array.isArray(payload) ? payload : payload.content ?? payload.data ?? payload.receipts ?? []; }
 function receiptTotal(receipt: Receipt) { return Number(receipt.grandTotal ?? receipt.grand_total ?? receipt.total ?? 0); }
-function receiptDate(receipt: Receipt) { return new Date(receipt.createdAt ?? receipt.created_at ?? 0); }
+function receiptDate(receipt: Receipt) { return shopCalendarDate(receipt.createdAt ?? receipt.created_at ?? 0); }
 function receiptNumber(receipt: Receipt) { return receipt.receiptNo ?? receipt.receipt_no ?? `#${receipt.id ?? "—"}`; }
 function receiptItems(receipt: Receipt) { return receipt.items ?? receipt.receiptItems ?? receipt.receipt_items ?? []; }
 function normalizeOwner(payload: SessionPayload): OwnerSession {
@@ -322,6 +324,7 @@ function LanternMark({
   glow?: boolean;
   dimmed?: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   const h = size * 1.5;
   const uid = React.useId().replace(/:/g, "");
   const glowId = `lanternGlow-${uid}`;
@@ -501,6 +504,7 @@ function SwingingLantern({
   delay?: number;
   dimmed?: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <motion.div
       className={cn("absolute origin-top", className)}
@@ -569,6 +573,7 @@ function LanternToggle({
   dark: boolean;
   onToggle: () => void;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <button
       type="button"
@@ -619,6 +624,7 @@ function LanternToggle({
 
 // ── NIGHT STARS — improved twinkling ──────────────────────────────────────────
 function NightStars() {
+  const shopTimezone = useShopTimezone();
   const stars = React.useMemo(
     () =>
       Array.from({ length: 55 }).map((_, i) => {
@@ -654,7 +660,7 @@ function NightStars() {
           maxOpacity: type === "bright" ? 0.9 : type === "medium" ? 0.7 : 0.5,
         };
       }),
-    [],
+    [shopTimezone],
   );
 
   return (
@@ -713,6 +719,7 @@ function NightStars() {
 
 // ── SHOOTING STARS ─────────────────────────────────────────────────────────────
 function ShootingStars() {
+  const shopTimezone = useShopTimezone();
   const [visible, setVisible] = React.useState(false);
   const [pos, setPos] = React.useState({ x: 20, y: 8 });
 
@@ -729,7 +736,7 @@ function ShootingStars() {
       }, delay);
     };
     schedule();
-  }, []);
+  }, [shopTimezone]);
 
   if (!visible) return null;
 
@@ -760,6 +767,7 @@ function ShootingStars() {
 // ── BACKGROUND FX ──────────────────────────────────────────────────────────────
 // dark theme ကို ပိုမှောင်ပြီး deep purple-navy-black ဆိုတဲ့ feel ပေးမယ်
 function BackgroundFX({ theme }: { theme: ThemeMode }) {
+  const shopTimezone = useShopTimezone();
 
   if (theme === "dark") {
     return (
@@ -814,6 +822,7 @@ function SectionCard({
   lantern?: boolean;
   cornerLantern?: boolean;
 }) {
+  const shopTimezone = useShopTimezone();
   const tk = t(theme);
   return (
     <Card
@@ -875,6 +884,7 @@ function SectionCard({
 }
 
 function DashboardSkeleton({ theme }: { theme: ThemeMode }) {
+  const shopTimezone = useShopTimezone();
   const tk = t(theme);
   return (
     <div className="space-y-6">
@@ -894,6 +904,7 @@ function DashboardSkeleton({ theme }: { theme: ThemeMode }) {
 }
 
 function AnalyticsStrip({ theme, todaySales, todayOrders, activeStaff, lowStock }: { theme: ThemeMode; todaySales: number; todayOrders: number; activeStaff: number; lowStock: number }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const money = formatSharedMoney;
 
@@ -990,6 +1001,7 @@ function CustomTooltip({
   label,
   theme,
 }: TooltipProps<number, string> & { theme: ThemeMode }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
   const money = formatSharedMoney;
 
@@ -1054,6 +1066,7 @@ function LegendChip({
   label: string;
   color: string;
 }) {
+  const shopTimezone = useShopTimezone();
   return (
     <div
       className={cn(
@@ -1097,6 +1110,7 @@ function AnimatedStatCard({
   sub: string;
   gradient: string;
 }) {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney } = useCurrency();
 
   return (
@@ -1175,6 +1189,7 @@ function MiniMetric({
   value: string;
   icon: React.ComponentType<{ className?: string }>;
 }) {
+  const shopTimezone = useShopTimezone();
   const tk = t(theme);
   return (
     <div
@@ -1203,6 +1218,7 @@ function DesktopSidebar({
   collapsed: boolean;
   owner: OwnerSession | null;
 }) {
+  const shopTimezone = useShopTimezone();
   const tk = t(theme);
   const router = useRouter();
 
@@ -1331,6 +1347,7 @@ function DesktopSidebar({
 }
 
 export default function DashboardPage() {
+  const shopTimezone = useShopTimezone();
   const { formatSharedMoney , formatSharedCompactMoney } = useCurrency();
   const money = formatSharedMoney;
 
@@ -1377,28 +1394,28 @@ export default function DashboardPage() {
       setLoading(false);
     });
     return () => { active = false; };
-  }, []);
+  }, [shopTimezone]);
 
   React.useEffect(() => {
     localStorage.setItem("binhlaig-theme", theme);
-  }, [theme]);
+  }, [theme, shopTimezone]);
 
   React.useEffect(() => {
     localStorage.setItem("binhlaig-sidebar", String(sidebarCollapsed));
-  }, [sidebarCollapsed]);
+  }, [sidebarCollapsed, shopTimezone]);
 
   const tk = t(theme);
-  const now = React.useMemo(() => new Date(), []);
-  const todayStart = React.useMemo(() => new Date(now.getFullYear(), now.getMonth(), now.getDate()), [now]);
-  const yesterdayStart = React.useMemo(() => new Date(todayStart.getTime() - 86_400_000), [todayStart]);
-  const todayReceipts = React.useMemo(() => receipts.filter((receipt) => receiptDate(receipt) >= todayStart && (receipt.status ?? "PAID").toUpperCase() !== "CANCELLED"), [receipts, todayStart]);
-  const yesterdayReceipts = React.useMemo(() => receipts.filter((receipt) => receiptDate(receipt) >= yesterdayStart && receiptDate(receipt) < todayStart), [receipts, yesterdayStart, todayStart]);
+  const now = React.useMemo(() => shopCalendarDate(), [shopTimezone]);
+  const todayStart = React.useMemo(() => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())), [now, shopTimezone]);
+  const yesterdayStart = React.useMemo(() => new Date(todayStart.getTime() - 86_400_000), [todayStart, shopTimezone]);
+  const todayReceipts = React.useMemo(() => receipts.filter((receipt) => receiptDate(receipt) >= todayStart && (receipt.status ?? "PAID").toUpperCase() !== "CANCELLED"), [receipts, todayStart, shopTimezone]);
+  const yesterdayReceipts = React.useMemo(() => receipts.filter((receipt) => receiptDate(receipt) >= yesterdayStart && receiptDate(receipt) < todayStart), [receipts, yesterdayStart, todayStart, shopTimezone]);
   const todaySales = todayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
   const yesterdaySales = yesterdayReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
   const salesChange = yesterdaySales ? ((todaySales - yesterdaySales) / yesterdaySales) * 100 : todaySales ? 100 : 0;
   const orderChange = yesterdayReceipts.length ? ((todayReceipts.length - yesterdayReceipts.length) / yesterdayReceipts.length) * 100 : todayReceipts.length ? 100 : 0;
   const targetProgress = yesterdaySales > 0 ? Math.min(100, Math.round((todaySales / yesterdaySales) * 100)) : todaySales > 0 ? 100 : 0;
-  const lowStock = React.useMemo(() => products.map((product) => ({ id: product.id, name: product.productName ?? product.product_name ?? product.name ?? `Product #${product.id}`, value: Number(product.productQuantityAmount ?? product.product_quantity_amount ?? product.quantity ?? product.stock ?? 0) })).filter((product) => product.value <= LOW_STOCK_LIMIT).sort((a, b) => a.value - b.value), [products]);
+  const lowStock = React.useMemo(() => products.map((product) => ({ id: product.id, name: product.productName ?? product.product_name ?? product.name ?? `Product #${product.id}`, value: Number(product.productQuantityAmount ?? product.product_quantity_amount ?? product.quantity ?? product.stock ?? 0) })).filter((product) => product.value <= LOW_STOCK_LIMIT).sort((a, b) => a.value - b.value), [products, shopTimezone]);
   const activeStaff = staff.filter((member) => member.active !== false && (member.status ?? "ACTIVE").toUpperCase() !== "INACTIVE");
   const openTasks = tasks.filter((task) => !["DONE", "COMPLETED"].includes((task.status ?? "PENDING").toUpperCase()));
   const liveRevenueData = React.useMemo(() => {
@@ -1408,19 +1425,19 @@ export default function DashboardPage() {
     return Array.from({ length: bucketCount }, (_, index) => {
       const start = new Date(todayStart.getTime() - (bucketCount - 1 - index) * bucketSize * 86_400_000);
       const end = new Date(start.getTime() + bucketSize * 86_400_000);
-      return { name: start.toLocaleDateString("en", { month: "short", day: "numeric" }), revenue: receipts.filter((receipt) => receiptDate(receipt) >= start && receiptDate(receipt) < end).reduce((sum, receipt) => sum + receiptTotal(receipt), 0) };
+      return { name: formatShopDate(start, getShopTimezone(), { month: "short", day: "numeric" }, "en"), revenue: receipts.filter((receipt) => receiptDate(receipt) >= start && receiptDate(receipt) < end).reduce((sum, receipt) => sum + receiptTotal(receipt), 0) };
     });
-  }, [range, receipts, todayStart]);
+  }, [range, receipts, todayStart, shopTimezone]);
   const liveCategoryData = React.useMemo(() => {
     const byId = new Map(products.map((product) => [String(product.id), product]));
     const totals = new Map<string, number>();
     todayReceipts.forEach((receipt) => receiptItems(receipt).forEach((item) => { const product = item.productId != null || item.product_id != null ? byId.get(String(item.productId ?? item.product_id)) : undefined; const category = item.category ?? product?.category ?? product?.productType ?? product?.product_type ?? "Others"; const qty = Number(item.qty ?? item.quantity ?? 0); const amount = Number(item.total ?? Number(item.price ?? 0) * qty); totals.set(category, (totals.get(category) ?? 0) + amount); }));
     return [...totals.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
-  }, [products, todayReceipts]);
+  }, [products, todayReceipts, shopTimezone]);
   const categoryTotal = liveCategoryData.reduce((sum, item) => sum + item.value, 0);
   const liveShopData = liveCategoryData.map((item) => ({ name: item.name, value: categoryTotal ? Math.round((item.value / categoryTotal) * 100) : 0 }));
-  const liveTransactions = React.useMemo(() => [...receipts].sort((a, b) => receiptDate(b).getTime() - receiptDate(a).getTime()).slice(0, 8).map((receipt) => { const status = (receipt.status ?? "PAID").toLowerCase(); return { id: receiptNumber(receipt), customer: receipt.customerName ?? receipt.customer_name ?? "Walk-in Customer", type: status.charAt(0).toUpperCase() + status.slice(1), amount: receiptTotal(receipt), shop: receipt.paymentMethod ?? receipt.payment_method ?? "—", time: receiptDate(receipt).toLocaleString() }; }), [receipts]);
-  const filteredTransactions = React.useMemo(() => txFilter === "all" ? liveTransactions : liveTransactions.filter((item) => item.type.toLowerCase() === txFilter), [liveTransactions, txFilter]);
+  const liveTransactions = React.useMemo(() => [...receipts].sort((a, b) => receiptDate(b).getTime() - receiptDate(a).getTime()).slice(0, 8).map((receipt) => { const status = (receipt.status ?? "PAID").toLowerCase(); return { id: receiptNumber(receipt), customer: receipt.customerName ?? receipt.customer_name ?? "Walk-in Customer", type: status.charAt(0).toUpperCase() + status.slice(1), amount: receiptTotal(receipt), shop: receipt.paymentMethod ?? receipt.payment_method ?? "—", time: formatShopDateTime(receiptDate(receipt), getShopTimezone(), undefined, undefined) }; }), [receipts, shopTimezone]);
+  const filteredTransactions = React.useMemo(() => txFilter === "all" ? liveTransactions : liveTransactions.filter((item) => item.type.toLowerCase() === txFilter), [liveTransactions, txFilter, shopTimezone]);
   const mainOffset = sidebarCollapsed ? "xl:pl-[108px]" : "xl:pl-[284px]";
 
   return (

@@ -1,5 +1,7 @@
 // app/timecard/schedule/page.tsx
 "use client";
+import { shopDateKey, shopLocalInput, shopLocalInputToInstant, formatShopTime } from "@/lib/date-time";
+import { useShopTimezone } from "@/components/shop-timezone-provider";
 
 import * as React from "react";
 import { addDays, startOfWeek, endOfWeek, format, parseISO, isSameDay } from "date-fns";
@@ -114,10 +116,11 @@ const FALLBACK_EMPLOYEES: Array<{ id: string; name: string; dept?: string }> = [
 /* ------------------- Main Page ------------------- */
 
 export default function SchedulePage() {
+  const shopTimezone = useShopTimezone();
   const mounted = useMounted();
 
   // anchor date
-  const [anchor, setAnchor] = React.useState<Date>(new Date());
+  const [anchor, setAnchor] = React.useState<Date>(() => parseISO(shopDateKey()));
   const { from, to } = weekRange(anchor);
 
   // data state
@@ -197,7 +200,7 @@ export default function SchedulePage() {
   React.useEffect(() => {
     loadWeek();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anchor, filterEmp]);
+  }, [anchor, filterEmp, shopTimezone]);
 
   // helpers
   const days: Date[] = React.useMemo(
@@ -206,14 +209,11 @@ export default function SchedulePage() {
   );
 
   const openCreateFor = (employeeId: string, day: Date) => {
-    const start = new Date(day);
-    start.setHours(9, 0, 0, 0);
-    const end = new Date(day);
-    end.setHours(17, 0, 0, 0);
+
     setEditing({
       employeeId,
-      startAt: start.toISOString(),
-      endAt: end.toISOString(),
+      startAt: new Date(shopLocalInputToInstant(`${toYmd(day)}T09:00`)).toISOString(),
+      endAt: new Date(shopLocalInputToInstant(`${toYmd(day)}T17:00`)).toISOString(),
       note: "",
     });
     setEditOpen(true);
@@ -292,7 +292,7 @@ export default function SchedulePage() {
     // map: empId -> dayIndex -> shifts[]
     const map: Record<string, Record<number, ScheduleShift[]>> = {};
     for (const s of shifts) {
-      const d = parseISO(s.startAt);
+      const d = parseISO(shopDateKey(s.startAt));
       const idx = days.findIndex((dx) => isSameDay(dx, d));
       if (idx < 0) continue;
       if (!map[s.employeeId]) map[s.employeeId] = {};
@@ -354,7 +354,7 @@ export default function SchedulePage() {
                 <Button
                   variant="secondary"
                   className="ml-2"
-                  onClick={() => setAnchor(new Date())}
+                  onClick={() => setAnchor(parseISO(shopDateKey()))}
                 >
                   This week
                 </Button>
@@ -418,7 +418,7 @@ export default function SchedulePage() {
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="inline-flex items-center gap-1">
                                     <Clock className="h-3.5 w-3.5" />
-                                    {format(parseISO(s.startAt), "HH:mm")}–{format(parseISO(s.endAt), "HH:mm")}
+                                    {formatShopTime(s.startAt, shopTimezone, {hour:"2-digit",minute:"2-digit",hourCycle:"h23"})}–{formatShopTime(s.endAt, shopTimezone, {hour:"2-digit",minute:"2-digit",hourCycle:"h23"})}
                                   </span>
                                   <span className="opacity-0 transition group-hover:opacity-100">
                                     <Button variant="outline" size="icon" className="h-7 w-7 mr-1" onClick={() => openEdit(s)}>
@@ -577,18 +577,9 @@ export default function SchedulePage() {
 
 /* ---------------- utils ---------------- */
 
-function toLocal(iso: string) {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const y = d.getFullYear();
-  const m = pad(d.getMonth() + 1);
-  const da = pad(d.getDate());
-  const h = pad(d.getHours());
-  const mi = pad(d.getMinutes());
-  return `${y}-${m}-${da}T${h}:${mi}`;
-}
+function toLocal(iso: string) { return shopLocalInput(iso); }
 function fromLocal(v: string) {
-  return new Date(v).toISOString();
+  return new Date(shopLocalInputToInstant(v)).toISOString();
 }
 
 
@@ -1016,7 +1007,7 @@ function fromLocal(v: string) {
 //                                 <div className="flex items-center justify-between gap-2">
 //                                   <span className="inline-flex items-center gap-1">
 //                                     <Clock className="h-3.5 w-3.5" />
-//                                     {format(parseISO(s.startAt), "HH:mm")}–{format(parseISO(s.endAt), "HH:mm")}
+//                                     {formatShopTime(s.startAt, shopTimezone, {hour:"2-digit",minute:"2-digit",hourCycle:"h23"})}–{formatShopTime(s.endAt, shopTimezone, {hour:"2-digit",minute:"2-digit",hourCycle:"h23"})}
 //                                   </span>
 //                                   <span className="opacity-0 transition group-hover:opacity-100">
 //                                     <Button variant="outline" size="icon" className="h-7 w-7 mr-1" onClick={() => openEdit(s)}>
