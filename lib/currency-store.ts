@@ -1,4 +1,4 @@
-import { DEFAULT_CURRENCY, normalizeCurrency } from "./currency";
+import { DEFAULT_CURRENCY, currencyForRegion } from "./currency";
 import type { ReceiptSettings } from "./settings-api";
 
 // No persistent cache: the identity includes account credentials and shop keys.
@@ -19,7 +19,7 @@ export function createCurrencyStore() {
     publish(settings: ReceiptSettings, expectedIdentity: string) {
       if (identity !== expectedIdentity) return;
       ++generation;
-      currency = normalizeCurrency(settings);
+      currency = currencyForRegion(settings.region);
       emit();
     },
     refresh(nextIdentity: string, authenticated: boolean, fetchSettings: () => Promise<ReceiptSettings>, force = false) {
@@ -35,7 +35,7 @@ export function createCurrencyStore() {
       const requestGeneration = generation;
       const request = fetchSettings().then((settings) => {
         if (generation === requestGeneration && identity === nextIdentity) {
-          currency = normalizeCurrency(settings);
+          currency = currencyForRegion(settings.region);
           emit();
         }
       }).catch(() => {

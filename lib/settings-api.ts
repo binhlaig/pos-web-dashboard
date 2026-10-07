@@ -11,6 +11,7 @@ export type ProfileSettings = {
 };
 
 export type ShopSettings = {
+  region?: string | null;
   timezone?: string | null;
   shopName?: string | null;
   address?: string | null;
@@ -21,6 +22,9 @@ export type ShopSettings = {
 };
 
 export type ReceiptSettings = {
+  region?: string | null;
+  shopId?: number | null;
+  shopCode?: string | null;
   shopName?: string | null;
   address?: string | null;
   phone?: string | null;
@@ -77,11 +81,13 @@ export function getMyShop() {
   return request<ShopSettings>("/api/me/shop");
 }
 
-export function updateMyShop(payload: Partial<ShopSettings>) {
-  return request<ShopSettings>("/api/me/shop", {
+export async function updateMyShop(payload: Partial<ShopSettings>) {
+  const saved = await request<ShopSettings>("/api/me/shop", {
     method: "PUT",
     body: JSON.stringify(payload),
   });
+  window.dispatchEvent(new Event("pos-shop-settings-updated"));
+  return saved;
 }
 
 export function getMyPlan() {

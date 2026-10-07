@@ -216,9 +216,9 @@ const emptyReceipt: ReceiptSettings = {
 
   taxRatePercent: 0,
 
-  currencyCode: "MMK",
+  currencyCode: "",
 
-  currencySymbol: "Ks",
+  currencySymbol: "",
 
   currencyDecimalDigits: 0,
 

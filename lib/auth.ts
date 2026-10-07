@@ -1,8 +1,8 @@
 "use client";
 
 const TOKEN_KEYS = [
-  "pos_shop_owner_token",
   "pos_access_token",
+  "pos_shop_owner_token",
   "access_token",
   "token",
   "jwt",
@@ -34,8 +34,11 @@ export function saveToken(token: string) {
   const clean = cleanToken(token);
   if (!clean) return;
 
+  for (const key of TOKEN_KEYS) {
+    if (key !== "pos_access_token") window.localStorage.removeItem(key);
+    window.sessionStorage.removeItem(key);
+  }
   window.localStorage.setItem("pos_access_token", clean);
-  window.sessionStorage.removeItem("pos_access_token");
   window.dispatchEvent(new Event("pos-auth-change"));
 }
 

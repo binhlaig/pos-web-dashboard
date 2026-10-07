@@ -1,5 +1,7 @@
 
 // "use client";
+// import { formatCurrencyAmount, normalizeCurrency } from "@/lib/currency";
+// import { getCurrencyIdentity, publishCurrencySettings } from "@/components/currency-provider";
 
 // import { useEffect, useMemo, useState } from "react";
 // import { motion, AnimatePresence } from "framer-motion";
@@ -22,10 +24,8 @@
 //   Wallet,
 //   BadgeDollarSign,
 //   Coins,
-//   Store,
 // } from "lucide-react";
 // import { FeaturePageGuard } from "@/components/feature-page-guard";
-// import { useRouter } from "next/navigation";
 
 // type ReceiptAd = {
 //   id: number | null;
@@ -99,10 +99,10 @@
 //     secondPhone: "",
 //     footerMessage: "Thank you for shopping with us!",
 
-//     currencyCode: "MMK",
-//     currencySymbol: "Ks",
+//     currencyCode: "",
+//     currencySymbol: "",
 //     currencyDecimalDigits: 0,
-//     currencyPosition: "BEFORE",
+//     currencyPosition: "AFTER",
 //     taxPercent: 0,
 
 //     ads: [
@@ -149,19 +149,8 @@
 //   setting: Pick<
 //     ReceiptSetting,
 //     "currencySymbol" | "currencyDecimalDigits" | "currencyPosition"
-//   >
-// ) {
-//   const value = Number(amount || 0).toLocaleString("en-US", {
-//     minimumFractionDigits: setting.currencyDecimalDigits,
-//     maximumFractionDigits: setting.currencyDecimalDigits,
-//   });
-
-//   if (setting.currencyPosition === "AFTER") {
-//     return `${value} ${setting.currencySymbol}`;
-//   }
-
-//   return `${setting.currencySymbol} ${value}`;
-// }
+//   >,
+// ) { return formatCurrencyAmount(amount, setting); }
 
 // function ReceiptSettingsPageContent() {
 //   const { data: session, status: authStatus } = useSession();
@@ -173,7 +162,7 @@
 //     null;
 
 //   const [setting, setSetting] = useState<ReceiptSetting>(() =>
-//     createDefaultSetting()
+//     createDefaultSetting(),
 //   );
 
 //   const [loading, setLoading] = useState(true);
@@ -186,7 +175,7 @@
 
 //   const activeAds = useMemo(
 //     () => setting.ads.filter((ad) => ad.active && ad.message.trim()),
-//     [setting.ads]
+//     [setting.ads],
 //   );
 
 //   useEffect(() => {
@@ -215,8 +204,7 @@
 //       console.error(err);
 //       setNotice({
 //         type: "error",
-//         message:
-//           err instanceof Error ? err.message : "Setting မဖတ်နိုင်ပါ။",
+//         message: err instanceof Error ? err.message : "Setting မဖတ်နိုင်ပါ။",
 //       });
 //     } finally {
 //       setLoading(false);
@@ -242,6 +230,7 @@
 
 //     setSetting((prev) => ({
 //       ...prev,
+//       ...normalizeCurrency(data),
 //       shopName: data.shopName || prev.shopName || "My POS Shop",
 //       address: data.address || "",
 //       phone: data.phone || "",
@@ -250,12 +239,12 @@
 //       ads:
 //         Array.isArray(data.ads) && data.ads.length > 0
 //           ? data.ads.map((ad: any) => ({
-//             id: ad.id ?? null,
-//             tempId: makeTempId(),
-//             title: ad.title || "",
-//             message: ad.message || "",
-//             active: ad.active !== false,
-//           }))
+//               id: ad.id ?? null,
+//               tempId: makeTempId(),
+//               title: ad.title || "",
+//               message: ad.message || "",
+//               active: ad.active !== false,
+//             }))
 //           : prev.ads,
 //     }));
 //   }
@@ -284,19 +273,12 @@
 //       address: data.address || prev.address,
 //       phone: data.phone || prev.phone,
 
-//       currencyCode: data.currencyCode || "MMK",
-//       currencySymbol: data.currencySymbol || "Ks",
-//       currencyDecimalDigits:
-//         typeof data.currencyDecimalDigits === "number"
-//           ? data.currencyDecimalDigits
-//           : 0,
-//       currencyPosition:
-//         data.currencyPosition === "AFTER" ? "AFTER" : "BEFORE",
 //       taxPercent: Number(data.taxPercent ?? 0),
 //     }));
 //   }
 
 //   async function saveReceiptSetting() {
+//     const identity = getCurrencyIdentity();
 //     try {
 //       setSaving(true);
 //       setNotice(null);
@@ -309,7 +291,7 @@
 //         return;
 //       }
 
-//       await Promise.all([saveReceiptOnly(), saveShopCurrencyOnly()]);
+//       await Promise.all([saveReceiptOnly(identity), saveShopCurrencyOnly()]);
 
 //       setNotice({
 //         type: "success",
@@ -331,8 +313,9 @@
 //     }
 //   }
 
-//   async function saveReceiptOnly() {
+//   async function saveReceiptOnly(identity: string) {
 //     const payload = {
+//       ...normalizeCurrency(setting),
 //       shopName: setting.shopName.trim(),
 //       address: setting.address.trim(),
 //       phone: setting.phone.trim(),
@@ -358,6 +341,7 @@
 //     if (!res.ok) {
 //       throw new Error(getErrorMessage(res.status));
 //     }
+//     publishCurrencySettings(setting, identity);
 //   }
 
 //   async function saveShopCurrencyOnly() {
@@ -368,7 +352,7 @@
 
 //       currencyCode: setting.currencyCode.trim().toUpperCase(),
 //       currencySymbol: setting.currencySymbol.trim(),
-//       currencyDecimalDigits: Number(setting.currencyDecimalDigits || 0),
+//       currencyDecimalDigits: normalizeCurrency(setting).currencyDecimalDigits,
 //       currencyPosition: setting.currencyPosition,
 //       taxPercent: Number(setting.taxPercent || 0),
 //     };
@@ -386,7 +370,7 @@
 
 //   function updateField<K extends keyof ReceiptSetting>(
 //     key: K,
-//     value: ReceiptSetting[K]
+//     value: ReceiptSetting[K],
 //   ) {
 //     setSetting((prev) => ({
 //       ...prev,
@@ -424,7 +408,7 @@
 //     setSetting((prev) => ({
 //       ...prev,
 //       ads: prev.ads.map((ad) =>
-//         ad.tempId === tempId ? { ...ad, ...patch } : ad
+//         ad.tempId === tempId ? { ...ad, ...patch } : ad,
 //       ),
 //     }));
 //   }
@@ -437,46 +421,28 @@
 //   }
 
 //   const sampleSubtotal = 11700;
-//   const sampleTax = Math.round((sampleSubtotal * Number(setting.taxPercent || 0)) / 100);
+//   const sampleTax = Math.round(
+//     (sampleSubtotal * Number(setting.taxPercent || 0)) / 100,
+//   );
 //   const sampleDiscount = 500;
 //   const sampleTotal = sampleSubtotal + sampleTax - sampleDiscount;
-//   const router = useRouter();
-
 //   return (
-//     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-orange-50 p-4 text-slate-900 md:p-8">
+//     <main className="min-h-full py-5 text-slate-950 dark:text-slate-100">
 //       <div className="mx-auto max-w-7xl">
-//         <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+//         <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 //           <div>
-
-//             <div>
-//               <div className="">
-//                 <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-sm font-medium text-orange-700">
-//                   <ReceiptText className="h-4 w-4" />
-//                   Receipt Settings
-//                 </div>
-//                 <button
-//                   onClick={() => router.push("/dashboard")}
-//                   className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 "
-
-//                 >
-//                   <Store className="h-4 w-4" />
-//                   Dashboard
-//                 </button>
-
-//               </div>
-
-
-
+//             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300">
+//               <ReceiptText className="h-3.5 w-3.5" />
+//               Receipt Settings
 //             </div>
 
-
-//             <h1 className="text-2xl font-bold tracking-tight md:text-4xl">
-//               Receipt ဆိုင်အချက်အလက်၊ Currency & ကြော်ငြာစာသားများ
+//             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+//               Receipt & Currency Settings
 //             </h1>
 
-//             <p className="mt-2 max-w-2xl text-sm text-slate-500 md:text-base">
-//               Receipt ပေါ်မှာ ပြမယ့် ဆိုင်လိပ်စာ၊ ဖုန်းနံပါတ်၊ currency,
-//               tax နဲ့ promotion message များကို ဒီ page မှာ update လုပ်နိုင်ပါတယ်။
+//             <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+//               Receipt ပေါ်မှာ ပြမယ့် ဆိုင်လိပ်စာ၊ ဖုန်းနံပါတ်၊ currency, tax နဲ့
+//               promotion message များကို ဒီ page မှာ update လုပ်နိုင်ပါတယ်။
 //             </p>
 //           </div>
 
@@ -484,7 +450,7 @@
 //             <button
 //               onClick={loadAllSettings}
 //               disabled={loading || saving}
-//               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+//               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-[#293750] dark:text-slate-200 dark:hover:bg-[#33435f]"
 //             >
 //               <RefreshCcw className="h-4 w-4" />
 //               Reload
@@ -493,7 +459,7 @@
 //             <button
 //               onClick={saveReceiptSetting}
 //               disabled={saving || loading}
-//               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-300 transition hover:-translate-y-0.5 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+//               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
 //             >
 //               {saving ? (
 //                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -511,10 +477,11 @@
 //               initial={{ opacity: 0, y: -8 }}
 //               animate={{ opacity: 1, y: 0 }}
 //               exit={{ opacity: 0, y: -8 }}
-//               className={`mb-5 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${notice.type === "success"
-//                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-//                 : "border-rose-200 bg-rose-50 text-rose-700"
-//                 }`}
+//               className={`mb-5 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
+//                 notice.type === "success"
+//                   ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300"
+//                   : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-300"
+//               }`}
 //             >
 //               {notice.type === "success" ? (
 //                 <CheckCircle2 className="h-5 w-5" />
@@ -527,8 +494,8 @@
 //         </AnimatePresence>
 
 //         {loading ? (
-//           <div className="flex min-h-[400px] items-center justify-center rounded-3xl border bg-white">
-//             <div className="flex items-center gap-3 text-slate-500">
+//           <div className="flex min-h-[400px] items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#293750]">
+//             <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
 //               <Loader2 className="h-5 w-5 animate-spin" />
 //               Loading settings...
 //             </div>
@@ -539,10 +506,10 @@
 //               <motion.div
 //                 initial={{ opacity: 0, y: 14 }}
 //                 animate={{ opacity: 1, y: 0 }}
-//                 className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
+//                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#293750] md:p-6"
 //               >
 //                 <div className="mb-5 flex items-center gap-3">
-//                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-800 text-white">
+//                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/20">
 //                     <Building2 className="h-5 w-5" />
 //                   </div>
 //                   <div>
@@ -564,7 +531,7 @@
 //                           updateField("shopName", e.target.value)
 //                         }
 //                         placeholder="Example: Binhlaing Mini Mart"
-//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                     </div>
 //                   </div>
@@ -577,7 +544,7 @@
 //                         value={setting.phone}
 //                         onChange={(e) => updateField("phone", e.target.value)}
 //                         placeholder="09 xxx xxx xxx"
-//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                     </div>
 //                   </div>
@@ -592,7 +559,7 @@
 //                           updateField("secondPhone", e.target.value)
 //                         }
 //                         placeholder="Optional"
-//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                     </div>
 //                   </div>
@@ -603,12 +570,10 @@
 //                       <MapPin className="pointer-events-none absolute left-4 top-4 h-4 w-4 text-slate-400" />
 //                       <textarea
 //                         value={setting.address}
-//                         onChange={(e) =>
-//                           updateField("address", e.target.value)
-//                         }
+//                         onChange={(e) => updateField("address", e.target.value)}
 //                         rows={3}
 //                         placeholder="No, Street, Township, City"
-//                         className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                     </div>
 //                   </div>
@@ -624,7 +589,7 @@
 //                         }
 //                         rows={2}
 //                         placeholder="Thank you for shopping with us!"
-//                         className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                     </div>
 //                   </div>
@@ -635,16 +600,19 @@
 //                 initial={{ opacity: 0, y: 14 }}
 //                 animate={{ opacity: 1, y: 0 }}
 //                 transition={{ delay: 0.03 }}
-//                 className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
+//                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#293750] md:p-6"
 //               >
 //                 <div className="mb-5 flex items-center gap-3">
-//                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-white">
+//                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white">
 //                     <Wallet className="h-5 w-5" />
 //                   </div>
 //                   <div>
-//                     <h2 className="text-lg font-bold">Currency & Tax Setting</h2>
-//                     <p className="text-sm text-slate-500">
-//                       Owner စိတ်ကြိုက် currency, symbol, decimal နဲ့ tax ကိုပြောင်းနိုင်ပါတယ်။
+//                     <h2 className="text-lg font-bold">
+//                       Currency & Tax Setting
+//                     </h2>
+//                     <p className="text-sm text-slate-500 dark:text-slate-400">
+//                       Owner စိတ်ကြိုက် currency, symbol, decimal နဲ့ tax
+//                       ကိုပြောင်းနိုင်ပါတယ်။
 //                     </p>
 //                   </div>
 //                 </div>
@@ -657,11 +625,12 @@
 //                       <button
 //                         key={preset.code}
 //                         type="button"
-//                         onClick={() => applyCurrencyPreset(preset)}
-//                         className={`rounded-2xl border p-4 text-left transition ${active
-//                           ? "border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm"
-//                           : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white"
-//                           }`}
+//                         disabled onClick={() => applyCurrencyPreset(preset)}
+//                         className={`rounded-2xl border p-4 text-left transition ${
+//                           active
+//                             ? "border-blue-300 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-300"
+//                             : "border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-200 hover:border-slate-300 hover:bg-white dark:hover:bg-[#3b4d6d]"
+//                         }`}
 //                       >
 //                         <p className="font-bold">{preset.label}</p>
 //                         <p className="mt-1 text-sm opacity-80">
@@ -678,15 +647,15 @@
 //                     <div className="relative mt-2">
 //                       <BadgeDollarSign className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 //                       <input
-//                         value={setting.currencyCode}
+//                         disabled value={setting.currencyCode}
 //                         onChange={(e) =>
 //                           updateField(
 //                             "currencyCode",
-//                             e.target.value.toUpperCase()
+//                             e.target.value.toUpperCase(),
 //                           )
 //                         }
-//                         placeholder="MMK"
-//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         placeholder="Region currency"
+//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                     </div>
 //                   </div>
@@ -696,12 +665,12 @@
 //                     <div className="relative mt-2">
 //                       <Coins className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 //                       <input
-//                         value={setting.currencySymbol}
+//                         disabled value={setting.currencySymbol}
 //                         onChange={(e) =>
 //                           updateField("currencySymbol", e.target.value)
 //                         }
-//                         placeholder="Ks"
-//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         placeholder="Region symbol"
+//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                     </div>
 //                   </div>
@@ -709,14 +678,14 @@
 //                   <div>
 //                     <Label>Decimal Digits</Label>
 //                     <select
-//                       value={setting.currencyDecimalDigits}
+//                       disabled value={setting.currencyDecimalDigits}
 //                       onChange={(e) =>
 //                         updateField(
 //                           "currencyDecimalDigits",
-//                           Number(e.target.value)
+//                           Number(e.target.value),
 //                         )
 //                       }
-//                       className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                       className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                     >
 //                       <option value={0}>0 - MMK / JPY</option>
 //                       <option value={1}>1</option>
@@ -729,14 +698,14 @@
 //                   <div>
 //                     <Label>Symbol Position</Label>
 //                     <select
-//                       value={setting.currencyPosition}
+//                       disabled value={setting.currencyPosition}
 //                       onChange={(e) =>
 //                         updateField(
 //                           "currencyPosition",
-//                           e.target.value as CurrencyPosition
+//                           e.target.value as CurrencyPosition,
 //                         )
 //                       }
-//                       className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                       className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                     >
 //                       <option value="BEFORE">Before amount</option>
 //                       <option value="AFTER">After amount</option>
@@ -755,7 +724,7 @@
 //                           updateField("taxPercent", Number(e.target.value))
 //                         }
 //                         placeholder="0"
-//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+//                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 px-4 py-3 pr-12 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
 //                       />
 //                       <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
 //                         %
@@ -764,7 +733,7 @@
 //                   </div>
 //                 </div>
 
-//                 <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+//                 <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300">
 //                   Preview:{" "}
 //                   <span className="font-black">
 //                     {formatMoney(25000, setting)}
@@ -776,18 +745,18 @@
 //                 initial={{ opacity: 0, y: 14 }}
 //                 animate={{ opacity: 1, y: 0 }}
 //                 transition={{ delay: 0.05 }}
-//                 className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
+//                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#293750] md:p-6"
 //               >
 //                 <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
 //                   <div className="flex items-center gap-3">
-//                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500 text-white">
+//                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 text-white">
 //                       <Megaphone className="h-5 w-5" />
 //                     </div>
 //                     <div>
 //                       <h2 className="text-lg font-bold">
 //                         Receipt Advertisement
 //                       </h2>
-//                       <p className="text-sm text-slate-500">
+//                       <p className="text-sm text-slate-500 dark:text-slate-400">
 //                         Receipt အောက်ပိုင်းမှာ ပြမယ့် promotion ကြော်ငြာများ
 //                       </p>
 //                     </div>
@@ -795,7 +764,7 @@
 
 //                   <button
 //                     onClick={addAd}
-//                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm font-semibold text-orange-700 transition hover:bg-orange-100"
+//                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-100 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300 dark:hover:bg-blue-400/20"
 //                   >
 //                     <Plus className="h-4 w-4" />
 //                     Add Ad
@@ -810,16 +779,16 @@
 //                         initial={{ opacity: 0, y: 10, scale: 0.98 }}
 //                         animate={{ opacity: 1, y: 0, scale: 1 }}
 //                         exit={{ opacity: 0, y: -10, scale: 0.98 }}
-//                         className="rounded-3xl border border-slate-200 bg-slate-50 p-4"
+//                         className="rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 p-4"
 //                       >
 //                         <div className="mb-4 flex items-center justify-between gap-3">
-//                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-//                             <PencilLine className="h-4 w-4 text-orange-500" />
+//                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+//                             <PencilLine className="h-4 w-4 text-blue-500" />
 //                             Advertisement #{index + 1}
 //                           </div>
 
 //                           <div className="flex items-center gap-2">
-//                             <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-500">
+//                             <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
 //                               <input
 //                                 type="checkbox"
 //                                 checked={ad.active}
@@ -835,7 +804,7 @@
 
 //                             <button
 //                               onClick={() => removeAd(ad.tempId)}
-//                               className="rounded-xl border border-rose-200 bg-white p-2 text-rose-500 transition hover:bg-rose-50"
+//                               className="rounded-xl border border-rose-200 bg-white p-2 text-rose-500 transition hover:bg-rose-50 dark:border-rose-400/20 dark:bg-[#293750] dark:text-rose-400 dark:hover:bg-rose-400/10"
 //                               aria-label="Remove advertisement"
 //                             >
 //                               <Trash2 className="h-4 w-4" />
@@ -854,7 +823,7 @@
 //                                 })
 //                               }
 //                               placeholder="Example: Today Promotion"
-//                               className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-900"
+//                               className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 text-sm outline-none transition focus:border-blue-500 dark:focus:border-blue-400"
 //                             />
 //                           </div>
 
@@ -868,7 +837,7 @@
 //                                 })
 //                               }
 //                               placeholder="Example: Buy 3 get 1 free"
-//                               className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-900"
+//                               className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 text-sm outline-none transition focus:border-blue-500 dark:focus:border-blue-400"
 //                             />
 //                           </div>
 //                         </div>
@@ -877,12 +846,12 @@
 //                   </AnimatePresence>
 
 //                   {setting.ads.length === 0 && (
-//                     <div className="rounded-3xl border border-dashed border-slate-300 p-8 text-center">
+//                     <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-white/15">
 //                       <Megaphone className="mx-auto mb-3 h-8 w-8 text-slate-300" />
-//                       <p className="font-semibold text-slate-700">
+//                       <p className="font-semibold text-slate-700 dark:text-slate-200">
 //                         Advertisement မရှိသေးပါ။
 //                       </p>
-//                       <p className="mt-1 text-sm text-slate-500">
+//                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
 //                         Add Ad ကိုနှိပ်ပြီး receipt promotion စာသား ထည့်ပါ။
 //                       </p>
 //                     </div>
@@ -891,25 +860,25 @@
 //               </motion.div>
 //             </section>
 
-//             <aside className="lg:sticky lg:top-8 lg:self-start">
+//             <aside className="lg:sticky lg:top-[112px] lg:self-start">
 //               <motion.div
 //                 initial={{ opacity: 0, x: 16 }}
 //                 animate={{ opacity: 1, x: 0 }}
-//                 className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+//                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#293750]"
 //               >
 //                 <div className="mb-5 flex items-center gap-3">
-//                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-white">
+//                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/20">
 //                     <ReceiptText className="h-5 w-5" />
 //                   </div>
 //                   <div>
 //                     <h2 className="text-lg font-bold">Receipt Preview</h2>
-//                     <p className="text-sm text-slate-500">
+//                     <p className="text-sm text-slate-500 dark:text-slate-400">
 //                       Print ထွက်မယ့်ပုံစံကို ကြိုကြည့်နိုင်ပါတယ်။
 //                     </p>
 //                   </div>
 //                 </div>
 
-//                 <div className="mx-auto max-w-sm rounded-[2rem] bg-slate-100 p-4">
+//                 <div className="mx-auto max-w-sm rounded-[2rem] bg-slate-100 p-4 dark:bg-[#33435f]">
 //                   <div className="rounded-2xl bg-white p-5 font-mono text-[12px] text-slate-800 shadow-sm">
 //                     <div className="text-center">
 //                       <h3 className="text-base font-black uppercase tracking-wide">
@@ -917,7 +886,7 @@
 //                       </h3>
 
 //                       {setting.address ? (
-//                         <p className="mt-2 whitespace-pre-line text-[11px] leading-relaxed text-slate-500">
+//                         <p className="mt-2 whitespace-pre-line text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
 //                           {setting.address}
 //                         </p>
 //                       ) : (
@@ -1025,7 +994,9 @@
 
 // function Label({ children }: { children: React.ReactNode }) {
 //   return (
-//     <label className="text-sm font-semibold text-slate-700">{children}</label>
+//     <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+//       {children}
+//     </label>
 //   );
 // }
 
@@ -1062,18 +1033,15 @@
 // }) {
 //   return (
 //     <div
-//       className={`flex items-center justify-between ${bold ? "text-sm font-black" : "text-[12px]"
-//         }`}
+//       className={`flex items-center justify-between ${
+//         bold ? "text-sm font-black" : "text-[12px]"
+//       }`}
 //     >
 //       <span>{label}</span>
 //       <span>{value}</span>
 //     </div>
 //   );
 // }
-
-
-
-
 
 
 
@@ -1119,6 +1087,7 @@ type ReceiptAd = {
 type CurrencyPosition = "BEFORE" | "AFTER";
 
 type ReceiptSetting = {
+  region?: string | null;
   shopName: string;
   address: string;
   phone: string;
@@ -1180,8 +1149,8 @@ function createDefaultSetting(): ReceiptSetting {
     secondPhone: "",
     footerMessage: "Thank you for shopping with us!",
 
-    currencyCode: "MMK",
-    currencySymbol: "Ks",
+    currencyCode: "",
+    currencySymbol: "",
     currencyDecimalDigits: 0,
     currencyPosition: "AFTER",
     taxPercent: 0,
@@ -1203,7 +1172,9 @@ function getAccessToken(sessionToken?: string | null) {
   if (typeof window === "undefined") return null;
 
   return (
+    localStorage.getItem("pos_shop_owner_token") ||
     localStorage.getItem("pos_access_token") ||
+    localStorage.getItem("access_token") ||
     localStorage.getItem("accessToken") ||
     localStorage.getItem("token")
   );
@@ -1214,7 +1185,7 @@ function authHeaders(sessionToken?: string | null) {
 
   return {
     "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(token ? { Authorization: token.startsWith("Bearer ") ? token : `Bearer ${token}` } : {}),
   };
 }
 
@@ -1275,87 +1246,44 @@ function ReceiptSettingsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authStatus, accessToken]);
 
+  async function readSetting(path: string): Promise<Record<string, any>> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: authHeaders(accessToken), cache: "no-store",
+    });
+    if (res.status === 404) return {};
+    if (!res.ok) throw new Error(getErrorMessage(res.status));
+    const body = await res.json();
+    return body?.data && typeof body.data === "object" ? body.data : body;
+  }
+
   async function loadAllSettings() {
+    const identity = getCurrencyIdentity();
     try {
       setLoading(true);
       setNotice(null);
-
-      await Promise.all([loadReceiptSettingOnly(), loadShopCurrencyOnly()]);
+      const [receipt, shop] = await Promise.all([
+        readSetting("/api/receipt-settings/my-shop"),
+        readSetting("/api/shop/settings"),
+      ]);
+      const currency = normalizeCurrency({ ...shop, region: shop.region ?? receipt.region ?? null });
+      if (identity !== getCurrencyIdentity()) return;
+      publishCurrencySettings({ ...receipt, region: shop.region ?? receipt.region ?? null }, identity);
+      setSetting(prev => ({
+        ...prev, ...currency,
+        shopName: receipt.shopName || shop.shopName || prev.shopName,
+        address: receipt.address ?? shop.address ?? "",
+        phone: receipt.phone ?? shop.phone ?? "",
+        secondPhone: receipt.secondPhone ?? "",
+        footerMessage: receipt.footerMessage || "Thank you for shopping with us!",
+        taxPercent: Number(shop.taxPercent ?? receipt.taxPercent ?? 0),
+        ads: Array.isArray(receipt.ads) ? receipt.ads.map((ad: any) => ({
+          id: ad.id ?? null, tempId: makeTempId(), title: ad.title || "",
+          message: ad.message || "", active: ad.active !== false,
+        })) : prev.ads,
+      }));
     } catch (err) {
-      console.error(err);
-      setNotice({
-        type: "error",
-        message: err instanceof Error ? err.message : "Setting မဖတ်နိုင်ပါ။",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadReceiptSettingOnly() {
-    const res = await fetch(`${API_BASE}/api/receipt-settings/my-shop`, {
-      method: "GET",
-      headers: authHeaders(accessToken),
-      cache: "no-store",
-    });
-
-    if (res.status === 404) {
-      return;
-    }
-
-    if (!res.ok) {
-      throw new Error(getErrorMessage(res.status));
-    }
-
-    const data = await res.json();
-
-    setSetting((prev) => ({
-      ...prev,
-      ...normalizeCurrency(data),
-      shopName: data.shopName || prev.shopName || "My POS Shop",
-      address: data.address || "",
-      phone: data.phone || "",
-      secondPhone: data.secondPhone || "",
-      footerMessage: data.footerMessage || "Thank you for shopping with us!",
-      ads:
-        Array.isArray(data.ads) && data.ads.length > 0
-          ? data.ads.map((ad: any) => ({
-              id: ad.id ?? null,
-              tempId: makeTempId(),
-              title: ad.title || "",
-              message: ad.message || "",
-              active: ad.active !== false,
-            }))
-          : prev.ads,
-    }));
-  }
-
-  async function loadShopCurrencyOnly() {
-    const res = await fetch(`${API_BASE}/api/shop/settings`, {
-      method: "GET",
-      headers: authHeaders(accessToken),
-      cache: "no-store",
-    });
-
-    if (res.status === 404) {
-      return;
-    }
-
-    if (!res.ok) {
-      throw new Error(getErrorMessage(res.status));
-    }
-
-    const data = await res.json();
-
-    setSetting((prev) => ({
-      ...prev,
-
-      shopName: data.shopName || prev.shopName,
-      address: data.address || prev.address,
-      phone: data.phone || prev.phone,
-
-      taxPercent: Number(data.taxPercent ?? 0),
-    }));
+      setNotice({ type: "error", message: err instanceof Error ? err.message : "Setting မဖတ်နိုင်ပါ။" });
+    } finally { setLoading(false); }
   }
 
   async function saveReceiptSetting() {
@@ -1372,7 +1300,10 @@ function ReceiptSettingsPageContent() {
         return;
       }
 
-      await Promise.all([saveReceiptOnly(identity), saveShopCurrencyOnly()]);
+      await saveReceiptOnly(identity);
+      await saveShopCurrencyOnly();
+      const latest = await readSetting("/api/receipt-settings/my-shop");
+      publishCurrencySettings(latest, identity);
 
       setNotice({
         type: "success",
@@ -1422,7 +1353,6 @@ function ReceiptSettingsPageContent() {
     if (!res.ok) {
       throw new Error(getErrorMessage(res.status));
     }
-    publishCurrencySettings(setting, identity);
   }
 
   async function saveShopCurrencyOnly() {
@@ -1706,7 +1636,7 @@ function ReceiptSettingsPageContent() {
                       <button
                         key={preset.code}
                         type="button"
-                        onClick={() => applyCurrencyPreset(preset)}
+                        disabled onClick={() => applyCurrencyPreset(preset)}
                         className={`rounded-2xl border p-4 text-left transition ${
                           active
                             ? "border-blue-300 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-300"
@@ -1728,14 +1658,14 @@ function ReceiptSettingsPageContent() {
                     <div className="relative mt-2">
                       <BadgeDollarSign className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
-                        value={setting.currencyCode}
+                        disabled value={setting.currencyCode}
                         onChange={(e) =>
                           updateField(
                             "currencyCode",
                             e.target.value.toUpperCase(),
                           )
                         }
-                        placeholder="MMK"
+                        placeholder="Region currency"
                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
                       />
                     </div>
@@ -1746,11 +1676,11 @@ function ReceiptSettingsPageContent() {
                     <div className="relative mt-2">
                       <Coins className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
-                        value={setting.currencySymbol}
+                        disabled value={setting.currencySymbol}
                         onChange={(e) =>
                           updateField("currencySymbol", e.target.value)
                         }
-                        placeholder="Ks"
+                        placeholder="Region symbol"
                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
                       />
                     </div>
@@ -1759,7 +1689,7 @@ function ReceiptSettingsPageContent() {
                   <div>
                     <Label>Decimal Digits</Label>
                     <select
-                      value={setting.currencyDecimalDigits}
+                      disabled value={setting.currencyDecimalDigits}
                       onChange={(e) =>
                         updateField(
                           "currencyDecimalDigits",
@@ -1779,7 +1709,7 @@ function ReceiptSettingsPageContent() {
                   <div>
                     <Label>Symbol Position</Label>
                     <select
-                      value={setting.currencyPosition}
+                      disabled value={setting.currencyPosition}
                       onChange={(e) =>
                         updateField(
                           "currencyPosition",

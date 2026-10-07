@@ -97,19 +97,19 @@ export function ReceiptSettingsCard({
           </div>
           <div className="space-y-2">
             <Label htmlFor="currency-code">Currency Code</Label>
-            <Input id="currency-code" value={settings.currencyCode || ""} onChange={(e) => update("currencyCode", e.target.value.toUpperCase())} />
+            <Input disabled id="currency-code" value={settings.currencyCode || ""} onChange={(e) => update("currencyCode", e.target.value.toUpperCase())} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="currency-symbol">Currency Symbol</Label>
-            <Input id="currency-symbol" value={settings.currencySymbol || ""} onChange={(e) => update("currencySymbol", e.target.value)} />
+            <Input disabled id="currency-symbol" value={settings.currencySymbol || ""} onChange={(e) => update("currencySymbol", e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="currency-digits">Currency Decimal Digits</Label>
-            <Input id="currency-digits" type="number" min="0" max="6" value={settings.currencyDecimalDigits ?? ""} onChange={(e) => update("currencyDecimalDigits", e.target.value)} />
+            <Input disabled id="currency-digits" type="number" min="0" max="6" value={settings.currencyDecimalDigits ?? ""} onChange={(e) => update("currencyDecimalDigits", e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Currency Position</Label>
-            <Select value={settings.currencyPosition || "AFTER"} onValueChange={(value) => update("currencyPosition", value)}>
+            <Select disabled value={settings.currencyPosition || "AFTER"} onValueChange={(value) => update("currencyPosition", value)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>

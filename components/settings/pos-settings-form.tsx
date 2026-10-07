@@ -335,7 +335,7 @@ function SectionContent({ id, theme }: { id: SectionId; theme: ThemeMode }) {
             </Field>
 
             <Field label="Currency" theme={theme}>
-              <Select key={currencySettings.currencyCode} theme={theme} defaultValue={currencySettings.currencyCode}>
+              <Select disabled key={currencySettings.currencyCode} theme={theme} defaultValue={currencySettings.currencyCode}>
                 {!["JPY", "MMK", "USD"].includes(currencySettings.currencyCode) && (
                   <option value={currencySettings.currencyCode}>{currencySettings.currencyCode}</option>
                 )}

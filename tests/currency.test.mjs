@@ -11,109 +11,123 @@ function load(relative, imports = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
   const exports = {};
-  vm.runInNewContext(code, { exports, require: name => imports[name], Intl, Number, Promise, Set });
+  vm.runInNewContext(code, { exports, require: name => imports[name], Intl, Number, Promise, Set, Event, window: imports.window, document: imports.document });
   return exports;
 }
 const currency = load('../lib/currency.ts');
 const { createCurrencyStore } = load('../lib/currency-store.ts', { './currency': currency });
 const { DEFAULT_CURRENCY, normalizeCurrency, formatCurrencyAmount: format } = currency;
-const usd = { currencyCode: 'USD', currencySymbol: '$', currencyDecimalDigits: '2', currencyPosition: 'BEFORE' };
-const jpy = { currencyCode: 'JPY', currencySymbol: '¥', currencyDecimalDigits: 0, currencyPosition: 'BEFORE' };
+
+const japan = { region: 'JAPAN', currencyCode: 'MMK', currencySymbol: 'Ks', currencyDecimalDigits: 2, currencyPosition: 'AFTER' };
+const myanmar = { region: 'MYANMAR', currencyCode: 'JPY', currencySymbol: '¥', currencyDecimalDigits: 2, currencyPosition: 'BEFORE' };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
-test('configured symbol, digits and position override currency defaults', () => {
-  assert.equal(format(10000), '10,000 Ks');
-  assert.equal(format(10000, jpy), '¥ 10,000');
-  assert.equal(format(10000, usd), '$ 10,000.00');
-  assert.equal(format(10000, { ...usd, currencyPosition: 'AFTER' }), '10,000.00 $');
-  assert.equal(format(10000, { ...jpy, currencySymbol: 'custom', currencyDecimalDigits: 2 }), 'custom 10,000.00');
+test('region overrides every legacy currency field without price conversion', () => {
+  assert.equal(format(1000, japan), '¥1,000');
+  assert.equal(format(1000, myanmar), '1,000 Ks');
+  assert.equal(format(1234.5, japan), '¥1,235');
+  assert.equal(format(1234.5, myanmar), '1,235 Ks');
+  assert.equal(format(-1000, japan), '¥-1,000');
+  assert.equal(format(0, myanmar), '0 Ks');
+  assert.equal(format(1000000, japan, true), '¥1M');
 });
-test('nullable, string and invalid digits normalize safely', () => {
-  for (const digits of [null, undefined, '', 'invalid', -1, 7, 1.5, Infinity]) {
-    assert.equal(normalizeCurrency({ currencyDecimalDigits: digits }).currencyDecimalDigits, 0);
-    assert.doesNotThrow(() => format(1, { currencyDecimalDigits: digits }));
-  }
-  assert.equal(normalizeCurrency(usd).currencyDecimalDigits, 2);
-  assert.equal(normalizeCurrency({ currencyDecimalDigits: '0' }).currencyDecimalDigits, 0);
-  assert.equal(normalizeCurrency({ currencyDecimalDigits: 6 }).currencyDecimalDigits, 6);
-  assert.equal(JSON.stringify(normalizeCurrency({ currencyCode: null, currencySymbol: null, currencyPosition: null })), JSON.stringify(DEFAULT_CURRENCY));
+test('missing or unsupported region is never labelled Myanmar', () => {
+  for (const region of [null, undefined, '', 'OTHER']) assert.equal(currency.currencyForRegion(region).currencyCode, '');
+  assert.equal(format(1000), '1,000');
+  assert.equal(format(1000, {region:'OTHER',currencySymbol:'Ks'}), '1,000');
 });
-test('zero, negative and compact chart amounts preserve configuration', () => {
-  assert.equal(format(0, usd), '$ 0.00');
-  assert.equal(format(-10000, usd), '$ -10,000.00');
-  assert.equal(format(-10000), '-10,000 Ks');
-  assert.equal(format(10000, usd, true), '$ 10.00K');
-  assert.equal(format(10000, DEFAULT_CURRENCY, true), '10K Ks');
-  assert.equal(format(-1000000, jpy, true), '¥ -1M');
-  assert.equal(format(NaN), '0 Ks');
+test('explicit historical snapshots keep their symbol, precision and position', () => {
+  const snapshot={currencyCode:'USD',currencySymbol:'$',currencyDecimalDigits:'2',currencyPosition:'BEFORE'};
+  assert.equal(format(1000,snapshot),'$ 1,000.00');
+  assert.equal(format(1000,{...snapshot,currencyPosition:'AFTER'}),'1,000.00 $');
+  for (const digits of [null,undefined,'bad',-1,7,1.5,Infinity]) assert.doesNotThrow(()=>format(1,{currencyDecimalDigits:digits}));
+  assert.equal(format(NaN,japan),'¥0');
+  assert.equal(currency.formatHistoricalMoney(1000,{region:'JAPAN'}),'1,000');
+  assert.equal(currency.formatHistoricalMoney(1000,{region:'JAPAN',currencyCode:'MMK',currencySymbol:'Ks',currencyDecimalDigits:0,currencyPosition:'AFTER'}),'1,000 Ks');
+  assert.equal(currency.formatHistoricalMoney(1000,{currencySnapshot:snapshot}),'$ 1,000.00');
 });
-test('one in-flight settings request serves all subscribers', async () => {
-  const store = createCurrencyStore(); let calls = 0; let updates = 0;
-  const request = deferred();
-  const fetchSettings = () => { ++calls; return request.promise; };
-  const unsubscribe = store.subscribe(() => ++updates);
-  const first = store.refresh('shop-a', true, fetchSettings);
-  const second = store.refresh('shop-a', true, fetchSettings, true);
-  assert.equal(calls, 1);
-  request.resolve(usd); await Promise.all([first, second]);
-  assert.equal(format(10, store.snapshot()), '$ 10.00');
-  assert.equal(updates, 2); unsubscribe();
+test('settings fetch deduplicates subscribers and derives from region',async()=>{
+ const store=createCurrencyStore(),request=deferred();let calls=0;
+ const fetch=()=>{calls++;return request.promise;};
+ const first=store.refresh('shop-a',true,fetch),second=store.refresh('shop-a',true,fetch,true);
+ assert.equal(calls,1);request.resolve(japan);await Promise.all([first,second]);
+ assert.equal(format(1000,store.snapshot()),'¥1,000');
 });
-test('a successful save updates subscribers and defeats an older GET', async () => {
-  const store = createCurrencyStore(); const old = deferred();
-  const pending = store.refresh('shop-a', true, () => old.promise);
-  let updates = 0; store.subscribe(() => ++updates);
-  store.publish(usd, 'shop-a');
-  old.resolve(jpy); await pending;
-  assert.equal(format(10, store.snapshot()), '$ 10.00');
-  assert.equal(updates, 1);
+test('shop changes immediately clear currency and reject stale requests and saves',async()=>{
+ const store=createCurrencyStore(),old=deferred(),next=deferred();
+ await store.refresh('shop-a',true,async()=>japan);
+ const previous=store.refresh('shop-a',true,()=>old.promise,true);
+ const current=store.refresh('shop-b',true,()=>next.promise);
+ assert.equal(store.snapshot(),DEFAULT_CURRENCY);store.publish(japan,'shop-a');
+ old.resolve(japan);await previous;assert.equal(store.snapshot(),DEFAULT_CURRENCY);
+ next.resolve(myanmar);await current;assert.equal(format(1000,store.snapshot()),'1,000 Ks');
+ await store.refresh('signed-out',false,async()=>japan);assert.equal(store.snapshot(),DEFAULT_CURRENCY);
 });
-test('shop/account changes reset immediately and discard stale requests and saves', async () => {
-  const store = createCurrencyStore(); const old = deferred(); const current = deferred();
-  await store.refresh('shop-a', true, async () => usd);
-  const previous = store.refresh('shop-a', true, () => old.promise, true);
-  const next = store.refresh('shop-b', true, () => current.promise);
-  assert.equal(store.snapshot(), DEFAULT_CURRENCY);
-  store.publish(usd, 'shop-a');
-  old.resolve(usd); await previous;
-  assert.equal(store.snapshot(), DEFAULT_CURRENCY);
-  current.resolve(jpy); await next;
-  assert.equal(format(10, store.snapshot()), '¥ 10');
-  await store.refresh('signed-out', false, async () => usd);
-  assert.equal(store.snapshot(), DEFAULT_CURRENCY);
+test('settings saves defeat stale fetches; region refresh updates same shop',async()=>{
+ const store=createCurrencyStore(),old=deferred();
+ const pending=store.refresh('shop-a',true,()=>old.promise);
+ store.publish(japan,'shop-a');old.resolve(myanmar);await pending;
+ assert.equal(format(1000,store.snapshot()),'¥1,000');
+ await store.refresh('shop-a',true,async()=>myanmar,true);
+ assert.equal(format(1000,store.snapshot()),'1,000 Ks');
 });
-test('reload starts with defaults; failed refresh preserves successfully loaded settings', async () => {
-  const store = createCurrencyStore();
-  await store.refresh('shop-a', true, async () => usd);
-  await store.refresh('shop-a', true, async () => { throw Error('offline'); }, true);
-  assert.equal(format(10, store.snapshot()), '$ 10.00');
-  assert.equal(createCurrencyStore().snapshot(), DEFAULT_CURRENCY);
-  await store.refresh('shop-b', true, async () => { throw Error('offline'); });
-  assert.equal(store.snapshot(), DEFAULT_CURRENCY);
-  await store.refresh('shop-b', true, async () => jpy, true);
-  assert.equal(format(10, store.snapshot()), '¥ 10');
+test('reload and failed new-shop fetch remain neutral; refresh failure retains same-shop currency',async()=>{
+ const store=createCurrencyStore();assert.equal(store.snapshot(),DEFAULT_CURRENCY);
+ await store.refresh('a',true,async()=>japan);
+ await store.refresh('a',true,async()=>{throw Error('offline')},true);
+ assert.equal(format(1000,store.snapshot()),'¥1,000');
+ await store.refresh('b',true,async()=>{throw Error('offline')});
+ assert.equal(store.snapshot(),DEFAULT_CURRENCY);
+ await store.refresh('b',true,async()=>({currencySymbol:'Ks',currencyCode:'MMK'}),true);
+ assert.equal(store.snapshot(),DEFAULT_CURRENCY);
 });
 
-test('SSR and initial hydration use defaults even if a client store has loaded settings', () => {
-  let hydrating = true;
-  let effects = 0;
+test('provider masks old-shop currency during auth sync and hydration', async () => {
+  let token = 'a', session = { accessToken: 'a', user: { id: 'a' } }, hydrate = true;
+  const requests = [], effects = [], handlers = new Map();
   const provider = load('../components/currency-provider.tsx', {
     react: {
       useMemo: fn => fn(),
-      useSyncExternalStore: (_subscribe, snapshot, serverSnapshot) => hydrating ? serverSnapshot() : snapshot(),
-      useLayoutEffect: () => { ++effects; },
+      useSyncExternalStore: (_subscribe, snapshot, serverSnapshot) => hydrate ? serverSnapshot() : snapshot(),
+      useLayoutEffect: fn => effects.push(fn),
     },
-    'next-auth/react': { useSession: () => ({ data: null, status: 'loading' }) },
+    'next-auth/react': { useSession: () => ({data: session, status:'authenticated'}) },
     'next/navigation': { usePathname: () => '/dashboard' },
-    '@/lib/auth': { getStoredToken: () => { throw Error('storage accessed during render'); } },
-    '@/lib/settings-api': {},
+    '@/lib/auth': { getStoredToken: () => token },
+    '@/lib/settings-api': { getReceiptSettings: () => new Promise(resolve => requests.push(resolve)) },
     '@/lib/currency': currency,
     '@/lib/currency-store': { createCurrencyStore },
+    window: { localStorage: { getItem: () => null }, addEventListener: (name,fn) => handlers.set(name,fn), removeEventListener() {}, setInterval() {}, clearInterval() {} },
+    document: { addEventListener() {}, removeEventListener() {} },
   });
-  assert.equal(provider.CurrencyProvider({ children: 'page' }), 'page');
-  assert.equal(effects, 1);
-  provider.publishCurrencySettings(usd);
-  assert.equal(provider.useCurrency().formatSharedMoney(10000), '10,000 Ks');
-  hydrating = false;
-  assert.equal(provider.useCurrency().formatSharedMoney(10000), '$ 10,000.00');
+  assert.equal(provider.CurrencyProvider({children:'page'}),'page');
+  effects.pop()(); requests[0](japan); await Promise.resolve(); await Promise.resolve();
+  assert.equal(provider.useCurrency().formatSharedMoney(1000),'1,000');
+  hydrate=false;
+  assert.equal(provider.useCurrency().formatSharedMoney(1000),'¥1,000');
+  token='b'; // Same-tab storage change precedes NextAuth synchronization.
+  assert.equal(provider.useCurrency().formatSharedMoney(1000),'1,000');
+  session={accessToken:'b',user:{id:'b'}};
+  provider.CurrencyProvider({children:'page'}); effects.pop()();
+  assert.equal(provider.useCurrency().formatSharedMoney(1000),'1,000');
+  requests[1](myanmar);await new Promise(resolve => setImmediate(resolve));
+  assert.equal(provider.useCurrency().formatSharedMoney(1000),'1,000 Ks');
+  handlers.get('pos-shop-settings-updated')();requests[2](japan);await Promise.resolve();await Promise.resolve();
+  assert.equal(provider.useCurrency().formatSharedMoney(1000),'¥1,000');
+});
+
+test('login replaces token aliases so previous-shop credentials cannot win', () => {
+  const makeStorage = () => {
+    const data = new Map();
+    return {getItem: key => data.get(key) ?? null, setItem: (key,value) => data.set(key,value), removeItem: key => data.delete(key)};
+  };
+  const localStorage=makeStorage(),sessionStorage=makeStorage();
+  localStorage.setItem('pos_shop_owner_token','old-shop');
+  sessionStorage.setItem('jwt','old-shop');
+  const auth=load('../lib/auth.ts',{window:{localStorage,sessionStorage,dispatchEvent(){}}});
+  auth.saveToken('new-shop');
+  assert.equal(auth.getStoredToken(),'new-shop');
+  assert.equal(localStorage.getItem('pos_shop_owner_token'),null);
+  assert.equal(sessionStorage.getItem('jwt'),null);
+  auth.clearAuthTokens();assert.equal(auth.getStoredToken(),'');
 });

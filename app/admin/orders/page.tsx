@@ -225,7 +225,7 @@ import { useShopTimezone } from "@/components/shop-timezone-provider";
 //                       </td>
 //                       <td className="px-3 py-4 text-slate-500">{order.createdAt}</td>
 //                       <td className="px-3 py-4 font-bold text-slate-900">
-//                         {money(order.total)}
+//                         {formatHistoricalMoney(order.total, order.currencySnapshot)}
 //                       </td>
 //                       <td className="px-3 py-4">
 //                         <DropdownMenu>
@@ -253,6 +253,7 @@ import { useShopTimezone } from "@/components/shop-timezone-provider";
 //   );
 // }
 
+import { formatHistoricalMoney } from "@/lib/currency";
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -322,6 +323,7 @@ type OrderItemRow = {
 };
 
 type OrderRow = {
+  currencySnapshot?: unknown;
   id: string;
   customer: string;
   branch: string;
@@ -562,6 +564,7 @@ function normalizeReceiptToOrder(receipt: any, index: number): OrderRow | null {
   );
 
   return {
+    currencySnapshot: receipt,
     id,
     customer: String(
       receipt?.customerName ??
@@ -999,7 +1002,7 @@ export default function OrdersPage() {
 
                           {/* Total */}
                           <td className="px-4 py-4 text-right">
-                            <span className={cn("text-[14px] font-black", t.text)}>{money(order.total)}</span>
+                            <span className={cn("text-[14px] font-black", t.text)}>{formatHistoricalMoney(order.total, order.currencySnapshot)}</span>
                           </td>
 
                           {/* Actions */}
@@ -1170,7 +1173,7 @@ export default function OrdersPage() {
                     ["Customer", selectedOrder.customer],
                     ["Branch", selectedOrder.branch],
                     ["Created", formatOrderDate(selectedOrder.createdAt)],
-                    ["Total", money(selectedOrder.total)],
+                    ["Total", formatHistoricalMoney(selectedOrder.total, selectedOrder.currencySnapshot)],
                   ].map(([label, value]) => (
                     <div key={label} className={cn("rounded-2xl border p-4", t.card)}>
                       <div className={cn("text-[10px] font-black uppercase tracking-widest", t.textSubtle)}>{label}</div>
@@ -1201,8 +1204,8 @@ export default function OrdersPage() {
                             <tr key={`${item.name}-${index}`} className={cn("border-b", t.tableBorder)}>
                               <td className={cn("px-4 py-3 font-semibold", t.text)}>{item.name}</td>
                               <td className={cn("px-4 py-3", t.textMuted)}>{item.qty}</td>
-                              <td className={cn("px-4 py-3", t.textMuted)}>{money(item.price)}</td>
-                              <td className={cn("px-4 py-3 font-bold", t.text)}>{money(item.total)}</td>
+                              <td className={cn("px-4 py-3", t.textMuted)}>{formatHistoricalMoney(item.price, selectedOrder.currencySnapshot)}</td>
+                              <td className={cn("px-4 py-3 font-bold", t.text)}>{formatHistoricalMoney(item.total, selectedOrder.currencySnapshot)}</td>
                             </tr>
                           ))}
                         </tbody>

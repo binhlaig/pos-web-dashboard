@@ -13,7 +13,14 @@ const serverSnapshot = () => DEFAULT_CURRENCY;
 
 // Components subscribe to this single store; print/export helpers share the same snapshot.
 export function useCurrencySettings() {
-  return useSyncExternalStore(store.subscribe, store.snapshot, serverSnapshot);
+  const { data: session } = useSession();
+  const sessionToken = String((session as { accessToken?: string } | null)?.accessToken || "");
+  return useSyncExternalStore(store.subscribe, () => {
+    const token = getStoredToken();
+    const ownerToken = store.identity() ? JSON.parse(store.identity())[0] : "";
+    return token && token === ownerToken && (!sessionToken || sessionToken === token)
+      ? store.snapshot() : DEFAULT_CURRENCY;
+  }, serverSnapshot);
 }
 export function useCurrency() {
   const currencySettings = useCurrencySettings();
@@ -48,6 +55,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("pos-auth-change", refresh);
+    window.addEventListener("pos-shop-settings-updated", refresh);
     document.addEventListener("visibilitychange", onVisible);
     // Existing login/shop flows also write storage directly in the same tab.
     const timer = window.setInterval(() => check(), 500);
@@ -57,6 +65,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("pos-auth-change", refresh);
+      window.removeEventListener("pos-shop-settings-updated", refresh);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [session, status, pathname]);
