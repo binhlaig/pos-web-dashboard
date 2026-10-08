@@ -56,6 +56,11 @@ const sidebarItems: SidebarItem[] = [
     icon: Package,
   },
   {
+    title: "Barcode",
+    href: "/dashboard/product/barcode",
+    icon: AlignVerticalSpaceAround,
+  },
+  {
     title: "sale",
     href: "/dashboard/sale",
     icon: PackageIcon,
@@ -66,8 +71,8 @@ const sidebarItems: SidebarItem[] = [
     icon: Boxes,
   },
   {
-    title:"Product Check",
-    href:"/dashboard/product/check",
+    title: "Product Check",
+    href: "/dashboard/product/check",
     icon: CheckCheckIcon,
   },
   {
