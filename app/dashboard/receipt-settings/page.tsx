@@ -56,36 +56,21 @@ type ReceiptSetting = {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
 
-const CURRENCY_PRESETS = [
-  {
-    label: "Myanmar Kyat",
-    code: "MMK",
-    symbol: "Ks",
-    decimalDigits: 0,
-    position: "BEFORE" as const,
-  },
-  {
-    label: "US Dollar",
-    code: "USD",
-    symbol: "$",
-    decimalDigits: 2,
-    position: "BEFORE" as const,
-  },
-  {
-    label: "Japanese Yen",
-    code: "JPY",
-    symbol: "¥",
-    decimalDigits: 0,
-    position: "BEFORE" as const,
-  },
-  {
-    label: "Thai Baht",
-    code: "THB",
-    symbol: "฿",
-    decimalDigits: 2,
-    position: "BEFORE" as const,
-  },
-];
+// Prefer authoritative region; older APIs may provide currency fields only.
+function resolveShopCurrency(shop: Record<string, any>, receipt: Record<string, any> = {}) {
+  const region = String(shop.region ?? receipt.region ?? "").trim().toUpperCase();
+  const currency = normalizeCurrency(shop);
+  const bound = region === "JAPAN"
+    ? { currencyCode: "JPY", currencySymbol: "¥", currencyDecimalDigits: 0 }
+    : region === "MYANMAR"
+      ? { currencyCode: "MMK", currencySymbol: "Ks", currencyDecimalDigits: 0 }
+      : {};
+  return { ...currency, ...bound,
+    currencyPosition: shop.currencyPosition === "BEFORE" || shop.currencyPosition === "AFTER"
+      ? shop.currencyPosition : currency.currencyPosition,
+    region: region || null,
+  };
+}
 
 function makeTempId() {
   return `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -216,9 +201,9 @@ function ReceiptSettingsPageContent() {
         readSetting("/api/receipt-settings/my-shop"),
         readSetting("/api/shop/settings"),
       ]);
-      const currency = normalizeCurrency(shop);
+      const currency = resolveShopCurrency(shop, receipt);
       if (identity !== getCurrencyIdentity()) return;
-      publishCurrencySettings(shop, identity);
+      publishCurrencySettings({ ...shop, ...currency }, identity);
       setSetting(prev => ({
         ...prev, ...currency,
         shopName: receipt.shopName || shop.shopName || prev.shopName,
@@ -264,7 +249,7 @@ function ReceiptSettingsPageContent() {
       await saveReceiptOnly();
       const latest = await readSetting("/api/shop/settings");
       if (identity !== getCurrencyIdentity()) return;
-      publishCurrencySettings(latest, identity);
+      publishCurrencySettings({ ...latest, ...resolveShopCurrency(latest) }, identity);
 
       setNotice({
         type: "success",
@@ -318,14 +303,15 @@ function ReceiptSettingsPageContent() {
   }
 
   async function saveShopCurrencyOnly() {
+    const currency = resolveShopCurrency(setting);
     const payload = {
       shopName: setting.shopName.trim(),
       address: setting.address.trim(),
       phone: setting.phone.trim(),
 
-      currencyCode: setting.currencyCode.trim().toUpperCase(),
-      currencySymbol: setting.currencySymbol.trim(),
-      currencyDecimalDigits: setting.currencyDecimalDigits,
+      currencyCode: currency.currencyCode.trim().toUpperCase(),
+      currencySymbol: currency.currencySymbol.trim(),
+      currencyDecimalDigits: currency.currencyDecimalDigits,
       currencyPosition: setting.currencyPosition,
       taxPercent: Number(setting.taxPercent || 0),
     };
@@ -346,19 +332,10 @@ function ReceiptSettingsPageContent() {
     key: K,
     value: ReceiptSetting[K],
   ) {
+    if (key === "currencyCode" || key === "currencySymbol" || key === "currencyDecimalDigits" || key === "region") return;
     setSetting((prev) => ({
       ...prev,
       [key]: value,
-    }));
-  }
-
-  function applyCurrencyPreset(preset: (typeof CURRENCY_PRESETS)[number]) {
-    setSetting((prev) => ({
-      ...prev,
-      currencyCode: preset.code,
-      currencySymbol: preset.symbol,
-      currencyDecimalDigits: preset.decimalDigits,
-      currencyPosition: preset.position,
     }));
   }
 
@@ -585,34 +562,20 @@ function ReceiptSettingsPageContent() {
                       Currency & Tax Setting
                     </h2>
                     <p className="text-sm text-slate-500 dark:text-slate-400">
-                      Owner စိတ်ကြိုက် currency, symbol, decimal နဲ့ tax
-                      ကိုပြောင်းနိုင်ပါတယ်။
+                      Currency ကို ဆိုင်၏ Region အတိုင်း သတ်မှတ်ထားပါသည်။
+                      Tax နှင့် Symbol Position ကို ပြင်နိုင်ပါသည်။
                     </p>
                   </div>
                 </div>
 
-                <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {CURRENCY_PRESETS.map((preset) => {
-                    const active = setting.currencyCode === preset.code;
-
-                    return (
-                      <button
-                        key={preset.code}
-                        type="button"
-                        disabled={saving} onClick={() => applyCurrencyPreset(preset)}
-                        className={`rounded-2xl border p-4 text-left transition ${
-                          active
-                            ? "border-blue-300 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-300"
-                            : "border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-200 hover:border-slate-300 hover:bg-white dark:hover:bg-[#3b4d6d]"
-                        }`}
-                      >
-                        <p className="font-bold">{preset.label}</p>
-                        <p className="mt-1 text-sm opacity-80">
-                          {preset.symbol} / {preset.code}
-                        </p>
-                      </button>
-                    );
-                  })}
+                <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-400/20 dark:bg-blue-400/10">
+                  <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">
+                    {setting.region ? `${setting.region} · ` : ""}{setting.currencyCode || "Currency မသတ်မှတ်ရသေးပါ"}
+                    {setting.currencySymbol ? ` · ${setting.currencySymbol}` : ""}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-300">
+                    အခြား Currency သုံးရန် ဆိုင်၏ Region ကို ပြောင်းပါ။ ဤနေရာတွင် Currency ကို တိုက်ရိုက်ပြောင်း၍ မရပါ။
+                  </p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -621,14 +584,8 @@ function ReceiptSettingsPageContent() {
                     <div className="relative mt-2">
                       <BadgeDollarSign className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
-                        disabled={saving} value={setting.currencyCode}
-                        onChange={(e) =>
-                          updateField(
-                            "currencyCode",
-                            e.target.value.toUpperCase(),
-                          )
-                        }
-                        placeholder="JPY / MMK / USD"
+                        readOnly value={setting.currencyCode}
+                        placeholder="Shop currency"
                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
                       />
                     </div>
@@ -639,11 +596,8 @@ function ReceiptSettingsPageContent() {
                     <div className="relative mt-2">
                       <Coins className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
-                        disabled={saving} value={setting.currencySymbol}
-                        onChange={(e) =>
-                          updateField("currencySymbol", e.target.value)
-                        }
-                        placeholder="¥ / Ks / $"
+                        readOnly value={setting.currencySymbol}
+                        placeholder="Shop symbol"
                         className="w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
                       />
                     </div>
@@ -651,22 +605,10 @@ function ReceiptSettingsPageContent() {
 
                   <div>
                     <Label>Decimal Digits</Label>
-                    <select
-                      disabled={saving} value={setting.currencyDecimalDigits}
-                      onChange={(e) =>
-                        updateField(
-                          "currencyDecimalDigits",
-                          Number(e.target.value),
-                        )
-                      }
-                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white dark:focus:border-blue-400 dark:focus:bg-[#33435f]"
-                    >
-                      <option value={0}>0 - MMK / JPY</option>
-                      <option value={1}>1</option>
-                      <option value={2}>2 - USD / THB</option>
-                      <option value={3}>3</option>
-                      <option value={4}>4</option>
-                    </select>
+                    <input
+                      readOnly value={setting.currencyDecimalDigits}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#33435f] dark:text-slate-100 px-4 py-3 text-sm outline-none"
+                    />
                   </div>
 
                   <div>
