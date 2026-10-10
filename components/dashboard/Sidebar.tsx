@@ -7,7 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Barcode, Boxes, ChartNoAxesCombined, ClipboardCheck, Clock3,
-  LayoutDashboard, Package, ReceiptText, ScanLine, Settings2, ShieldCheck,
+  LayoutDashboard, Package, ReceiptText, ScanLine, Settings2, ShieldCheck,Calendar,
   ShoppingBag, Store, UsersRound, X, type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +25,7 @@ const sidebarItems: SidebarItem[] = [
   { title: "Products", href: "/dashboard/product", icon: Package },
   { title: "Barcode", href: "/dashboard/product/barcode", icon: Barcode },
   { title: "Sales", href: "/dashboard/sale", icon: ShoppingBag },
+  { title: "Calendar", href: "/dashboard/calendar", icon: Calendar },
   { title: "Inventory", href: "/dashboard/inventory", icon: Boxes },
   { title: "Product Check", href: "/dashboard/product/check", icon: ScanLine },
   { title: "Receipts", href: "/dashboard/receipt-settings", icon: ReceiptText },
