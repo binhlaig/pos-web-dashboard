@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
 import { useCurrency } from "@/components/currency-provider";
 import { calendarRequest, editableEntry, CalendarApiError, type CalendarEntry } from "@/lib/calendar-api";
@@ -546,7 +547,17 @@ function EntryRow({ entry, onOpen, onToggle, disabled }: { entry: Entry; onOpen:
 }
 function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState<{ top: number; height: number } | null>(null);
   const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => {
+    const visual = window.visualViewport;
+    if (!visual) return;
+    const update = () => setViewport({ top: visual.offsetTop, height: visual.height });
+    update();
+    visual.addEventListener("resize", update);
+    visual.addEventListener("scroll", update);
+    return () => { visual.removeEventListener("resize", update); visual.removeEventListener("scroll", update); };
+  }, []);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const scroll = document.body.style.overflow; document.body.style.overflow = "hidden";
@@ -559,20 +570,41 @@ function Dialog({ title, children, onClose }: { title: string; children: ReactNo
     document.addEventListener("keydown", key);
     return () => { document.body.style.overflow = scroll; document.removeEventListener("keydown", key); previous?.focus(); };
   }, []);
-  return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}><div ref={ref} role="dialog" aria-modal="true" aria-label={title} className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_24px_80px_-16px_rgba(37,99,235,0.25)] dark:border-slate-700 dark:bg-slate-950"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold text-slate-950 dark:text-white">{title}</h2><button type="button" aria-label="Close dialog" onClick={onClose} className={BUTTON}><X size={17} /></button></div>{children}</div></div>;
+  if (typeof document === "undefined") return null;
+  return createPortal(<div className="fixed inset-x-0 top-0 z-[1000] flex h-[100dvh] items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5"
+    style={viewport ? { top: viewport.top, height: viewport.height } : undefined}
+    onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div ref={ref} role="dialog" aria-modal="true" aria-label={title} className="flex max-h-full w-full max-w-[880px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-800 shadow-[0_24px_80px_-16px_rgba(37,99,235,0.25)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3"><span className="rounded-xl bg-blue-50 p-2.5 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300"><CalendarDays size={19} /></span><div className="min-w-0"><h2 className="text-base font-semibold text-slate-950 dark:text-white">{title}</h2><p className="mt-0.5 text-[11px] text-slate-500">Notes, schedules & shop reminders</p></div></div>
+        <button type="button" aria-label="Close dialog" onClick={onClose} className={`${BUTTON} shrink-0 !px-2.5`}><X size={17} /></button>
+      </div>
+      {children}
+    </div>
+  </div>, document.body);
 }
 function EntryEditor({ draft, onChange, onClose, onSave, onDelete, error, timezone, disabled, saving }: { draft: Entry; onChange: (entry: Entry) => void; onClose: () => void; onSave: () => void; onDelete: () => void; error: string; timezone: string; disabled: boolean; saving: boolean }) {
   const patch = (value: Partial<Entry>) => onChange({ ...draft, ...value });
-  return <Dialog title={draft.id ? "Edit calendar entry" : "New calendar entry"} onClose={onClose}><form onSubmit={e => { e.preventDefault(); onSave(); }} className="space-y-4 text-slate-800 dark:text-slate-200"><fieldset disabled={disabled} className="space-y-4">
-    <label className="block text-xs font-medium">Title<input required maxLength={120} className={`${INPUT} mt-1`} value={draft.title} onChange={e => patch({ title: e.target.value })} placeholder="e.g. Supplier delivery / Staff meeting" /></label>
-    <div className="grid grid-cols-2 gap-3"><label className="text-xs font-medium">Type<select className={`${INPUT} mt-1`} value={draft.kind} onChange={e => patch({ kind: e.target.value as Kind })}>{Object.entries(KINDS).map(([key, meta]) => <option value={key} key={key}>{meta.label}</option>)}</select></label><label className="text-xs font-medium">Priority<select className={`${INPUT} mt-1`} value={draft.priority} onChange={e => patch({ priority: e.target.value as Priority })}><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label></div>
-    <div className="grid grid-cols-2 gap-3"><label className="text-xs font-medium">Start date<input required type="date" className={`${INPUT} mt-1`} value={draft.date} onChange={e => patch({ date: e.target.value, endDate: draft.endDate < e.target.value ? e.target.value : draft.endDate })} /></label><label className="text-xs font-medium">End date<input required type="date" min={draft.date} className={`${INPUT} mt-1`} value={draft.endDate} onChange={e => patch({ endDate: e.target.value })} /></label></div>
-    <div className="grid grid-cols-2 gap-3"><label className="text-xs font-medium">Start time (optional)<input type="time" className={`${INPUT} mt-1`} value={draft.time} onChange={e => patch({ time: e.target.value, endTime: e.target.value ? draft.endTime : "" })} /></label><label className="text-xs font-medium">End time (optional)<input type="time" className={`${INPUT} mt-1`} value={draft.endTime} onChange={e => patch({ endTime: e.target.value })} /></label></div>
+  const field = `${INPUT} mt-1 min-w-0 max-w-full !text-base [appearance:none] [&::-webkit-date-and-time-value]:text-left`;
+  return <Dialog title={draft.id ? "Edit calendar entry" : "New calendar entry"} onClose={onClose}><form onSubmit={e => { e.preventDefault(); onSave(); }} className="flex min-h-0 flex-1 flex-col">
+  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+  <fieldset disabled={disabled} className="grid min-w-0 gap-5 md:grid-cols-2">
+    <div className="min-w-0 space-y-3">
+    <label className="block text-xs font-medium">Title<input required maxLength={120} className={field} value={draft.title} onChange={e => patch({ title: e.target.value })} placeholder="e.g. Supplier delivery / Staff meeting" /></label>
+    <div className="grid min-w-0 grid-cols-2 gap-3"><label className="min-w-0 text-xs font-medium">Type<select className={`${INPUT} mt-1 min-w-0 !text-base`} value={draft.kind} onChange={e => patch({ kind: e.target.value as Kind })}>{Object.entries(KINDS).map(([key, meta]) => <option value={key} key={key}>{meta.label}</option>)}</select></label><label className="min-w-0 text-xs font-medium">Priority<select className={`${INPUT} mt-1 min-w-0 !text-base`} value={draft.priority} onChange={e => patch({ priority: e.target.value as Priority })}><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label></div>
+    <label className="block text-xs font-medium">Assigned to (optional)<input maxLength={120} className={field} value={draft.assignee} onChange={e => patch({ assignee: e.target.value })} placeholder="Staff name / Supplier / Team" /></label>
+    <label className="block text-xs font-medium">Notes<textarea maxLength={5000} className={`${field} !h-32 resize-none py-3`} value={draft.note} onChange={e => patch({ note: e.target.value })} placeholder="Checklist, delivery details or other notes…" /></label>
+    </div>
+    <div className="min-w-0 space-y-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+    <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300"><Clock size={14} />Schedule</p>
+    <div className="grid min-w-0 grid-cols-2 gap-3"><label className="min-w-0 text-xs font-medium">Start date<input required type="date" className={field} value={draft.date} onChange={e => patch({ date: e.target.value, endDate: draft.endDate < e.target.value ? e.target.value : draft.endDate })} /></label><label className="min-w-0 text-xs font-medium">End date<input required type="date" min={draft.date} className={field} value={draft.endDate} onChange={e => patch({ endDate: e.target.value })} /></label></div>
+    <div className="grid min-w-0 grid-cols-2 gap-3"><label className="min-w-0 text-xs font-medium">Start time (optional)<input type="time" className={field} value={draft.time} onChange={e => patch({ time: e.target.value, endTime: e.target.value ? draft.endTime : "" })} /></label><label className="min-w-0 text-xs font-medium">End time (optional)<input type="time" className={field} value={draft.endTime} onChange={e => patch({ endTime: e.target.value })} /></label></div>
     <p className="text-[11px] text-slate-500">Times use {timezone}. Leave times empty for an all-day entry.</p>
-    <label className="block text-xs font-medium">Assigned to (optional)<input maxLength={120} className={`${INPUT} mt-1`} value={draft.assignee} onChange={e => patch({ assignee: e.target.value })} placeholder="Staff name / Supplier / Team" /></label>
-    <label className="block text-xs font-medium">Notes<textarea maxLength={5000} className={`${INPUT} mt-1 !h-28 resize-y py-3`} value={draft.note} onChange={e => patch({ note: e.target.value })} placeholder="Checklist, delivery details or other notes…" /></label>
-    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.completed} onChange={e => patch({ completed: e.target.checked })} />Completed</label>
-    {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-    <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-4 dark:border-white/10"><div>{draft.id && <button type="button" disabled={disabled} onClick={onDelete} className={`${BUTTON} !text-red-600`}><Trash2 size={15} />Delete</button>}</div><div className="flex gap-2"><button type="button" className={BUTTON} onClick={onClose}>Cancel</button><button type="submit" disabled={disabled} className={PRIMARY}>{saving ? "Saving..." : "Save entry"}</button></div></div>
-  </fieldset></form></Dialog>;
+    <label className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"><input type="checkbox" className="h-4 w-4 accent-blue-600" checked={draft.completed} onChange={e => patch({ completed: e.target.checked })} />Completed</label>
+    </div>
+  </fieldset>
+  {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">{error}</p>}
+  </div>
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950 sm:px-5"><div>{draft.id && <button type="button" disabled={disabled} onClick={onDelete} className={`${BUTTON} !text-red-600`}><Trash2 size={15} />Delete</button>}</div><div className="ml-auto flex gap-2"><button type="button" disabled={saving} className={BUTTON} onClick={onClose}>Cancel</button><button type="submit" disabled={disabled} className={PRIMARY}>{saving ? "Saving..." : "Save entry"}</button></div></div>
+  </form></Dialog>;
 }
