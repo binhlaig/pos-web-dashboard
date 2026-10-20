@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import Link from "next/link";
 import {
   Bell,
-  ChevronDown,
   Menu as MenuIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,18 +21,21 @@ import { DashboardColorPicker } from "@/app/dashboard/dashboard-color-picker";
 import { NavbarUserProfile } from "./dashboard/navbar-user-profile";
 
 type NavbarDemoProps = {
+  variant?: "shop" | "factory";
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
   onOpenSidebar: () => void;
 };
 
 export function NavbarDemo({
+  variant = "shop",
   sidebarCollapsed,
   onToggleSidebar,
   onOpenSidebar,
 }: NavbarDemoProps) {
   return (
     <Navbar
+      variant={variant}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={onToggleSidebar}
       onOpenSidebar={onOpenSidebar}
@@ -46,6 +48,7 @@ type NavbarProps = NavbarDemoProps & {
 };
 
 function Navbar({
+  variant = "shop",
   className,
   sidebarCollapsed,
   onToggleSidebar,
@@ -63,7 +66,7 @@ function Navbar({
     >
       <Menu setActive={setActive}>
         {/* Left section */}
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Mobile Sidebar button */}
           <button
             type="button"
@@ -146,18 +149,30 @@ function Navbar({
 
           <div className="hidden h-8 w-px bg-slate-200 dark:bg-white/10 sm:block" />
 
-          <div>
-            <h1 className="whitespace-nowrap text-sm font-bold text-slate-950 dark:text-white">
-              POS Dashboard
+          <div className="min-w-0">
+            <h1 className="truncate text-xs sm:text-sm font-bold text-slate-950 dark:text-white">
+              {variant === "factory" ? "Factory Dashboard" : "POS Dashboard"}
             </h1>
 
             <p className="hidden whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400 sm:block">
-              Manage your shop
+              {variant === "factory" ? "Production and deliveries" : "Manage your shop"}
             </p>
           </div>
         </div>
 
         {/* Center navigation */}
+        {variant === "factory" ? (
+          <div className="hidden items-center gap-6 lg:flex">
+            {[
+              ["Overview", "/factory"],
+              ["Production", "/factory/production"],
+              ["Warehouse", "/factory/warehouse"],
+              ["Dispatch", "/factory/dispatch"],
+            ].map(([label, href]) => (
+              <Link key={href} href={href} className="rounded-lg text-sm font-medium text-slate-600 hover:text-blue-600 focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-slate-300 dark:hover:text-blue-400">{label}</Link>
+            ))}
+          </div>
+        ) : (
         <div className="hidden items-center gap-8 lg:flex">
           <MenuItem
             setActive={setActive}
@@ -243,6 +258,8 @@ function Navbar({
             </div>
           </MenuItem>
         </div>
+
+        )}
 
         {/* Right section */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">

@@ -660,8 +660,8 @@
 //   const sessionError = String((session as any)?.error || "");
 //   const sessionAccessToken = String((session as any)?.accessToken || "");
 
-//   const safeNextPath = safeRedirectPath(
-//     searchParams.get("next") || searchParams.get("redirect")
+//   const safeNextPath = businessEntryPath(
+//     searchParams.get("next") || searchParams.get("callbackUrl") || searchParams.get("redirect")
 //   );
 
 //   useEffect(() => {
@@ -734,7 +734,7 @@
 //     ) {
 //       redirectedRef.current = true;
 
-//       const target = safeRedirectPath(safeNextPath);
+//       const target = safeNextPath;
 
 //       router.replace(target);
 //     }
@@ -1629,6 +1629,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { getSession, signIn, signOut, useSession } from "next-auth/react";
+import { businessEntryPath } from "@/lib/business-routing";
 
 import { clearPosSession, savePosSession } from "@/lib/auth-session";
 
@@ -2816,51 +2817,6 @@ function LanternInput({
 
 
 
-function safeRedirectPath(value: string | null) {
-
-  if (!value) return "/dashboard";
-
-
-
-  try {
-
-    const decoded = decodeURIComponent(value);
-
-
-
-    if (
-
-      decoded.startsWith("/") &&
-
-      !decoded.startsWith("//") &&
-
-      decoded.toLowerCase() !== "/sign_in" &&
-
-      decoded.toLowerCase() !== "/sign-in" &&
-
-      !decoded.toLowerCase().startsWith("/sign_in?") &&
-
-      !decoded.toLowerCase().startsWith("/sign-in?")
-
-    ) {
-
-      return decoded;
-
-    }
-
-  } catch {
-
-    return "/dashboard";
-
-  }
-
-
-
-  return "/dashboard";
-
-}
-
-
 
 export default function LoginPage() {
 
@@ -2907,9 +2863,9 @@ export default function LoginPage() {
 
 
 
-  const safeNextPath = safeRedirectPath(
+  const safeNextPath = businessEntryPath(
 
-    searchParams.get("next") || searchParams.get("redirect")
+    searchParams.get("next") || searchParams.get("callbackUrl") || searchParams.get("redirect")
 
   );
 
@@ -3055,7 +3011,7 @@ export default function LoginPage() {
 
 
 
-      const target = safeRedirectPath(safeNextPath);
+      const target = safeNextPath;
 
 
 

@@ -25,7 +25,8 @@ function isPublicPath(pathname: string) {
 }
 
 function isProtectedPath(pathname: string) {
-  return pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+  return pathname === "/dashboard" || pathname.startsWith("/dashboard/")
+    || pathname === "/factory" || pathname.startsWith("/factory/");
 }
 
 function isExpired(exp: unknown) {

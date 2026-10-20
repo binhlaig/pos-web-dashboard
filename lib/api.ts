@@ -1,4 +1,5 @@
-import { clearAuthTokens, getStoredToken, redirectToSignIn } from "@/lib/auth";
+import { getSession } from "next-auth/react";
+import { clearAuthTokens, getStoredToken, redirectToSignIn, saveToken } from "@/lib/auth";
 
 type ApiErrorPayload = {
   message?: string;
@@ -8,8 +9,7 @@ type ApiErrorPayload = {
   status?: number;
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
 
 function buildErrorMessage(status: number, payload: unknown, path?: string) {
   if (typeof payload === "string" && payload.trim()) {
@@ -24,9 +24,7 @@ function buildErrorMessage(status: number, payload: unknown, path?: string) {
     }
 
     if (status === 403) {
-      if (
-        String(p.error || p.code || "").toUpperCase() === "FEATURE_DISABLED"
-      ) {
+      if (String(p.error || p.code || "").toUpperCase() === "FEATURE_DISABLED") {
         return (
           p.message ||
           "This feature is disabled for your shop plan. Please contact the shop owner or upgrade the plan."
@@ -38,9 +36,7 @@ function buildErrorMessage(status: number, payload: unknown, path?: string) {
 
     if (status === 404) {
       return (
-        p.message ||
-        p.error ||
-        `Backend endpoint not found${path ? `: ${path}` : ""}.`
+        p.message || p.error || `Backend endpoint not found${path ? `: ${path}` : ""}.`
       );
     }
 
@@ -81,6 +77,79 @@ function buildUrl(path: string) {
   return `${API_BASE}${normalizedPath}`;
 }
 
+type BrowserSession = { accessToken?: string | null; error?: string | null };
+let pendingRefresh: Promise<string> | null = null;
+
+function sessionIdentity(raw: string): string {
+  try {
+    const encoded = raw.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(encoded));
+    return String(claims.sid || "");
+  } catch {
+    return "";
+  }
+}
+function requireMatchingIdentity(previous: string, next: string) {
+  // Only routing validation, not signature verification; the backend authenticates.
+  if (
+    previous &&
+    (!sessionIdentity(previous) || sessionIdentity(previous) !== sessionIdentity(next))
+  ) {
+    throw new Error("Session changed. Reload the page before continuing.");
+  }
+}
+function endExpiredSession(): never {
+  clearAuthTokens();
+  redirectToSignIn();
+  throw new Error("Login session expired. Please login again.");
+}
+async function renewAccessToken(previous: string): Promise<string> {
+  if (pendingRefresh) {
+    const next = await pendingRefresh;
+    requireMatchingIdentity(previous, next);
+    return next;
+  }
+  pendingRefresh = (async () => {
+    // getSession invokes the NextAuth JWT callback and persists its rotated JWT.
+    let session: BrowserSession | null;
+    try {
+      session = (await getSession()) as BrowserSession | null;
+    } catch {
+      throw new Error("Session service unavailable. Try again shortly.");
+    }
+    if (session?.error === "AccessTokenExpired") return endExpiredSession();
+    if (session?.error === "RefreshTemporarilyUnavailable")
+      throw new Error("Unable to renew session now. Try again shortly.");
+    if (session?.accessToken && session.accessToken !== previous) {
+      requireMatchingIdentity(previous, session.accessToken);
+      saveToken(session.accessToken);
+      return session.accessToken;
+    }
+    let response: Response;
+    try {
+      response = await fetch("/api/auth/refresh", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+    } catch {
+      throw new Error("Session service unavailable. Try again shortly.");
+    }
+    if (response.status === 401) return endExpiredSession();
+    if (!response.ok) throw new Error("Unable to renew session now. Try again shortly.");
+    const data = await response.json().catch(() => null);
+    if (typeof data?.token !== "string") throw new Error("Invalid session response.");
+    requireMatchingIdentity(previous, data.token);
+    saveToken(data.token);
+    return data.token;
+  })();
+  try {
+    return await pendingRefresh;
+  } finally {
+    pendingRefresh = null;
+  }
+}
+
 export async function apiRequest<T>(
   path: string,
   options: {
@@ -88,13 +157,22 @@ export async function apiRequest<T>(
     body?: any;
     auth?: boolean;
     headers?: Record<string, string>;
-  } = {}
+  } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
   const auth = options.auth ?? false;
 
   const url = buildUrl(path);
-  const token = auth ? getStoredToken() : "";
+  let token = auth ? getStoredToken() : "";
+  if (auth && !token) {
+    const session = (await getSession()) as BrowserSession | null;
+    if (session?.error === "AccessTokenExpired") return endExpiredSession();
+    if (session?.accessToken) {
+      token = session.accessToken;
+      saveToken(token);
+    } else if (session?.error)
+      throw new Error("Unable to renew session now. Try again shortly.");
+  }
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -106,39 +184,51 @@ export async function apiRequest<T>(
   }
 
   const body = options.body;
-  const isFormData =
-    typeof FormData !== "undefined" && body instanceof FormData;
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
 
   if (body && !isFormData && typeof body === "object") {
     headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
   }
 
-  let res: Response;
-
-  try {
-    res = await fetch(url, {
-      method,
-      headers,
-      body: body
-        ? isFormData
-          ? body
-          : headers["Content-Type"]?.includes("application/json")
-          ? JSON.stringify(body)
-          : body
-        : undefined,
-    });
-  } catch {
-    throw new Error(
-      `Backend unreachable, API URL wrong, or CORS issue. URL: ${url}`
-    );
+  const send = async (bearer: string) => {
+    const requestHeaders = new Headers(headers);
+    if (auth && bearer) requestHeaders.set("Authorization", `Bearer ${bearer}`);
+    try {
+      return await fetch(url, {
+        method,
+        headers: requestHeaders,
+        body:
+          body != null
+            ? isFormData
+              ? body
+              : requestHeaders.get("Content-Type")?.includes("application/json")
+                ? JSON.stringify(body)
+                : body
+            : undefined,
+      });
+    } catch {
+      throw new Error(`Backend unreachable, API URL wrong, or CORS issue. URL: ${url}`);
+    }
+  };
+  let res = await send(token);
+  if (auth && res.status === 401) {
+    const latest = getStoredToken();
+    if (latest && latest !== token) {
+      requireMatchingIdentity(token, latest);
+      token = latest;
+    } else {
+      token = await renewAccessToken(token);
+    }
+    // A single retry after an authentication rejection. Never retry network errors,
+    // 403, or 5xx responses, especially for checkout/payment mutations.
+    res = await send(token);
   }
-
   const payload = await parseResponse(res);
 
   if (!res.ok) {
     if (res.status === 401 && auth) {
-      clearAuthTokens();
-      redirectToSignIn();
+      // A fresh token was rejected: stop retrying. Keep session state so an
+      // endpoint-specific 401 does not silently destroy a valid global session.
     }
 
     throw new Error(buildErrorMessage(res.status, payload, path));
