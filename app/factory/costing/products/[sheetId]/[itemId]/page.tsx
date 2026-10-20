@@ -1,4 +1,5 @@
 "use client";
+import { CostingBarcode } from "@/components/factory/costing-barcode";
 
 import * as React from "react";
 import Link from "next/link";
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CostingProductDelete } from "@/components/factory/costing-product-delete";
 import {
   Card,
   CardContent,
@@ -96,10 +98,18 @@ function validId(value: unknown): value is string {
   );
 }
 
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+function DetailRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 border-b border-border/60 py-3 last:border-0">
-      <dt className="text-xs leading-7 text-muted-foreground sm:text-sm">{label}</dt>
+      <dt className="text-xs leading-7 text-muted-foreground sm:text-sm">
+        {label}
+      </dt>
       <dd className="break-words text-right text-xs font-medium leading-7 tabular-nums sm:text-sm">
         {children}
       </dd>
@@ -122,7 +132,9 @@ function Section({
           <h2 className="text-base leading-8">{title}</h2>
         </CardTitle>
         {description && (
-          <CardDescription className="text-xs leading-7">{description}</CardDescription>
+          <CardDescription className="text-xs leading-7">
+            {description}
+          </CardDescription>
         )}
       </CardHeader>
       <CardContent>{children}</CardContent>
@@ -143,7 +155,8 @@ function ProductPhoto({
   const [failed, setFailed] = React.useState("");
   const src = photoUrl(sheet, item, slot);
   const exists = slot === "ORIGINAL" ? item.originalImage : item.packagedImage;
-  const label = slot === "ORIGINAL" ? "မူလဝယ်ယူသောအထုပ်ပုံ" : "ထုပ်ပိုးပြီးပစ္စည်းပုံ";
+  const label =
+    slot === "ORIGINAL" ? "မူလဝယ်ယူသောအထုပ်ပုံ" : "ထုပ်ပိုးပြီးပစ္စည်းပုံ";
   const usable = exists && failed !== src;
   return (
     <div className="min-w-0">
@@ -177,7 +190,9 @@ function ProductPhoto({
           </span>
         )}
       </Button>
-      <p className="mt-2 max-w-36 text-xs leading-6 text-muted-foreground">{label}</p>
+      <p className="mt-2 max-w-36 text-xs leading-6 text-muted-foreground">
+        {label}
+      </p>
       <Dialog open={open && usable} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl rounded-2xl">
           <DialogHeader>
@@ -210,7 +225,10 @@ function ProductContent({
   reloading: boolean;
   onRefresh: () => void;
 }) {
-  const [copyState, setCopyState] = React.useState<"idle" | "copied" | "failed">("idle");
+  const [deleting, setDeleting] = React.useState(false);
+  const [copyState, setCopyState] = React.useState<
+    "idle" | "copied" | "failed"
+  >("idle");
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   React.useEffect(
     () => () => {
@@ -241,13 +259,18 @@ function ProductContent({
     : i.productType === "VOLUME"
       ? "ဘူး"
       : "ထုပ်";
-  const price = (key: string) => (ready ? money(sheet.currencyCode, v[key]) : "—");
-  const measured = (key: string, unit: string) => (ready ? quantity(v[key], unit) : "—");
+  const price = (key: string) =>
+    ready ? money(sheet.currencyCode, v[key]) : "—";
+  const measured = (key: string, unit: string) =>
+    ready ? quantity(v[key], unit) : "—";
   const finalized = sheet.status === "FINALIZED";
   const summary = [
     { label: `တစ်${saleUnit} ကုန်ကျစရိတ်`, value: price("costPerUnit") },
     { label: `တစ်${saleUnit} ရောင်းဈေး`, value: price("price") },
-    { label: "တွက်ချက်ထားသော ထုတ်ယူနစ်", value: measured("saleUnits", saleUnit) },
+    {
+      label: "တွက်ချက်ထားသော ထုတ်ယူနစ်",
+      value: measured("saleUnits", saleUnit),
+    },
     { label: "မျှော်မှန်းအမြတ်", value: price("profit") },
   ];
   async function copyLink() {
@@ -299,7 +322,13 @@ function ProductContent({
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild className="h-auto min-h-11 py-2 text-xs leading-6">
-              <Link href={`/factory/costing/products/${sheet.id}/${item.id}/edit`}>
+              <Link
+                href={`/factory/costing/products/${sheet.id}/${item.id}/edit`}
+                aria-disabled={deleting}
+                onClick={(event) => {
+                  if (deleting) event.preventDefault();
+                }}
+              >
                 <Pencil className="mr-2 size-4" />
                 {finalized ? "မိတ္တူဖြင့် ပြင်ဆင်ရန်" : "ပစ္စည်းပြင်ဆင်ရန်"}
               </Link>
@@ -307,16 +336,26 @@ function ProductContent({
             <Button
               type="button"
               variant="outline"
-              disabled={reloading}
+              disabled={reloading || deleting}
               onClick={onRefresh}
               className="h-auto min-h-11 py-2 text-xs leading-6"
             >
-              <RefreshCw className={`mr-2 size-4 ${reloading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`mr-2 size-4 ${reloading ? "animate-spin" : ""}`}
+              />
               ပြန်တင်ရန်
             </Button>
+            <CostingProductDelete
+              sheet={sheet}
+              item={item}
+              disabled={reloading}
+              onBusyChange={setDeleting}
+              onReload={onRefresh}
+            />
             <Button
               type="button"
               variant="outline"
+              disabled={deleting}
               onClick={() => void copyLink()}
               className="h-auto min-h-11 py-2 text-xs leading-6"
             >
@@ -327,7 +366,9 @@ function ProductContent({
         </div>
         <p
           role="status"
-          className={copyState === "failed" ? "text-xs text-destructive" : "sr-only"}
+          className={
+            copyState === "failed" ? "text-xs text-destructive" : "sr-only"
+          }
         >
           {copyState === "failed"
             ? "လင့်ခ်ကူးမရပါ။ Browser address bar မှ ကူးယူပါ။"
@@ -336,10 +377,13 @@ function ProductContent({
               : ""}
         </p>
       </header>
+      <CostingBarcode sheetId={sheet.id} itemId={item.id} />
       <Card className="rounded-2xl shadow-none">
         <CardContent className="flex flex-wrap items-start justify-between gap-6 pt-1">
           <div>
-            <h2 className="mb-4 text-sm font-semibold leading-7">ပစ္စည်းပုံများ</h2>
+            <h2 className="mb-4 text-sm font-semibold leading-7">
+              ပစ္စည်းပုံများ
+            </h2>
             <div className="flex flex-wrap gap-6">
               <ProductPhoto sheet={sheet} item={item} slot="ORIGINAL" />
               <ProductPhoto sheet={sheet} item={item} slot="PACKAGED" />
@@ -350,7 +394,9 @@ function ProductContent({
               {dateTime(sheet.updatedAt)}
             </DetailRow>
             <DetailRow label="စာရင်း Version">{sheet.version}</DetailRow>
-            <DetailRow label="တွက်ချက်မှု Version">{sheet.calculationVersion}</DetailRow>
+            <DetailRow label="တွက်ချက်မှု Version">
+              {sheet.calculationVersion}
+            </DetailRow>
           </dl>
         </CardContent>
       </Card>
@@ -378,7 +424,9 @@ function ProductContent({
         {summary.map((stat, index) => (
           <Card key={stat.label} className="gap-2 rounded-2xl py-4 shadow-none">
             <CardContent className="px-4">
-              <p className="text-xs leading-7 text-muted-foreground">{stat.label}</p>
+              <p className="text-xs leading-7 text-muted-foreground">
+                {stat.label}
+              </p>
               <p
                 className={`mt-2 break-words text-base font-semibold tabular-nums sm:text-lg ${index === 1 ? "text-blue-600 dark:text-blue-400" : ""}`}
               >
@@ -450,8 +498,12 @@ function ProductContent({
                 <DetailRow label="ရောင်းယူနစ်များ ကုန်ကျစရိတ်">
                   {price("packedCost")}
                 </DetailRow>
-                <DetailRow label="မျှော်မှန်းရောင်းရငွေ">{price("revenue")}</DetailRow>
-                <DetailRow label="မျှော်မှန်းအမြတ်">{price("profit")}</DetailRow>
+                <DetailRow label="မျှော်မှန်းရောင်းရငွေ">
+                  {price("revenue")}
+                </DetailRow>
+                <DetailRow label="မျှော်မှန်းအမြတ်">
+                  {price("profit")}
+                </DetailRow>
                 <DetailRow label="Discount ပြီး ရောင်းရငွေ">
                   {price("discountedRevenue")}
                 </DetailRow>
@@ -469,11 +521,15 @@ function ProductContent({
           <div className="grid gap-4 lg:grid-cols-2">
             <Section title="ဝယ်ယူမှုနှင့် ပမာဏ">
               <dl>
-                <DetailRow label="ပစ္စည်းအမည်">{String(i.product || "—")}</DetailRow>
+                <DetailRow label="ပစ္စည်းအမည်">
+                  {String(i.product || "—")}
+                </DetailRow>
                 <DetailRow label="အမျိုးအစား">
                   {types[String(i.productType)] || String(i.productType || "—")}
                 </DetailRow>
-                <DetailRow label={`${String(i.containerName || "အထုပ်")} အရေအတွက်`}>
+                <DetailRow
+                  label={`${String(i.containerName || "အထုပ်")} အရေအတွက်`}
+                >
                   {quantity(i.containers)}
                 </DetailRow>
                 {count ? (
@@ -487,7 +543,9 @@ function ProductContent({
                     {quantity(i.weightKg, largeUnit)}
                   </DetailRow>
                 )}
-                <DetailRow label="အလျော့ပမာဏ">{quantity(i.lossKg, largeUnit)}</DetailRow>
+                <DetailRow label="အလျော့ပမာဏ">
+                  {quantity(i.lossKg, largeUnit)}
+                </DetailRow>
                 <DetailRow label={`တစ်${saleUnit} ပါဝင်ပမာဏ`}>
                   {quantity(i.packGrams, smallUnit)}
                 </DetailRow>
@@ -527,7 +585,9 @@ function ProductContent({
             description="မထုပ်ရသေးသော လက်ကျန်တန်ဖိုးကို ရောင်းယူနစ်ကုန်ကျစရိတ်ထဲမှ သီးခြား ခွဲထားပါသည်။"
           >
             <dl>
-              <DetailRow label="မူလဝယ်ဈေး စုစုပေါင်း">{price("purchaseTotal")}</DetailRow>
+              <DetailRow label="မူလဝယ်ဈေး စုစုပေါင်း">
+                {price("purchaseTotal")}
+              </DetailRow>
               <DetailRow label="ပြင်ဆင်စရိတ်">
                 {money(sheet.currencyCode, i.processing)}
               </DetailRow>
@@ -586,7 +646,9 @@ function ProductContent({
                 <DetailRow label="လျှော့ဈေးရာခိုင်နှုန်း">
                   {quantity(i.discount, "%")}
                 </DetailRow>
-                <DetailRow label={`တစ်${saleUnit} ရောင်းဈေး`}>{price("price")}</DetailRow>
+                <DetailRow label={`တစ်${saleUnit} ရောင်းဈေး`}>
+                  {price("price")}
+                </DetailRow>
                 <DetailRow label="လျှော့ဈေးပြီး ရောင်းဈေး">
                   {price("discountedPrice")}
                 </DetailRow>
@@ -618,9 +680,10 @@ function ProductContent({
         </TabsContent>
       </Tabs>
       <div className="rounded-2xl border border-border bg-muted/30 p-4 text-xs leading-7 text-muted-foreground">
-        ဤစာမျက်နှာသည် Server တွင် သိမ်းထားသော costing အချက်အလက်ကို ကြည့်ရန်ဖြစ်ပါသည်။
-        ထုတ်ယူနစ်သည် လက်ရှိ stock မဟုတ်ပါ။ ရောင်းရငွေနှင့် အမြတ်သည်
-        ခန့်မှန်းချက်များဖြစ်ပြီး အမှန်တကယ် ရောင်းချပြီးသော မှတ်တမ်း မဟုတ်ပါ။
+        ဤစာမျက်နှာသည် Server တွင် သိမ်းထားသော costing အချက်အလက်ကို
+        ကြည့်ရန်ဖြစ်ပါသည်။ ထုတ်ယူနစ်သည် လက်ရှိ stock မဟုတ်ပါ။ ရောင်းရငွေနှင့်
+        အမြတ်သည် ခန့်မှန်းချက်များဖြစ်ပြီး အမှန်တကယ် ရောင်းချပြီးသော မှတ်တမ်း
+        မဟုတ်ပါ။
       </div>
       <div className="flex flex-wrap justify-between gap-3">
         <Button
@@ -714,7 +777,9 @@ export default function CostingProductDetailPage() {
         <Card className="rounded-2xl shadow-none">
           <CardContent className="space-y-4">
             <Package className="size-8 text-muted-foreground" />
-            <h1 className="text-lg font-semibold leading-8">အသေးစိတ် ဖွင့်မရပါ</h1>
+            <h1 className="text-lg font-semibold leading-8">
+              အသေးစိတ် ဖွင့်မရပါ
+            </h1>
             <p role="alert" className="text-sm leading-7 text-muted-foreground">
               {error || "ပစ္စည်းမတွေ့ပါ။"}
             </p>

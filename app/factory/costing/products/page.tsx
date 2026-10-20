@@ -1,4 +1,8 @@
 "use client";
+import {
+  CostingBarcode,
+  CostingBarcodeSearch,
+} from "@/components/factory/costing-barcode";
 
 import * as React from "react";
 import Link from "next/link";
@@ -94,10 +98,12 @@ function Photo({
   slot: "ORIGINAL" | "PACKAGED";
   large?: boolean;
 }) {
-  const available = slot === "ORIGINAL" ? item.originalImage : item.packagedImage;
+  const available =
+    slot === "ORIGINAL" ? item.originalImage : item.packagedImage;
   const src = photoUrl(sheet, item, slot);
   const [failed, setFailed] = React.useState("");
-  const label = slot === "ORIGINAL" ? "မူလဝယ်ယူသောအထုပ်ပုံ" : "ထုပ်ပိုးပြီးပစ္စည်းပုံ";
+  const label =
+    slot === "ORIGINAL" ? "မူလဝယ်ယူသောအထုပ်ပုံ" : "ထုပ်ပိုးပြီးပစ္စည်းပုံ";
   return (
     <figure className="min-w-0">
       <div
@@ -115,7 +121,10 @@ function Photo({
           />
         ) : (
           <div className="flex flex-col items-center gap-1 px-2 text-center text-muted-foreground">
-            <ImageIcon className={large ? "size-8" : "size-5"} aria-hidden="true" />
+            <ImageIcon
+              className={large ? "size-8" : "size-5"}
+              aria-hidden="true"
+            />
             <span className="text-[11px] leading-5">
               {available ? "ပုံဖွင့်မရပါ" : "ပုံမရှိသေးပါ"}
             </span>
@@ -221,6 +230,7 @@ function SheetProducts({
                     String(item.inputs.productType || "—")}
                 </p>
               </div>
+              <CostingBarcode sheetId={sheet.id} itemId={item.id} />
               {ready ? (
                 <dl className="space-y-2 text-xs leading-6">
                   <div className="flex flex-wrap justify-between gap-1">
@@ -240,7 +250,9 @@ function SheetProducts({
                     </dd>
                   </div>
                   <div className="flex flex-wrap justify-between gap-1">
-                    <dt className="text-muted-foreground">တွက်ချက် ထုတ်ယူနစ်</dt>
+                    <dt className="text-muted-foreground">
+                      တွက်ချက် ထုတ်ယူနစ်
+                    </dt>
                     <dd>
                       {number(v.saleUnits)} {saleUnit(item)}
                     </dd>
@@ -305,7 +317,11 @@ function SheetProducts({
 }
 
 export default function CostingProductsPage() {
-  const [filters, setFilters] = React.useState({ page: 0, search: "", status: "" });
+  const [filters, setFilters] = React.useState({
+    page: 0,
+    search: "",
+    status: "",
+  });
   const [search, setSearch] = React.useState("");
   const [data, setData] = React.useState<CostingList | null>(null);
   const [busy, setBusy] = React.useState(true);
@@ -377,7 +393,8 @@ export default function CostingProductsPage() {
     };
   }, [filters, revision]);
 
-  const count = data?.content.reduce((sum, sheet) => sum + sheet.items.length, 0) ?? 0;
+  const count =
+    data?.content.reduce((sum, sheet) => sum + sheet.items.length, 0) ?? 0;
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 p-4 text-foreground sm:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -393,8 +410,8 @@ export default function CostingProductsPage() {
             Costing ကုန်ပစ္စည်းများ
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">
-            Server မှာ သိမ်းထားသော ပစ္စည်းများကို costing စာရင်းအလိုက် ကြည့်ပါ။ ပုံနှင့်
-            တွက်ချက်မှုရလဒ်ကို အသေးစိတ် ဖွင့်ကြည့်နိုင်ပါသည်။
+            Server မှာ သိမ်းထားသော ပစ္စည်းများကို costing စာရင်းအလိုက် ကြည့်ပါ။
+            ပုံနှင့် တွက်ချက်မှုရလဒ်ကို အသေးစိတ် ဖွင့်ကြည့်နိုင်ပါသည်။
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -405,7 +422,9 @@ export default function CostingProductsPage() {
             onClick={() => setRevision((value) => value + 1)}
             className="h-auto min-h-11 py-2 leading-6"
           >
-            <RefreshCw className={`mr-2 size-4 ${busy ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`mr-2 size-4 ${busy ? "animate-spin" : ""}`}
+            />
             ပြန်တင်ရန်
           </Button>
           <Button asChild className="h-auto min-h-11 py-2 leading-6">
@@ -431,18 +450,24 @@ export default function CostingProductsPage() {
           value={
             data
               ? number(
-                  data.content.filter((sheet) => sheet.status === "FINALIZED").length,
+                  data.content.filter((sheet) => sheet.status === "FINALIZED")
+                    .length,
                 )
               : "—"
           }
         />
       </dl>
+      <CostingBarcodeSearch />
       <form
         className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-end"
         onSubmit={(event) => {
           event.preventDefault();
           if (mutation.current) return;
-          setFilters((previous) => ({ ...previous, search: search.trim(), page: 0 }));
+          setFilters((previous) => ({
+            ...previous,
+            search: search.trim(),
+            page: 0,
+          }));
         }}
       >
         <div className="min-w-0 flex-1">
@@ -492,8 +517,8 @@ export default function CostingProductsPage() {
         </Button>
       </form>
       <p className="text-xs leading-6 text-muted-foreground">
-        ပစ္စည်းများကို costing အကြိမ်အလိုက် ခွဲပြထားပါသည်။ Browser ထဲတွင်သာရှိပြီး Server
-        မသိမ်းရသေးသော မူကြမ်းများ မပါဝင်ပါ။
+        ပစ္စည်းများကို costing အကြိမ်အလိုက် ခွဲပြထားပါသည်။ Browser
+        ထဲတွင်သာရှိပြီး Server မသိမ်းရသေးသော မူကြမ်းများ မပါဝင်ပါ။
       </p>
       <div aria-busy={busy} className="space-y-5">
         {busy ? (
@@ -538,8 +563,8 @@ export default function CostingProductsPage() {
             <Package className="mx-auto mb-3 size-10 text-muted-foreground" />
             <h2 className="font-semibold">Costing စာရင်း မတွေ့ပါ</h2>
             <p className="mt-2 px-4 text-sm leading-7 text-muted-foreground">
-              ရှာဖွေမှုကို ပြောင်းပါ သို့မဟုတ် Costing page တွင် စာရင်းကို Server သို့
-              သိမ်းပါ။
+              ရှာဖွေမှုကို ပြောင်းပါ သို့မဟုတ် Costing page တွင် စာရင်းကို
+              Server သို့ သိမ်းပါ။
             </p>
           </div>
         )}
@@ -550,8 +575,8 @@ export default function CostingProductsPage() {
           className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5"
         >
           <p role="status" className="text-xs leading-6 text-muted-foreground">
-            စာမျက်နှာ {data.number + 1} / {data.totalPages} · တစ်မျက်နှာလျှင် costing
-            စာရင်း {PAGE_SIZE} ခုအထိ
+            စာမျက်နှာ {data.number + 1} / {data.totalPages} · တစ်မျက်နှာလျှင်
+            costing စာရင်း {PAGE_SIZE} ခုအထိ
           </p>
           <div className="flex gap-2">
             <Button
@@ -559,7 +584,10 @@ export default function CostingProductsPage() {
               variant="outline"
               disabled={busy || deleting || filters.page === 0}
               onClick={() =>
-                setFilters((previous) => ({ ...previous, page: previous.page - 1 }))
+                setFilters((previous) => ({
+                  ...previous,
+                  page: previous.page - 1,
+                }))
               }
             >
               <ArrowLeft className="mr-2 size-4" />
@@ -570,7 +598,10 @@ export default function CostingProductsPage() {
               variant="outline"
               disabled={busy || deleting || filters.page + 1 >= data.totalPages}
               onClick={() =>
-                setFilters((previous) => ({ ...previous, page: previous.page + 1 }))
+                setFilters((previous) => ({
+                  ...previous,
+                  page: previous.page + 1,
+                }))
               }
             >
               နောက်
