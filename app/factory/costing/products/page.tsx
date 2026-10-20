@@ -199,12 +199,6 @@ function SheetProducts({
           </span>
         </div>
       </div>
-      {sheet.status === "FINALIZED" && (
-        <p className="border-b border-border px-5 py-3 text-xs leading-7 text-muted-foreground">
-          ဤအတွဲသည် အတည်ပြုပြီးဖြစ်ပါသည်။ Backend စည်းမျဉ်းအရ အတွဲနှင့်
-          အတွင်းပစ္စည်းများကို ဖျက်မရပါ။ မူကြမ်းအတွဲများတွင်သာ ဖျက်ခလုတ် နှိပ်နိုင်ပါသည်။
-        </p>
-      )}
       <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
         {visible.map((item) => {
           const ready = item.calculation.ready;
@@ -277,11 +271,6 @@ function SheetProducts({
                   onDeleted={reload}
                 />
               </div>
-              {sheet.status === "FINALIZED" && (
-                <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                  အတည်ပြုပြီးဖြစ်၍ ဖျက်ခွင့်မရှိပါ။
-                </p>
-              )}
             </article>
           );
         })}

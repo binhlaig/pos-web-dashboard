@@ -18,8 +18,6 @@ import {
   CostingApiError,
   costingRequest,
   sheetRequest,
-  textFields,
-  numericFields,
   type CostingSheet,
   type CostingServerItem,
 } from "@/lib/costing-api";
@@ -61,11 +59,9 @@ export function CostingProductDelete({
   const lock = React.useRef(false);
   const name =
     String(item.inputs.product || "အမည်မဖြည့်ရသေးပါ").trim() || "အမည်မဖြည့်ရသေးပါ";
-  const allowed =
-    sheet.status === "DRAFT" &&
-    sheet.items.some(
-      (entry) => entry.id === item.id && entry.clientItemId === item.clientItemId,
-    );
+  const allowed = sheet.items.some(
+    (entry) => entry.id === item.id && entry.clientItemId === item.clientItemId,
+  );
   React.useEffect(() => {
     setConfirmation("");
     setError("");
@@ -86,28 +82,12 @@ export function CostingProductDelete({
     setError("");
     onBusyChange?.(true);
     try {
-      // Item deletion uses the existing versioned full-sheet update. Keep every
-      // remaining clientItemId and input unchanged; never DELETE the whole sheet.
-      const remaining = sheet.items.filter(
-        (entry) => entry.clientItemId !== item.clientItemId,
+      // Dedicated item deletion permits finalized sheets without opening generic
+      // finalized edits. Backend preserves the remaining items and snapshots.
+      const result = await sheetRequest(
+        `/${sheet.id}/items/${item.id}?version=${sheet.version}`,
+        { method: "DELETE" },
       );
-      const payload = {
-        title: sheet.title,
-        version: sheet.version,
-        items: remaining.map((entry) => ({
-          clientItemId: entry.clientItemId,
-          ...Object.fromEntries(
-            [...textFields, ...numericFields].map((key) => [
-              key,
-              entry.inputs[key] ?? null,
-            ]),
-          ),
-        })),
-      };
-      const result = await sheetRequest(`/${sheet.id}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
       if (
         result.id !== sheet.id ||
         result.items.some((entry) => entry.clientItemId === item.clientItemId)
@@ -140,7 +120,19 @@ export function CostingProductDelete({
       onBusyChange?.(false);
     }
   }
-  if (!allowed) return null;
+  if (!allowed)
+    return (
+      <Button
+        type="button"
+        variant="destructive"
+        disabled
+        title={"ပစ္စည်းအချက်အလက်ကို ပြန်တင်စစ်ဆေးပါ။"}
+        className="h-auto min-h-11 border border-destructive/25 py-2 text-xs leading-6 disabled:bg-destructive/10 disabled:text-destructive disabled:opacity-100"
+      >
+        <Trash2 className="mr-2 size-4" />
+        ပစ္စည်းဖျက်ရန်
+      </Button>
+    );
   return (
     <>
       <Button
@@ -310,14 +302,7 @@ export function CostingSheetDelete({
     if (next) setConfirmation("");
   }
   async function remove() {
-    if (
-      lock.current ||
-      disabled ||
-      blocked ||
-      sheet.status !== "DRAFT" ||
-      !name ||
-      confirmation.trim() !== name
-    )
+    if (lock.current || disabled || blocked || !name || confirmation.trim() !== name)
       return;
     if (onAcquire && !onAcquire()) return;
     lock.current = true;
@@ -348,7 +333,6 @@ export function CostingSheetDelete({
       onBusyChange?.(false);
     }
   }
-  if (sheet.status !== "DRAFT") return null;
   return (
     <>
       <Button
