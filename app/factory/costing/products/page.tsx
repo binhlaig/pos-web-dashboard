@@ -272,6 +272,13 @@ function SheetProducts({
                   အသေးစိတ်ကြည့်ရန် <ArrowRight className="ml-1 size-3.5" />
                 </Link>
               </Button>
+              {sheet.status === "FINALIZED" && ready && (
+                <Button asChild className="mt-2 min-h-10 w-full bg-blue-600 text-white hover:bg-blue-700">
+                  <Link href={`/factory/receiving/raw?sheetId=${sheet.id}&itemId=${item.id}`}>
+                    <Package className="mr-2 size-4" /> Raw Receiving ပြုလုပ်ရန်
+                  </Link>
+                </Button>
+              )}
               <div className="mt-2 [&>button]:w-full">
                 <CostingProductDelete
                   sheet={sheet}
