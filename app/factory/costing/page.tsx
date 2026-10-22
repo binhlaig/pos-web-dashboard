@@ -74,6 +74,8 @@ import {
   ImagePlus,
   Loader2,
   X,
+  Settings2,
+  Barcode,
 } from "lucide-react";
 
 type PricingMode = "margin" | "price";
@@ -1031,16 +1033,12 @@ function ProductCalculator({
 }) {
   const [notice, setNotice] = useState("");
   const [tab, setTab] = useState("purchase");
-  const { formatSharedMoney, currencySettings } = useCurrency();
   const form = useForm<Inputs>({
     resolver: zodResolver(draftSchema),
     values: inputs,
     resetOptions: { keepErrors: true },
     mode: "onChange",
   });
-  useEffect(() => {
-    void form.trigger();
-  }, [inputs, form]);
   const result = serverCalculation
     ? serverResult(serverCalculation)
     : calculatePacking(inputs);
@@ -1058,9 +1056,6 @@ function ProductCalculator({
   const percent = (value: number | null | undefined) =>
     value == null ? "—" : `${numberFormat.format(value)}%`;
   const update = <K extends keyof Inputs>(key: K, value: Inputs[K]) => {
-    form.setValue(key as keyof Inputs, value as Inputs[keyof Inputs], {
-      shouldValidate: true,
-    });
     setInputs((current) => ({ ...current, [key]: value }));
   };
   const numberField = (
@@ -1124,24 +1119,24 @@ function ProductCalculator({
       <form
         noValidate
         onSubmit={(event) => event.preventDefault()}
-        className="grid min-w-0 items-start gap-4 min-[1000px]:grid-cols-[minmax(0,1fr)_290px] 2xl:grid-cols-[minmax(0,1fr)_340px] print:block"
+        className="grid min-w-0 items-start gap-4 min-[1000px]:grid-cols-[minmax(0,1fr)_285px] 2xl:grid-cols-[minmax(0,1fr)_320px] print:block"
       >
         <Card className="min-w-0 gap-0 overflow-hidden border-slate-200 bg-white py-0 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center gap-3 border-b border-slate-100 bg-gradient-to-r from-blue-50/70 to-white px-4 py-3 dark:border-slate-800 dark:from-blue-500/10 dark:to-slate-900 sm:px-5">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white">
-              <Package className="size-5" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="truncate text-sm font-bold leading-7">
-                {inputs.product.trim() || "ပစ္စည်းအမည် ဖြည့်ရန်"}
-              </h2>
-              <p className="truncate text-[11px] leading-6 text-slate-400">
-                {
-                  productTypes.find((type) => type.value === inputs.productType)
-                    ?.label
-                }
-              </p>
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
+                <Package className="size-5 text-muted-foreground" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-semibold">{inputs.product.trim() || "ပစ္စည်းအသစ်"}</h2>
+                <p className="truncate text-[11px] leading-6 text-muted-foreground">
+                  {productTypes.find((type) => type.value === inputs.productType)?.label}
+                </p>
+              </div>
             </div>
+            <span className="shrink-0 rounded-lg bg-muted px-2 py-1 text-[10px] text-muted-foreground">
+              {readOnly ? "Read only" : "Editing"}
+            </span>
           </div>
           <Tabs
             value={tab}
@@ -1178,21 +1173,19 @@ function ProductCalculator({
                 <div className="space-y-5">
                   <div>
                     <GroupTitle number="01" title="ပစ္စည်းနှင့် တွက်ချက်ပုံ" />
-                    <div className="grid gap-3 sm:grid-cols-2 min-[1000px]:grid-cols-1 min-[1120px]:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <FormField
                         control={form.control}
                         name="product"
                         render={({ field }) => (
-                          <FormItem className="self-start gap-1.5">
-                            <FormLabel className="text-xs leading-6 text-slate-500">
-                              ပစ္စည်းအမည်
-                            </FormLabel>
+                          <FormItem className="gap-1.5">
+                            <FormLabel className="text-xs leading-6">ပစ္စည်းအမည်</FormLabel>
                             <FormControl>
                               <Input
                                 {...field}
                                 value={inputs.product}
                                 maxLength={200}
-                                placeholder="ဥပမာ — အချိုရည်"
+                                placeholder="ဥပမာ — ကြက်သွန်နီ 1 kg"
                                 onChange={(event) => {
                                   field.onChange(event.target.value);
                                   update("product", event.target.value);
@@ -1200,33 +1193,39 @@ function ProductCalculator({
                                 className={inputClass}
                               />
                             </FormControl>
-                            <FormMessage className="text-[10px] leading-5" />
+                            <FormMessage className="text-[10px]" />
                           </FormItem>
                         )}
                       />
-                      <ProductImageUpload
-                        title="မူလဝယ်ယူသောအထုပ်ပုံ"
-                        hint="မပြင်ဆင်ရသေးသော မူလကတ်၊ ပုံး သို့မဟုတ် ဝယ်ယူအထုပ်ပုံကို ထည့်ပါ။"
-                        value={inputs.originalImage}
-                        onChange={(value) => update("originalImage", value)}
-                        onBusyChange={onImageBusy}
-                      />
-                    </div>
-                    <div className="mt-3">
                       <SelectField
                         name="productType"
                         label="ပစ္စည်းအမျိုးအစား"
                         value={inputs.productType}
-                        onChange={(event) =>
-                          changeProductType(event.target.value as ProductType)
-                        }
+                        onChange={(event) => changeProductType(event.target.value as ProductType)}
                       >
                         {productTypes.map((type) => (
-                          <option key={type.value} value={type.value}>
-                            {type.label}
-                          </option>
+                          <option key={type.value} value={type.value}>{type.label}</option>
                         ))}
                       </SelectField>
+                    </div>
+                    <div className="mt-4 rounded-xl border border-border p-3">
+                      <p className="text-xs font-semibold">ကုန်ပစ္စည်းဓာတ်ပုံများ</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <ProductImageUpload
+                          title="မူလဝယ်ယူသောအထုပ်ပုံ"
+                          hint="မပြင်ဆင်ရသေးသော မူလအထုပ်ပုံ"
+                          value={inputs.originalImage}
+                          onChange={(value) => update("originalImage", value)}
+                          onBusyChange={onImageBusy}
+                        />
+                        <ProductImageUpload
+                          title="ထုပ်ပိုးပြီးပစ္စည်းပုံ"
+                          hint="ရောင်းချရန်အဆင်သင့်ဖြစ်သော အထုပ်ပုံ"
+                          value={inputs.packedImage}
+                          onChange={(value) => update("packedImage", value)}
+                          onBusyChange={onImageBusy}
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
@@ -1385,20 +1384,6 @@ function ProductCalculator({
                         )}
                       </div>
                     </details>
-                  </div>
-                  <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
-                    <GroupTitle
-                      number="04"
-                      title="ထုပ်ပိုးပြီးပစ္စည်းပုံ"
-                      note="03 ဝယ်ဈေးနှင့် ကုန်ကျစရိတ် ဖြည့်ပြီးနောက် ရောင်းချရန် ပြင်ဆင်ထားသောပုံကို ထည့်နိုင်ပါသည်။"
-                    />
-                    <ProductImageUpload
-                      title="ထုပ်ပိုးပြီးပစ္စည်းပုံ"
-                      hint="ခွဲထုပ်၊ တံဆိပ်ကပ် သို့မဟုတ် ပြင်ဆင်ထုပ်ပိုးပြီးသော ပစ္စည်းပုံ။"
-                      value={inputs.packedImage}
-                      onChange={(value) => update("packedImage", value)}
-                      onBusyChange={onImageBusy}
-                    />
                   </div>
                   {!purchaseResult.error && (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2 dark:border-blue-500/20 dark:bg-blue-500/10">
@@ -1733,178 +1718,68 @@ function ProductCalculator({
           </Tabs>
         </Card>
 
-        <div className="min-w-0 space-y-3 min-[1000px]:sticky min-[1000px]:top-24 print:static">
-          <Card className="gap-0 overflow-hidden border-slate-200 bg-white py-0 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <CardContent className="p-4">
+        <aside className="min-w-0 min-[1000px]:sticky min-[1000px]:top-20 print:static">
+          <Card className="gap-0 overflow-hidden rounded-2xl border-border py-0 shadow-none">
+            <CardContent className="space-y-3 p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-bold leading-7">အမြတ်ရလဒ်</h2>
-                <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
-                  Auto
+                <h3 className="text-sm font-semibold">တွက်ချက်မှုအနှစ်ချုပ်</h3>
+                <span className="rounded-lg bg-muted px-2 py-1 text-[10px] text-muted-foreground">
+                  {serverCalculation ? "Server Result" : "Live Estimate"}
                 </span>
               </div>
-              <p className="mt-1 text-[10px] leading-6 text-blue-600 dark:text-blue-300">
-                {serverCalculation
-                  ? "Server တွက်ချက်ရလဒ်"
-                  : "မသိမ်းရသေးသော ခန့်မှန်းရလဒ်"}
-              </p>
-              <p className="mt-1 truncate text-xs leading-6 text-slate-400">
-                {inputs.product.trim() || "ပစ္စည်းအမည် ဖြည့်ပါ"} ·
-                ရောင်းယူနစ်တစ်ခု = {inputs.packGrams || "—"} {units.small}
-              </p>
+              <p className="truncate text-xs text-muted-foreground">{inputs.product || "ပစ္စည်းအမည်"}</p>
               {result.error ? (
-                <div
-                  role="status"
-                  className="mt-4 space-y-3 rounded-xl bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200"
-                >
-                  {purchaseResult.error ? (
-                    <>
-                      <AlertTriangle className="size-5" />
-                      {purchaseResult.error}
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="size-5 text-emerald-600" />
-                      <p>ဝယ်ယူမှုအချက်အလက် ပြည့်စုံပါပြီ။</p>
-                      <Row label="ရောင်းနိုင်ပမာဏ">
-                        {numberFormat.format(purchaseResult.packs!)}{" "}
-                        {units.sale}
-                      </Row>
-                      <Row label="တစ်ယူနစ်ကုန်ကျစရိတ်" strong>
-                        {money(purchaseResult.costPerPack!)}
-                      </Row>
-                      <p>
-                        {result.error} ရောင်းဈေးနှင့် အမြတ်အကွက်များကို စစ်ပါ။
-                      </p>
-                      <Button
-                        type="button"
-                        onClick={() => setTab("pricing")}
-                        className="min-h-11 w-full text-xs"
-                      >
-                        ရောင်းဈေး သတ်မှတ်မည်
-                      </Button>
-                    </>
-                  )}
+                <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                  <AlertTriangle className="mb-2 size-4" />
+                  {result.error}
                 </div>
               ) : (
                 <>
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
-                      <p className="text-[10px] text-slate-400">
-                        ရောင်းနိုင်ပမာဏ
-                      </p>
-                      <p className="mt-2 text-lg font-bold tabular-nums">
-                        {numberFormat.format(result.packs!)}{" "}
-                        <span className="text-xs font-normal">
-                          {units.sale}
-                        </span>
-                      </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-muted/60 p-3">
+                      <p className="text-[10px] text-muted-foreground">ရောင်းနိုင်ပမာဏ</p>
+                      <p className="mt-2 text-xl font-bold tabular-nums">{numberFormat.format(result.packs!)}</p>
+                      <p className="text-[10px] text-muted-foreground">{units.sale}</p>
                     </div>
-                    <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
-                      <p className="text-[10px] text-slate-400">လက်ကျန်ပမာဏ</p>
-                      <p className="mt-2 text-lg font-bold tabular-nums">
-                        {numberFormat.format(result.remainderBase!)}{" "}
-                        <span className="text-xs font-normal">
-                          {units.small}
-                        </span>
-                      </p>
+                    <div className="rounded-xl bg-muted/60 p-3">
+                      <p className="text-[10px] text-muted-foreground">တစ်ယူနစ်ကုန်ကျစရိတ်</p>
+                      <p className="mt-2 break-words text-base font-bold tabular-nums">{money(result.costPerPack!)}</p>
                     </div>
                   </div>
-                  <div className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
-                    <Row label="တစ်ယူနစ်ကုန်ကျစရိတ်" strong>
-                      {money(result.costPerPack!)}
-                    </Row>
+                  <div className="rounded-xl bg-blue-600 p-4 text-white">
+                    <p className="text-[11px] text-blue-100">သတ်မှတ်ရောင်းဈေး</p>
+                    <p className="mt-2 break-words text-2xl font-bold tabular-nums">{money(result.price!)}</p>
+                    <p className="mt-1 text-[10px] text-blue-100">တစ်{units.sale} လျှင်</p>
                   </div>
-                  <div className="mt-3 rounded-xl bg-blue-600 p-4 text-white dark:bg-blue-500">
-                    <p className="text-[11px] leading-6 text-blue-100">
-                      လက်ရှိသတ်မှတ်ရောင်းဈေး
-                    </p>
-                    <p className="mt-1 break-words text-2xl font-bold tabular-nums">
-                      {money(result.price!)}
-                    </p>
-                    <p className="mt-1 text-[10px] leading-6 text-blue-100">
-                      တွက်ချက်မှုအတွက်သာ · Product ဈေး မပြောင်းပါ
-                    </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="min-w-0 rounded-xl border p-3">
+                      <p className="mb-2 text-[10px] text-muted-foreground">Margin</p>
+                      <MarginStatus value={result.margin} minimum={Number(inputs.minimumMargin)} />
+                    </div>
+                    <div className="min-w-0 rounded-xl border p-3">
+                      <p className="text-[10px] text-muted-foreground">ခန့်မှန်းအမြတ်</p>
+                      <p className={`mt-2 break-words text-base font-bold tabular-nums ${result.totalProfit! < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {money(result.totalProfit!)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="mt-3">
-                    <p className="mb-1 text-[11px] text-slate-500">
-                      ရောင်းရငွေအပေါ် Margin
-                    </p>
-                    <MarginStatus
-                      value={result.margin}
-                      minimum={Number(inputs.minimumMargin)}
-                    />
-                  </div>
-                  <div
-                    className={`mt-3 rounded-xl p-4 ${result.totalProfit! >= 0 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"}`}
-                  >
-                    <p className="text-xs leading-6">
-                      {result.totalProfit! >= 0
-                        ? "စုစုပေါင်း ခန့်မှန်းအမြတ်"
-                        : "စုစုပေါင်း ခန့်မှန်းအရှုံး"}
-                    </p>
-                    <p className="mt-2 break-words text-2xl font-bold tabular-nums">
-                      {money(result.totalProfit!)}
-                    </p>
-                    <p className="mt-1 text-[11px] leading-6">
-                      တစ်ယူနစ်လျှင် {money(result.profitPerPack!)}
-                    </p>
-                    <p className="mt-2 border-t border-current/10 pt-2 text-[10px] leading-6 opacity-75">
-                      {numberFormat.format(result.packs!)} {units.sale} အားလုံး
-                      ရောင်းကုန်လျှင်
-                    </p>
-                  </div>
-                  <div className="mt-2">
-                    <Row label="လျှော့ဈေးပြီး အမြတ်" strong>
-                      <span
-                        className={
-                          result.actualProfit! >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600"
-                        }
-                      >
-                        {money(result.actualProfit!)}
-                      </span>
-                    </Row>
-                  </div>
-                  {(result.actualMargin == null ||
-                    result.actualMargin < Number(inputs.minimumMargin)) && (
-                    <p
-                      role="status"
-                      className="rounded-lg bg-rose-50 p-2 text-[11px] leading-6 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
-                    >
-                      လျှော့ဈေးပြီး Margin သည် သတ်မှတ်ချက်မပြည့်ပါ။
-                    </p>
-                  )}
-                  <details className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
-                    <summary className="flex min-h-11 cursor-pointer items-center text-xs font-medium text-blue-600 dark:text-blue-300">
-                      အသေးစိတ်ကုန်ကျစရိတ် ကြည့်ရန် +
-                    </summary>
-                    <Row label="ဝယ်ဈေးစုစုပေါင်း">
-                      {money(result.purchaseTotal!)}
-                    </Row>
-                    <Row label="ရောင်းယူနစ်များ ကုန်ကျစရိတ်">
-                      {money(result.packedCost!)}
-                    </Row>
-                    <Row label="မူလဈေးဖြင့် ရောင်းရငွေ">
-                      {money(result.revenue!)}
-                    </Row>
-                    <Row label="မထုပ်ရသေးသော လက်ကျန်တန်ဖိုး">
-                      {money(result.remainderValue!)}
-                    </Row>
-                    <Row label="လက်ရှိအသုံးငွေစုစုပေါင်း">
-                      {money(result.cashOutlay!)}
-                    </Row>
+                  <details className="rounded-xl border p-3">
+                    <summary className="cursor-pointer text-xs font-medium">အသေးစိတ်ရလဒ်များ</summary>
+                    <div className="mt-2 divide-y divide-border">
+                      <Row label="ဝယ်ဈေး">{money(result.purchaseTotal!)}</Row>
+                      <Row label="ထုပ်ပိုးခ">{money(result.packagingCost!)}</Row>
+                      <Row label="ရောင်းရငွေ">{money(result.revenue!)}</Row>
+                      <Row label="လျှော့ဈေးပြီး အမြတ်">{money(result.actualProfit!)}</Row>
+                      <Row label="လျှော့ဈေးပြီး Margin">{percent(result.actualMargin)}</Row>
+                      <Row label="လက်ကျန်ပမာဏ">{numberFormat.format(result.remainderBase!)} {units.small}</Row>
+                    </div>
                   </details>
                 </>
               )}
+              <p className="text-[10px] leading-6 text-muted-foreground">ခန့်မှန်းချက်သာဖြစ်သည်။ Stock နှင့် Product ဈေးကို မပြောင်းပါ။</p>
             </CardContent>
           </Card>
-          <p className="flex gap-2 px-1 text-[10px] leading-6 text-slate-400">
-            <Info className="mt-1 size-3.5 shrink-0" />
-            ခန့်မှန်းချက်သာဖြစ်သည်။ ထည့်ထားသောကုန်ကျစရိတ်ကိုသာ နုတ်ထားပြီး Stock
-            နှင့် Product ဈေးကို မပြောင်းပါ။
-          </p>
-        </div>
+        </aside>
       </form>
     </Form>
   );
@@ -2007,6 +1882,7 @@ export default function FactoryCostingPage() {
   );
 }
 function ConnectedCostingPage() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{
     title: string;
     message: string;
@@ -2667,27 +2543,27 @@ function ConnectedCostingPage() {
       style={{ fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif' }}
       className="mx-auto min-w-0 max-w-[1500px] space-y-4 text-slate-950 dark:text-slate-100"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold tracking-wider text-blue-600">
-            BINHLAIG · FACTORY COSTING
-          </p>
-          <h1 className="mt-1 text-xl font-bold leading-9 sm:text-2xl">
-            ကုန်ကျစရိတ်နှင့် အမြတ်တွက်ချက်မှု
-          </h1>
-          <p className="text-xs leading-7 text-slate-500">
-            ပစ္စည်းရွေး → ဝယ်ယူမှုဖြည့် → Server တွင် သိမ်း
-          </p>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold tracking-wider text-blue-600">BINHLAIG / FACTORY</p>
+          <h1 className="mt-1 text-xl font-bold sm:text-2xl">Costing</h1>
+          <p className="text-xs leading-6 text-muted-foreground">ကုန်ကျစရိတ်နှင့် ရောင်းဈေးတွက်ချက်ခြင်း</p>
         </div>
-        <span className="rounded-full bg-blue-50 px-3 py-2 text-xs leading-6 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-          {currency || "Currency စောင့်ဆိုင်းဆဲ"} ·{" "}
-          {finalized
-            ? "အတည်ပြုပြီး"
-            : hasChanges
-              ? "မသိမ်းရသေး"
-              : "Server သိမ်းပြီး"}
-        </span>
-      </div>
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <span className={`rounded-lg border px-3 py-2 text-xs font-medium ${finalized ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" : hasChanges ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300" : "border-border bg-muted text-muted-foreground"}`}>
+            {finalized ? "Finalized" : hasChanges ? "Unsaved" : sheet ? "Saved" : "New Draft"}
+          </span>
+          <Button type="button" variant="outline" disabled={busy} className="h-10 rounded-xl" onClick={() => { setListPage(0); setListOpen(true); }}>
+            <Search className="size-4" /> စာရင်းဖွင့်
+          </Button>
+          <Button type="button" disabled={busy || finalized || blocked} onClick={() => void saveDraft()} className="h-10 rounded-xl bg-blue-600 text-white hover:bg-blue-700">
+            {draftBusy ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} သိမ်းမည်
+          </Button>
+          <Button type="button" variant="outline" className="size-10 rounded-xl p-0" aria-label="အခြားလုပ်ဆောင်ချက်များ" onClick={() => setMoreOpen(true)}>
+            <Settings2 className="size-4" />
+          </Button>
+        </div>
+      </header>
       <Card className="gap-0 border-slate-200 bg-white py-0 dark:border-slate-800 dark:bg-slate-900">
         <CardContent className="space-y-3 p-4">
           <Form {...titleForm}>
@@ -2722,125 +2598,19 @@ function ConnectedCostingPage() {
               />
             </form>
           </Form>
-          <div className="flex flex-wrap gap-2 print:hidden">
-            <Button
-              disabled={busy || finalized}
-              onClick={() => addProduct()}
-              className="min-h-11 rounded-xl bg-blue-600 text-xs text-white"
-            >
-              <Plus />
-              ပစ္စည်းထပ်ထည့်
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <Button type="button" variant="outline" disabled={busy || finalized} onClick={() => void addProduct()} className="min-h-10 rounded-xl text-xs">
+              <Plus className="size-4" /> ပစ္စည်းထည့်ရန်
             </Button>
-            <Button
-              variant="outline"
-              disabled={busy || finalized || !active}
-              onClick={() => addProduct(true)}
-              className="min-h-11 rounded-xl text-xs"
-            >
-              <Copy />
-              ပစ္စည်းမိတ္တူ
+            <Button type="button" variant="outline" disabled={busy || finalized || !active || items.length <= 1} onClick={removeActive} className="min-h-10 rounded-xl text-xs text-rose-600">
+              <Trash2 className="size-4" /> ရွေးထားသောပစ္စည်းဖယ်ရန်
             </Button>
-            <Button
-              variant="ghost"
-              disabled={busy || finalized || items.length <= 1}
-              onClick={removeActive}
-              aria-label="လက်ရှိပစ္စည်းဖယ်ရန်"
-              className="size-11 p-0 text-rose-600"
-            >
-              <Trash2 />
-            </Button>
-            <Button
-              disabled={busy || finalized || blocked}
-              onClick={() => void saveDraft()}
-              className="min-h-11 rounded-xl bg-blue-600 text-xs text-white"
-            >
-              {draftBusy ? <Loader2 className="animate-spin" /> : <Save />}
-              အားလုံးသိမ်း
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setListPage(0);
-                setListOpen(true);
-              }}
-              className="min-h-11 rounded-xl text-xs"
-            >
-              <Upload />
-              Server စာရင်းဖွင့်
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => window.print()}
-              aria-label="ပုံနှိပ်ရန်"
-              className="size-11 p-0"
-            >
-              <Printer />
-            </Button>
+            {sheet && !finalized && (
+              <Button type="button" variant="outline" disabled={busy || blocked || hasChanges} onClick={() => void serverAction("finalize")} className="min-h-10 rounded-xl text-xs">
+                <CheckCircle2 className="size-4" /> အတည်ပြုရန်
+              </Button>
+            )}
           </div>
-          <details className="print:hidden">
-            <summary className="cursor-pointer py-2 text-xs text-blue-600">
-              စာရင်းအသစ်၊ မိတ္တူနှင့် Browser recovery
-            </summary>
-            <div className="flex flex-wrap gap-2 py-2">
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={resetSheet}
-                className="min-h-10 text-xs"
-              >
-                စာရင်းအသစ်
-              </Button>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void restoreRecovery()}
-                className="min-h-10 text-xs"
-              >
-                Browser recovery ပြန်ယူ
-              </Button>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void previewLegacy()}
-                className="min-h-10 text-xs"
-              >
-                Browser မူကြမ်းအဟောင်း တင်ရန်
-              </Button>
-              {sheet && (
-                <>
-                  <Button
-                    variant="outline"
-                    disabled={busy || blocked}
-                    onClick={() => void serverAction("copy")}
-                    className="min-h-10 text-xs"
-                  >
-                    Server စာရင်းမိတ္တူ
-                  </Button>
-                  {!finalized && (
-                    <>
-                      <Button
-                        variant="outline"
-                        disabled={busy || blocked || hasChanges}
-                        onClick={() => void serverAction("finalize")}
-                        className="min-h-10 text-xs"
-                      >
-                        အတည်ပြုရန်
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        disabled={busy || blocked}
-                        onClick={() => void serverAction("delete")}
-                        className="min-h-10 text-xs text-rose-600"
-                      >
-                        Server မူကြမ်းဖျက်ရန်
-                      </Button>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          </details>
           {sheet && (
             <p className="text-[10px] leading-6 text-slate-500">
               စာရင်း #{sheet.id} · {sheet.status} · version {sheet.version} ·{" "}
@@ -3001,23 +2771,22 @@ function ConnectedCostingPage() {
           မူကြမ်းအသစ်ဖန်တီးနိုင်ပါသည်။
         </p>
       )}
-      <CostingBarcodeSearch />
-      {active &&
-        sheet &&
-        (() => {
-          const savedItem = sheet.items.find(
-            (item) => item.clientItemId === active.id,
-          );
-          return savedItem ? (
-            <CostingBarcode sheetId={sheet.id} itemId={savedItem.id} />
-          ) : null;
-        })()}
-      {active &&
-        !sheet?.items.some((item) => item.clientItemId === active.id) && (
-          <p className="text-xs text-muted-foreground">
-            အားလုံးသိမ်း ပြီးနောက် ပစ္စည်း Barcode အလိုအလျောက် ရရှိမည်။
-          </p>
-        )}
+      <details className="rounded-xl border border-border bg-card p-3 print:hidden">
+        <summary className="flex min-h-10 cursor-pointer items-center gap-2 text-sm font-medium">
+          <Barcode className="size-4 text-muted-foreground" /> Costing Barcode
+          <ChevronDown className="ml-auto size-4 text-muted-foreground" />
+        </summary>
+        <div className="space-y-3 border-t border-border pt-3">
+          <CostingBarcodeSearch />
+          {active && sheet && (() => {
+            const savedItem = sheet.items.find((item) => item.clientItemId === active.id);
+            return savedItem ? <CostingBarcode sheetId={sheet.id} itemId={savedItem.id} /> : null;
+          })()}
+          {active && !sheet?.items.some((item) => item.clientItemId === active.id) && (
+            <p className="text-xs text-muted-foreground">သိမ်းပြီးနောက် Barcode ရရှိမည်။</p>
+          )}
+        </div>
+      </details>
       {active ? (
         <ProductCalculator
           key={active.id}
@@ -3320,6 +3089,26 @@ function ConnectedCostingPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Costing Actions</DialogTitle>
+            <DialogDescription>စာရင်းနှင့် မူကြမ်းဆိုင်ရာ လုပ်ဆောင်ချက်များ</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Button variant="outline" disabled={busy || finalized} onClick={() => { setMoreOpen(false); void addProduct(); }} className="min-h-11 justify-start"><Plus className="size-4" /> ပစ္စည်းအသစ်ထည့်ရန်</Button>
+            <Button variant="outline" disabled={busy || finalized || !active} onClick={() => { setMoreOpen(false); void addProduct(true); }} className="min-h-11 justify-start"><Copy className="size-4" /> ပစ္စည်းမိတ္တူ</Button>
+            <Button variant="outline" disabled={busy} onClick={() => { setMoreOpen(false); void resetSheet(); }} className="min-h-11 justify-start"><Plus className="size-4" /> စာရင်းအသစ်</Button>
+            {sheet && <Button variant="outline" disabled={busy || blocked} onClick={() => { setMoreOpen(false); void serverAction("copy"); }} className="min-h-11 justify-start"><Copy className="size-4" /> Server မိတ္တူ</Button>}
+            {sheet && !finalized && <Button variant="outline" disabled={busy || blocked || hasChanges} onClick={() => { setMoreOpen(false); void serverAction("finalize"); }} className="min-h-11 justify-start"><CheckCircle2 className="size-4" /> အတည်ပြုရန်</Button>}
+            <div className="my-1 border-t" />
+            <Button variant="ghost" disabled={busy} onClick={() => { setMoreOpen(false); void restoreRecovery(); }} className="min-h-11 justify-start"><RotateCcw className="size-4" /> Browser Recovery</Button>
+            <Button variant="ghost" disabled={busy} onClick={() => { setMoreOpen(false); void previewLegacy(); }} className="min-h-11 justify-start"><Upload className="size-4" /> မူကြမ်းအဟောင်း ပြန်ယူရန်</Button>
+            <Button variant="ghost" onClick={() => { setMoreOpen(false); window.print(); }} className="min-h-11 justify-start"><Printer className="size-4" /> Print</Button>
+            {sheet && !finalized && <Button variant="ghost" disabled={busy || blocked} onClick={() => { setMoreOpen(false); void serverAction("delete"); }} className="min-h-11 justify-start text-rose-600"><Trash2 className="size-4" /> Server မူကြမ်းဖျက်ရန်</Button>}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={confirmation !== null}
         onOpenChange={(open) => {

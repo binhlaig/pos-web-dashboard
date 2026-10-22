@@ -21,6 +21,9 @@ import {
   RefreshCw,
   CheckCircle2,
   Settings2,
+  MoreHorizontal,
+  ClipboardCheck,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -255,8 +258,8 @@ function CostingCameraScanner({
       audio: false,
       video: {
         facingMode: { ideal: "environment" },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
       },
     },
     onDecodeResult(result) {
@@ -349,6 +352,7 @@ export default function ReceivingPage() {
 }
 function Workspace({ identity }: { identity: string }) {
   const [cameraOpen, setCameraOpen] = React.useState(false);
+  const [moreOpen, setMoreOpen] = React.useState(false);
   const [cameraAttempt, setCameraAttempt] = React.useState(0);
   const closeCamera = React.useCallback(() => setCameraOpen(false), []);
   const [source, setSource] = React.useState<Source | null>(null),
@@ -951,49 +955,35 @@ function Workspace({ identity }: { identity: string }) {
   return (
     <main
       lang="my"
-      className="mx-auto max-w-[1500px] space-y-4 p-3 text-foreground sm:p-5"
+      className="mx-auto min-w-0 max-w-[1500px] space-y-4 px-3 py-4 text-foreground sm:px-5 sm:py-6"
       style={{ fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif' }}
     >
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground">
-            BINHLAIG · FACTORY
-          </p>
-          <h1 className="mt-1 text-xl font-bold leading-10 sm:text-2xl">
-            ထုတ်ပိုးပြီးပစ္စည်း လက်ခံခြင်း
-          </h1>
-          <p className="text-xs leading-6 text-muted-foreground">
-            Receiving · Costing မှ ဂိုဒေါင်သို့{" "}
-            {record && `· ${record.receivingNumber}`}
-          </p>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-4 print:border-0">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">BINHLAIG / FACTORY</p>
+          <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">Receiving</h1>
+          <p className="mt-1 text-xs leading-6 text-muted-foreground">ထုတ်ပိုးပြီးကုန်ပစ္စည်း လက်ခံခြင်း · Costing → Warehouse</p>
+          {record && <p className="mt-1 text-[11px] font-mono text-muted-foreground">{record.receivingNumber}</p>}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">
-            {record?.status || "မသိမ်းရသေး"}
-            {dirty ? " · ပြင်ဆင်ထားသည်" : ""}
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <Badge variant="outline" className={`h-9 rounded-lg px-3 text-[11px] ${record?.status === "CONFIRMED" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" : dirty ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300" : ""}`}>
+            {record?.status === "CONFIRMED" ? "Confirmed" : record?.status === "CANCELLED" ? "Cancelled" : dirty ? "Unsaved" : record ? "Draft" : "New"}
           </Badge>
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              setHistoryPage(0);
-              setHistoryOpen(true);
-              setHistoryRevision((v) => v + 1);
-            }}
-          >
-            <History className="size-4" />
-            မှတ်တမ်း
+          <Button variant="outline" className="h-10 rounded-xl" disabled={busy} onClick={() => { setHistoryPage(0); setHistoryOpen(true); setHistoryRevision((v) => v + 1); }}>
+            <History className="size-4" /> <span className="hidden sm:inline">History</span>
           </Button>
-          <Button
-            variant="outline"
-            disabled={busy || boot || !!pending}
-            onClick={() => setAction("new")}
-          >
-            <Plus className="size-4" />
-            အသစ်
+          <Button className="h-10 rounded-xl bg-blue-600 px-4 text-white hover:bg-blue-700" disabled={busy || boot || !!pending} onClick={() => setAction("new")}>
+            <Plus className="size-4" /> New Receiving
+          </Button>
+          <Button variant="outline" size="icon" aria-label="Receiving options" className="size-10 rounded-xl" disabled={busy} onClick={() => setMoreOpen(true)}>
+            <MoreHorizontal className="size-5" />
           </Button>
         </div>
       </header>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/5 dark:text-blue-200">
+        <span className="inline-flex items-center gap-2"><ClipboardCheck className="size-4" /> Finished Goods Receiving</span>
+        <span className="text-muted-foreground">ရွေးချယ် → ပမာဏစစ် → ဂိုဒေါင်ရွေး → Confirm</span>
+      </div>
       {notice && (
         <p
           role="status"
@@ -1043,9 +1033,9 @@ function Workspace({ identity }: { identity: string }) {
           )}
         </div>
       )}
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(300px,1fr)]">
+      <div className="grid min-w-0 items-start gap-4 min-[1050px]:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
-          <Section number="01" title="Costing ပစ္စည်းရွေးရန်">
+          <Section number="01" title="ပစ္စည်းရွေးချယ်ရန်" extra={<Badge variant="secondary" className="text-[10px]">Costing Source</Badge>}>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1154,9 +1144,15 @@ function Workspace({ identity }: { identity: string }) {
               </p>
             )}
           </Section>
+          <details className="group overflow-hidden rounded-2xl border border-border/80 bg-card">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2"><LockKeyhole className="size-4 text-muted-foreground" /> Costing မှရယူထားသော ကိုးကားအချက်အလက်</span>
+              <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="border-t p-2 sm:p-3">
           <Section
             number="02"
-            title="Costing မှ ရယူထားသောအချက်များ"
+            title="Costing အချက်အလက်"
             extra={
               <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <LockKeyhole className="size-3" />
@@ -1222,11 +1218,13 @@ function Workspace({ identity }: { identity: string }) {
               snapshot ကို ပြထားပါသည်။
             </p>
           </Section>
+            </div>
+          </details>
           <fieldset
             disabled={!source || readOnly || disabled}
             className="min-w-0 space-y-4 disabled:opacity-70"
           >
-            <Section number="03" title="တကယ်ရရှိသောပမာဏ">
+            <Section number="02" title="လက်ခံပမာဏ" extra={<span className="text-[10px] text-muted-foreground">Actual Quantity</span>}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
                   label={`ရရှိသောအရေအတွက် (${source?.saleUnit || "ယူနစ်"})`}
@@ -1264,7 +1262,7 @@ function Workspace({ identity }: { identity: string }) {
                 </Field>
               )}
             </Section>
-            <Section number="04" title="ဂိုဒေါင်နှင့် Batch">
+            <Section number="03" title="Warehouse နှင့် Batch">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Batch နံပါတ် *" error={errors.batch}>
                   <Input
@@ -1351,7 +1349,12 @@ function Workspace({ identity }: { identity: string }) {
               </Field>
             </Section>
           </fieldset>
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border p-3">
+          <details className="group rounded-xl border border-dashed bg-muted/20 px-3 print:hidden">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium [&::-webkit-details-marker]:hidden">
+              <span className="inline-flex items-center gap-2"><Settings2 className="size-4 text-muted-foreground" /> Warehouse / Location Settings</span>
+              <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+          <div className="flex flex-wrap items-center gap-2 border-t py-3">
             <Button
               variant="outline"
               disabled={busy || !!pending}
@@ -1379,17 +1382,16 @@ function Workspace({ identity }: { identity: string }) {
               <p className="text-xs text-destructive">{placeError}</p>
             )}
             {!warehouses.length && !boot && (
-              <p className="text-xs text-muted-foreground">
-                ဂိုဒေါင်မရှိသေးလျှင် အရင်ဖန်တီးပါ။
-              </p>
+              <p className="text-xs text-muted-foreground">ဂိုဒေါင်မရှိသေးလျှင် အရင်ဖန်တီးပါ။</p>
             )}
           </div>
+          </details>
         </div>
-        <aside className="min-w-0 lg:sticky lg:top-4">
+        <aside className="min-w-0 min-[1050px]:sticky min-[1050px]:top-20">
           <Card className="gap-0 rounded-2xl py-0 shadow-none">
             <CardContent className="space-y-4 p-4 sm:p-5">
               <h2 className="text-base font-semibold leading-8">
-                လက်ခံမှုအကျဉ်း
+                Receiving Summary
               </h2>
               {source && (
                 <div className="flex items-center gap-3 rounded-xl border p-3">
@@ -1420,24 +1422,24 @@ function Workspace({ identity }: { identity: string }) {
                   </dd>
                 </div>
               </dl>
-              <div className="rounded-xl bg-emerald-50 p-4 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+              <div className="rounded-xl bg-blue-600 p-4 text-white dark:bg-blue-600">
                 <p className="flex items-center gap-2 text-xs">
                   <Warehouse className="size-4" />
                   {record?.status === "CONFIRMED"
                     ? "လက်ခံပြီးပမာဏ"
                     : "လက်ခံမည့်ပမာဏ"}
                 </p>
-                <p className="mt-2 text-3xl font-bold">
+                <p className="mt-2 text-2xl font-bold tabular-nums">
                   {source && actual !== null
                     ? `${fmt(actual)} ${source.saleUnit}`
                     : "—"}
                 </p>
               </div>
-              <div className="border-y py-4">
+              <div className="rounded-xl bg-muted/60 p-3">
                 <p className="text-xs text-muted-foreground">
                   Costing ကိုးကားတန်ဖိုး
                 </p>
-                <p className="mt-2 break-words text-xl font-bold">
+                <p className="mt-1 break-words text-lg font-bold tabular-nums">
                   {source && actual !== null
                     ? money(
                         source.currency,
@@ -1527,6 +1529,21 @@ function Workspace({ identity }: { identity: string }) {
           </Card>
         </aside>
       </div>
+      <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Receiving Actions</DialogTitle>
+            <DialogDescription>နေရာသတ်မှတ်ခြင်း၊ မှတ်တမ်းများနှင့် စာရင်းလုပ်ဆောင်ချက်များ</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Button variant="outline" className="min-h-11 justify-start" disabled={busy} onClick={() => { setMoreOpen(false); setHistoryPage(0); setHistoryOpen(true); setHistoryRevision(v => v + 1); }}><History className="size-4" /> Receiving History</Button>
+            <Button variant="outline" className="min-h-11 justify-start" disabled={busy || !!pending} onClick={() => { setMoreOpen(false); setPlaceWarehouse(form.warehouseId); setPlaceNotice(""); setSetup(true); }}><Settings2 className="size-4" /> Warehouse / Location ထည့်ရန်</Button>
+            <Button variant="outline" className="min-h-11 justify-start" disabled={busy} onClick={() => { setMoreOpen(false); void refreshWarehouses(); setLocationRevision(v => v + 1); }}><RefreshCw className="size-4" /> Warehouse နေရာစာရင်း Refresh</Button>
+            <Button variant="outline" className="min-h-11 justify-start" disabled={busy || boot || !!pending} onClick={() => { setMoreOpen(false); setAction("new"); }}><Plus className="size-4" /> Receiving အသစ်</Button>
+            {record?.status === "DRAFT" && <Button variant="ghost" className="min-h-11 justify-start text-destructive" disabled={disabled || dirty} onClick={() => { setMoreOpen(false); setAction("cancel"); }}>မူကြမ်းပယ်ဖျက်ရန်</Button>}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={cameraOpen} onOpenChange={setCameraOpen}>
         <DialogContent
           className="max-h-[90dvh] overflow-y-auto rounded-2xl sm:max-w-2xl"
