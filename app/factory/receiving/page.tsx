@@ -46,13 +46,16 @@ import {
   decodePlaces,
   decodePage,
   sourceOf,
-  photoOf,
+  photoCandidates,
   type Source,
   type Receipt,
   type Place,
   type Save as SavePayload,
   type Paged,
-} from "@/lib/receiving-api";
+  isBulkReady,
+  totalFor,
+  displayDecimal,
+} from "@/lib/receiving-bulk-api";
 
 type Fields = {
   actual: string;
@@ -67,7 +70,7 @@ type Fields = {
 type Pending = {
   path: string;
   method: "POST" | "PUT";
-  body: SavePayload | { version: number };
+  body: SavePayload | { version: number; stockKind: "BULK" };
   key?: string;
 };
 const fmt = (n: number) =>
@@ -95,7 +98,10 @@ function blank(): Fields {
 }
 function fromReceipt(r: Receipt): Fields {
   return {
-    actual: String(r.actualQuantity),
+    actual:
+      r.stockKind === "BULK"
+        ? String(r.bulkPackageCount)
+        : String(r.actualQuantity),
     reason: r.varianceReason || "",
     batch: r.batch,
     warehouseId: String(r.warehouseId),
@@ -142,8 +148,16 @@ function validate(s: Source | null, f: Fields) {
   if (!s) e.product = "ပစ္စည်းအရင်ရွေးပါ။";
   if (!/^\d+$/.test(f.actual) || !Number.isSafeInteger(n) || n <= 0)
     e.actual = "မှန်ကန်သော အပေါင်းအပြည့်ကိန်း ဖြည့်ပါ။";
-  if (s && n !== s.expectedQuantity && !f.reason.trim())
-    e.reason = "ပမာဏကွာခြားရသည့်အကြောင်းရင်း ဖြည့်ပါ။";
+  if (s && !isBulkReady(s))
+    e.product =
+      "ဆာဗာဘက်တွင် အထုပ်ကြီးလက်ခံမှု မချိတ်ရသေးပါ။ Bulk Receiving API ချိတ်ပြီးမှ Server မူကြမ်းသိမ်းနိုင်ပါမည်။";
+  if (f.actual.length > 12) e.actual = "အထုပ်အရေအတွက် အလွန်များပါသည်။";
+  if (
+    s?.bulk &&
+    (!totalFor(f.actual, s.bulk.quantityPerPackage) ||
+      !totalFor(f.actual, s.bulk.purchaseCostPerPackage))
+  )
+    e.actual = "စုစုပေါင်းပမာဏ / တန်ဖိုး ကန့်သတ်ချက်ကို စစ်ပါ။";
   if (!f.batch.trim() || f.batch.length > 100)
     e.batch = "Batch 1–100 စာလုံး ဖြည့်ပါ။";
   if (!f.warehouseId) e.warehouseId = "ဂိုဒေါင်ရွေးပါ။";
@@ -218,20 +232,38 @@ function Field({
   );
 }
 function Photo({ source }: { source: Source }) {
-  const [failed, setFailed] = React.useState(false);
-  const url = photoOf(source);
-  React.useEffect(() => setFailed(false), [url]);
+  const urls = photoCandidates(source);
+  // A new source/URL list remounts the loader, including after History reopen.
   return (
-    <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl border bg-muted text-muted-foreground">
-      {url && !failed ? (
+    <OriginalPhoto
+      key={JSON.stringify(urls)}
+      urls={urls}
+      name={source.productName}
+    />
+  );
+}
+function OriginalPhoto({ urls, name }: { urls: string[]; name: string }) {
+  const [index, setIndex] = React.useState(0);
+  const url = urls[index];
+  return (
+    <div
+      className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl border bg-muted text-muted-foreground"
+      title={
+        url ? "မူလဝယ်ယူသောအထုပ်ပုံ" : "Costing တွင် မူလဝယ်ယူပုံ ရှိမရှိ စစ်ပါ။"
+      }
+    >
+      {url ? (
         <img
           src={url}
-          alt={source.productName}
+          alt={name}
           className="size-full object-contain"
-          onError={() => setFailed(true)}
+          onError={() => setIndex(index + 1)}
         />
       ) : (
-        <Package className="size-8" />
+        <Package
+          className="size-8"
+          aria-label="မူလဝယ်ယူပုံ မရှိပါ သို့မဟုတ် ဖွင့်မရပါ။"
+        />
       )}
     </div>
   );
@@ -417,16 +449,24 @@ function Workspace({ identity }: { identity: string }) {
   const lock = React.useRef(false),
     mounted = React.useRef(true),
     barcodeRef = React.useRef<HTMLInputElement>(null);
-  const storageKey = `binhlaig:receiving:server:v1:${identity}`;
+  const storageKey = `binhlaig:receiving:bulk:server:v1:${identity}`;
   const dirty = !!source && JSON.stringify(form) !== baseline;
-  const readOnly = !!record && record.status !== "DRAFT";
+  const readOnly =
+    !!record && (record.status !== "DRAFT" || record.stockKind !== "BULK");
   const disabled = busy || boot || blocked || !!pending;
   const actual =
     /^\d+$/.test(form.actual) && Number.isSafeInteger(Number(form.actual))
       ? Number(form.actual)
       : null;
-  const difference =
-    source && actual !== null ? actual - source.expectedQuantity : null;
+  // Package receipts and finished-output quantities are different units.
+  const bulkReady = isBulkReady(source);
+  const bulkMeta = source?.bulk;
+  const bulkTotal = bulkMeta
+    ? totalFor(form.actual, bulkMeta.quantityPerPackage)
+    : null;
+  const bulkValue = bulkMeta
+    ? totalFor(form.actual, bulkMeta.purchaseCostPerPackage)
+    : null;
   function putStorage(value: {
     pending?: Pending | null;
     recordId?: number | null;
@@ -585,29 +625,9 @@ function Workspace({ identity }: { identity: string }) {
           throw new Error("Costing response မမှန်ပါ။");
         return b;
       })
-      .then(async (p) => {
-        const saved = await activeReceipts(undefined, c.signal);
-        const existing = new Set(
-          saved.map((r) => `${r.costingSheetId}:${r.costingItemId}`),
-        );
-        const available = {
-          ...p,
-          content: p.content
-            .map(
-              (sheet: {
-                id: number;
-                title: string;
-                items: { id: number }[];
-              }) => ({
-                ...sheet,
-                items: sheet.items.filter(
-                  (item) => !existing.has(`${sheet.id}:${item.id}`),
-                ),
-              }),
-            )
-            .filter((sheet: { items: unknown[] }) => sheet.items.length > 0),
-        };
-        if (active) setCatalog(available);
+      .then((p) => {
+        // A Costing product can be purchased repeatedly; do not hide confirmed sources.
+        if (active) setCatalog(p);
       })
       .catch((e) => {
         if (active)
@@ -686,7 +706,9 @@ function Workspace({ identity }: { identity: string }) {
     setBusy(true);
     setNotice("");
     try {
-      const saved = await activeReceipts(normalized);
+      const saved = (await activeReceipts(normalized)).filter(
+        (r) => r.stockKind === "BULK" && r.status === "DRAFT",
+      );
       if (await reopenExisting(normalized, saved)) return;
       const s = decodeSource(
         await api(`/sources?${new URLSearchParams({ barcode: normalized })}`),
@@ -696,8 +718,8 @@ function Workspace({ identity }: { identity: string }) {
       setBarcode(s.barcode);
       const f = {
         ...blank(),
-        actual: String(s.expectedQuantity),
-        batch: `FG-${today().replaceAll("-", "")}-${s.costingItemId}`,
+        actual: "",
+        batch: `IN-${today().replaceAll("-", "")}-${s.costingItemId}-${key().slice(0, 8)}`,
       };
       setForm(f);
       setBaseline(JSON.stringify(f));
@@ -721,8 +743,8 @@ function Workspace({ identity }: { identity: string }) {
       costingItemId: source.costingItemId,
       sourceVersion: source.sourceVersion,
       ...(record ? { version: record.version } : {}),
-      actualQuantity: Number(form.actual),
-      varianceReason: form.reason.trim() || null,
+      stockKind: "BULK",
+      bulkPackageCount: form.actual,
       batch: form.batch.trim(),
       warehouseId: Number(form.warehouseId),
       locationId: Number(form.locationId),
@@ -733,6 +755,10 @@ function Workspace({ identity }: { identity: string }) {
   }
   async function perform(p: Pending, recovery = false) {
     if (lock.current) return;
+    if (!("stockKind" in p.body) || p.body.stockKind !== "BULK") {
+      setNotice("မူလ Finished Goods လုပ်ဆောင်မှုကို Bulk အဖြစ် မပို့နိုင်ပါ။");
+      return;
+    }
     lock.current = true;
     setBusy(true);
     setNotice("Server သို့ လုပ်ဆောင်နေသည်…");
@@ -811,7 +837,11 @@ function Workspace({ identity }: { identity: string }) {
     }
   }
   async function save() {
-    if (disabled || readOnly) return;
+    if (busy || boot || readOnly) return;
+    if (pending || blocked || locationsBusy) {
+      setNotice(saveProblems.join("\n") || "လက်ရှိလုပ်ဆောင်မှုကို အရင်စစ်ပါ။");
+      return;
+    }
     const e = validate(source, form);
     if (!warehouses.some((w) => w.active && String(w.id) === form.warehouseId))
       e.warehouseId = "အသုံးပြုနိုင်သော ဂိုဒေါင်ရွေးပါ။";
@@ -819,7 +849,7 @@ function Workspace({ identity }: { identity: string }) {
       e.locationId = "အသုံးပြုနိုင်သော သိုလှောင်နေရာရွေးပါ။";
     setErrors(e);
     if (Object.keys(e).length) {
-      setNotice("လိုအပ်သောအချက်များ စစ်ပါ။");
+      setNotice(Object.values(e).filter(Boolean).join("\n"));
       return;
     }
     if (!record && source) {
@@ -828,7 +858,9 @@ function Workspace({ identity }: { identity: string }) {
       lock.current = true;
       setBusy(true);
       try {
-        const saved = await activeReceipts(source.barcode);
+        const saved = (await activeReceipts(source.barcode)).filter(
+          (r) => r.stockKind === "BULK" && r.status === "DRAFT",
+        );
         if (await reopenExisting(source.barcode, saved)) return;
       } catch (error) {
         setNotice(
@@ -897,11 +929,19 @@ function Workspace({ identity }: { identity: string }) {
       reset();
       return;
     }
-    if (!record || disabled || dirty || record.status !== "DRAFT") return;
+    if (
+      !record ||
+      disabled ||
+      dirty ||
+      record.status !== "DRAFT" ||
+      record.stockKind !== "BULK" ||
+      !bulkReady
+    )
+      return;
     void perform({
       path: `/${record.id}/${next}`,
       method: "POST",
-      body: { version: record.version },
+      body: { version: record.version, stockKind: "BULK" },
       ...(next === "confirm" ? { key: key() } : {}),
     });
   }
@@ -951,7 +991,27 @@ function Workspace({ identity }: { identity: string }) {
       (w) => String(w.id) === form.warehouseId,
     ),
     selectedLocation = locations.find((l) => String(l.id) === form.locationId);
-  const snapshotInputs = record?.snapshot.inputs;
+  const saveProblems = [
+    ...new Set([
+      ...(boot ? ["ယခင်မူကြမ်းနှင့် recovery အခြေအနေ စစ်နေသည်။"] : []),
+      ...(pending
+        ? ["အပြီးသတ်ရလဒ်မသေချာသေးသော လုပ်ဆောင်မှုကို အရင်ပြန်စစ်ပါ။"]
+        : []),
+      ...(blocked
+        ? [
+            "Server စာရင်းပြောင်းထားနိုင်ပါသည်။ ရှိပြီးသားမှတ်တမ်းကို ပြန်ဖွင့်စစ်ပါ။",
+          ]
+        : []),
+      ...(locationsBusy ? ["သိုလှောင်နေရာစာရင်း ရယူနေသည်။"] : []),
+      ...Object.values(validate(source, form)).filter((v): v is string => !!v),
+      ...(!warehouses.some((w) => w.active && String(w.id) === form.warehouseId)
+        ? ["အသုံးပြုနိုင်သော ဂိုဒေါင်ရွေးပါ။"]
+        : []),
+      ...(!locations.some((l) => l.active && String(l.id) === form.locationId)
+        ? ["အသုံးပြုနိုင်သော သိုလှောင်နေရာရွေးပါ။"]
+        : []),
+    ]),
+  ];
   return (
     <main
       lang="my"
@@ -960,30 +1020,95 @@ function Workspace({ identity }: { identity: string }) {
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-4 print:border-0">
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">BINHLAIG / FACTORY</p>
-          <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">Receiving</h1>
-          <p className="mt-1 text-xs leading-6 text-muted-foreground">ထုတ်ပိုးပြီးကုန်ပစ္စည်း လက်ခံခြင်း · Costing → Warehouse</p>
-          {record && <p className="mt-1 text-[11px] font-mono text-muted-foreground">{record.receivingNumber}</p>}
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">
+            BINHLAIG / FACTORY
+          </p>
+          <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">
+            Receiving
+          </h1>
+          <p className="mt-1 text-xs leading-6 text-muted-foreground">
+            အထုပ်ကြီး လက်ခံသွင်းခြင်း · Costing → Warehouse
+          </p>
+          {record && (
+            <p className="mt-1 text-[11px] font-mono text-muted-foreground">
+              {record.receivingNumber}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 print:hidden">
-          <Badge variant="outline" className={`h-9 rounded-lg px-3 text-[11px] ${record?.status === "CONFIRMED" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" : dirty ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300" : ""}`}>
-            {record?.status === "CONFIRMED" ? "Confirmed" : record?.status === "CANCELLED" ? "Cancelled" : dirty ? "Unsaved" : record ? "Draft" : "New"}
+          <Badge
+            variant="outline"
+            className={`h-9 rounded-lg px-3 text-[11px] ${record?.status === "CONFIRMED" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" : dirty ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300" : ""}`}
+          >
+            {record?.status === "CONFIRMED"
+              ? "Confirmed"
+              : record?.status === "CANCELLED"
+                ? "Cancelled"
+                : dirty
+                  ? "Unsaved"
+                  : record
+                    ? "Draft"
+                    : "New"}
           </Badge>
-          <Button variant="outline" className="h-10 rounded-xl" disabled={busy} onClick={() => { setHistoryPage(0); setHistoryOpen(true); setHistoryRevision((v) => v + 1); }}>
-            <History className="size-4" /> <span className="hidden sm:inline">History</span>
+          <Button
+            variant="outline"
+            className="h-10 rounded-xl"
+            disabled={busy}
+            onClick={() => {
+              setHistoryPage(0);
+              setHistoryOpen(true);
+              setHistoryRevision((v) => v + 1);
+            }}
+          >
+            <History className="size-4" />{" "}
+            <span className="hidden sm:inline">History</span>
           </Button>
-          <Button className="h-10 rounded-xl bg-blue-600 px-4 text-white hover:bg-blue-700" disabled={busy || boot || !!pending} onClick={() => setAction("new")}>
+          <Button
+            className="h-10 rounded-xl bg-blue-600 px-4 text-white hover:bg-blue-700"
+            disabled={busy || boot || !!pending}
+            onClick={() => setAction("new")}
+          >
             <Plus className="size-4" /> New Receiving
           </Button>
-          <Button variant="outline" size="icon" aria-label="Receiving options" className="size-10 rounded-xl" disabled={busy} onClick={() => setMoreOpen(true)}>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Receiving options"
+            className="size-10 rounded-xl"
+            disabled={busy}
+            onClick={() => setMoreOpen(true)}
+          >
             <MoreHorizontal className="size-5" />
           </Button>
         </div>
       </header>
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/5 dark:text-blue-200">
-        <span className="inline-flex items-center gap-2"><ClipboardCheck className="size-4" /> Finished Goods Receiving</span>
-        <span className="text-muted-foreground">ရွေးချယ် → ပမာဏစစ် → ဂိုဒေါင်ရွေး → Confirm</span>
+        <span className="inline-flex items-center gap-2">
+          <ClipboardCheck className="size-4" /> Bulk Package Receiving
+        </span>
+        <span className="text-muted-foreground">
+          ရွေးချယ် → ပမာဏစစ် → ဂိုဒေါင်ရွေး → Confirm
+        </span>
       </div>
+      {source && !bulkReady && !record && (
+        <p
+          role="alert"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-7 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100"
+        >
+          Costing အချက်အလက်ကို ကြည့်နိုင်ပါသည်။ လက်ရှိ Backend က Bulk Receiving
+          contract မပြန်သေးသဖြင့် သိမ်း/အတည်ပြုခြင်း ပိတ်ထားပါသည်။ အထုပ်ကြီး
+          Stock ကို Finished Goods Stock အဖြစ် မသွင်းပါ။
+        </p>
+      )}
+      {record && record.stockKind !== "BULK" && (
+        <p
+          role="status"
+          className="rounded-xl border border-amber-300 p-3 text-xs leading-7"
+        >
+          မူလ Finished Goods မှတ်တမ်းဖြစ်ပါသည်။ အထုပ်ကြီးအဖြစ် ပြောင်းမတွက်ဘဲ
+          ယူနစ်အဟောင်းအတိုင်း ကြည့်ရန်သာ ပြထားပါသည်။
+        </p>
+      )}
       {notice && (
         <p
           role="status"
@@ -1035,7 +1160,15 @@ function Workspace({ identity }: { identity: string }) {
       )}
       <div className="grid min-w-0 items-start gap-4 min-[1050px]:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
-          <Section number="01" title="ပစ္စည်းရွေးချယ်ရန်" extra={<Badge variant="secondary" className="text-[10px]">Costing Source</Badge>}>
+          <Section
+            number="01"
+            title="ပစ္စည်းရွေးချယ်ရန်"
+            extra={
+              <Badge variant="secondary" className="text-[10px]">
+                Costing Source
+              </Badge>
+            }
+          >
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1136,69 +1269,28 @@ function Workspace({ identity }: { identity: string }) {
             {errors.product && (
               <p className="text-xs text-destructive">{errors.product}</p>
             )}
-            {(source?.previousConfirmedQuantity || 0) > 0 && (
-              <p className="rounded-xl bg-amber-50 p-3 text-xs leading-7 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                ဒီ Costing ပစ္စည်းမှ ယခင်လက်ခံပြီး —{" "}
-                {fmt(source!.previousConfirmedQuantity!)} {source?.saleUnit}။
-                ထပ်လက်ခံမှု ဟုတ်မဟုတ် History တွင် စစ်ပါ။
-              </p>
-            )}
           </Section>
-          <details className="group overflow-hidden rounded-2xl border border-border/80 bg-card">
-            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
-              <span className="flex items-center gap-2"><LockKeyhole className="size-4 text-muted-foreground" /> Costing မှရယူထားသော ကိုးကားအချက်အလက်</span>
-              <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="border-t p-2 sm:p-3">
           <Section
             number="02"
-            title="Costing အချက်အလက်"
-            extra={
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <LockKeyhole className="size-3" />
-                ကိုးကားရန်သာ
-              </span>
-            }
+            title="Costing မှ မူလအထုပ်အချက်အလက်"
+            extra={<LockKeyhole className="size-4 text-muted-foreground" />}
           >
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {[
-                { label: "ပစ္စည်းအမျိုးအစား", value: source?.productType },
+                { label: "အထုပ်အမျိုးအစား", value: bulkMeta?.packageUnit },
                 {
-                  label: "တစ်ယူနစ်အရွယ်",
-                  value: source
-                    ? `${fmt(source.packageSize)} ${source.packageSizeUnit}`
+                  label: "တစ်အထုပ်ပါဝင်မှု",
+                  value: bulkMeta
+                    ? `${displayDecimal(bulkMeta.quantityPerPackage)} ${bulkMeta.baseUnit}`
                     : undefined,
                 },
                 {
-                  label: "တွက်ချက်ထားသောအရေအတွက်",
-                  value: source
-                    ? `${fmt(source.expectedQuantity)} ${source.saleUnit}`
-                    : undefined,
+                  label: "တစ်အထုပ်ဝယ်ဈေး",
+                  value:
+                    bulkMeta && source
+                      ? `${displayDecimal(bulkMeta.purchaseCostPerPackage)} ${source.currency}`
+                      : undefined,
                 },
-                {
-                  label: "တစ်ယူနစ်ကုန်ကျစရိတ်",
-                  value: source
-                    ? money(source.currency, source.costPerUnit)
-                    : undefined,
-                },
-                ...(snapshotInputs
-                  ? [
-                      {
-                        label: "မူလဝယ်ယူပမာဏ",
-                        value: [
-                          "COUNT",
-                          "BOTTLED_DRINK",
-                          "PACKAGED_SNACK",
-                        ].includes(source?.productType || "")
-                          ? `${fmt(Number(snapshotInputs.containers) * Number(snapshotInputs.unitsPerContainer))} ${String(snapshotInputs.unitName || "ခု")}`
-                          : `${String(snapshotInputs.weightKg ?? "—")} ${source?.productType === "VOLUME" ? "L" : "kg"}`,
-                      },
-                      {
-                        label: "မူလအလျော့",
-                        value: `${String(snapshotInputs.lossKg ?? "—")} ${["COUNT", "BOTTLED_DRINK", "PACKAGED_SNACK"].includes(source?.productType || "") ? String(snapshotInputs.unitName || "ခု") : source?.productType === "VOLUME" ? "L" : "kg"}`,
-                      },
-                    ]
-                  : []),
               ].map((i) => (
                 <div
                   key={i.label}
@@ -1213,21 +1305,40 @@ function Workspace({ identity }: { identity: string }) {
                 </div>
               ))}
             </div>
-            <p className="text-[11px] leading-6 text-muted-foreground">
-              မူလ Costing data ကို မပြောင်းပါ။ သိမ်းပြီးစာရင်းတွင် လက်ခံချိန်က
-              snapshot ကို ပြထားပါသည်။
-            </p>
+            {source && (
+              <p className="rounded-xl bg-blue-50 p-3 text-xs leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                Production အတွက်သာ ကိုးကားရန် — {fmt(source.packageSize)}{" "}
+                {source.packageSizeUnit} / {source.saleUnit} · Costing ခန့်မှန်း{" "}
+                {fmt(source.expectedQuantity)} {source.saleUnit} / Costing
+                မူလတစ်စု။ ဒီအရေအတွက်ကို Receiving Stock အဖြစ် မတိုးပါ။
+              </p>
+            )}
+            {source?.bulkPreview && (
+              <p className="text-xs leading-7 text-amber-700 dark:text-amber-300">
+                လက်ရှိ Costing မှ ကိုးကားပြထားခြင်းသာ ဖြစ်သည်။ Weight/Volume ၏
+                မူလတစ်စုကို တစ်အိတ်ဟု အလိုအလျောက် မယူဆထားပါ။
+                မှန်ကန်သောအထုပ်အမည်နှင့် အရွယ်ကို Backend bulk snapshot မှ
+                သတ်မှတ်ရမည်။
+              </p>
+            )}
           </Section>
-            </div>
-          </details>
+
           <fieldset
             disabled={!source || readOnly || disabled}
             className="min-w-0 space-y-4 disabled:opacity-70"
           >
-            <Section number="02" title="လက်ခံပမာဏ" extra={<span className="text-[10px] text-muted-foreground">Actual Quantity</span>}>
+            <Section
+              number="03"
+              title="တကယ်လက်ခံရရှိမှု"
+              extra={
+                <span className="text-[10px] text-muted-foreground">
+                  Bulk Packages
+                </span>
+              }
+            >
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
-                  label={`ရရှိသောအရေအတွက် (${source?.saleUnit || "ယူနစ်"})`}
+                  label={`ရောက်ရှိသော အထုပ်အရေအတွက် (${bulkMeta?.packageUnit || "အထုပ်"}) *`}
                   error={errors.actual}
                 >
                   <Input
@@ -1236,33 +1347,23 @@ function Workspace({ identity }: { identity: string }) {
                     step="1"
                     inputMode="numeric"
                     className="h-12 text-lg font-semibold"
+                    placeholder="ဥပမာ 5"
                     value={form.actual}
                     onChange={(e) => change("actual", e.target.value)}
                   />
                 </Field>
-                <div
-                  className={`flex items-center justify-between rounded-xl p-3 ${difference ? "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"}`}
-                >
-                  <span className="text-xs">Costing နှင့် ကွာခြားမှု</span>
-                  <strong>
-                    {difference === null
-                      ? "—"
-                      : `${difference > 0 ? "+" : ""}${fmt(difference)} ${source?.saleUnit}`}
-                  </strong>
+                <div className="flex items-center justify-center rounded-xl bg-blue-50 p-3 text-sm font-semibold leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                  {bulkMeta && bulkTotal
+                    ? `${form.actual} ${bulkMeta.packageUnit} × ${displayDecimal(bulkMeta.quantityPerPackage)} ${bulkMeta.baseUnit} = ${displayDecimal(bulkTotal)} ${bulkMeta.baseUnit}`
+                    : "အထုပ်အရေအတွက် ဖြည့်ပါ။"}
                 </div>
               </div>
-              {difference !== null && difference !== 0 && (
-                <Field label="ကွာခြားရသည့်အကြောင်းရင်း *" error={errors.reason}>
-                  <Input
-                    className="h-11"
-                    maxLength={500}
-                    value={form.reason}
-                    onChange={(e) => change("reason", e.target.value)}
-                  />
-                </Field>
-              )}
+              <p className="text-xs leading-7 text-muted-foreground">
+                လက်ခံခြင်းတွင် ခွဲထုတ်မည့် အိတ်ငယ်အရေအတွက် သို့မဟုတ် Production
+                အလေအလွင့်ကို မဖြည့်ပါ။
+              </p>
             </Section>
-            <Section number="03" title="Warehouse နှင့် Batch">
+            <Section number="04" title="သိုလှောင်နေရာနှင့် Batch">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Batch နံပါတ် *" error={errors.batch}>
                   <Input
@@ -1351,40 +1452,45 @@ function Workspace({ identity }: { identity: string }) {
           </fieldset>
           <details className="group rounded-xl border border-dashed bg-muted/20 px-3 print:hidden">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium [&::-webkit-details-marker]:hidden">
-              <span className="inline-flex items-center gap-2"><Settings2 className="size-4 text-muted-foreground" /> Warehouse / Location Settings</span>
+              <span className="inline-flex items-center gap-2">
+                <Settings2 className="size-4 text-muted-foreground" /> Warehouse
+                / Location Settings
+              </span>
               <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
             </summary>
-          <div className="flex flex-wrap items-center gap-2 border-t py-3">
-            <Button
-              variant="outline"
-              disabled={busy || !!pending}
-              onClick={() => {
-                setPlaceWarehouse(form.warehouseId);
-                setPlaceNotice("");
-                setSetup(true);
-              }}
-            >
-              <Settings2 className="size-4" />
-              ဂိုဒေါင် / နေရာ ထည့်ရန်
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => {
-                void refreshWarehouses();
-                setLocationRevision((v) => v + 1);
-              }}
-            >
-              <RefreshCw className="size-4" />
-              နေရာစာရင်းပြန်တင်ရန်
-            </Button>
-            {placeError && (
-              <p className="text-xs text-destructive">{placeError}</p>
-            )}
-            {!warehouses.length && !boot && (
-              <p className="text-xs text-muted-foreground">ဂိုဒေါင်မရှိသေးလျှင် အရင်ဖန်တီးပါ။</p>
-            )}
-          </div>
+            <div className="flex flex-wrap items-center gap-2 border-t py-3">
+              <Button
+                variant="outline"
+                disabled={busy || !!pending}
+                onClick={() => {
+                  setPlaceWarehouse(form.warehouseId);
+                  setPlaceNotice("");
+                  setSetup(true);
+                }}
+              >
+                <Settings2 className="size-4" />
+                ဂိုဒေါင် / နေရာ ထည့်ရန်
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  void refreshWarehouses();
+                  setLocationRevision((v) => v + 1);
+                }}
+              >
+                <RefreshCw className="size-4" />
+                နေရာစာရင်းပြန်တင်ရန်
+              </Button>
+              {placeError && (
+                <p className="text-xs text-destructive">{placeError}</p>
+              )}
+              {!warehouses.length && !boot && (
+                <p className="text-xs text-muted-foreground">
+                  ဂိုဒေါင်မရှိသေးလျှင် အရင်ဖန်တီးပါ။
+                </p>
+              )}
+            </div>
           </details>
         </div>
         <aside className="min-w-0 min-[1050px]:sticky min-[1050px]:top-20">
@@ -1404,56 +1510,57 @@ function Workspace({ identity }: { identity: string }) {
                   </div>
                 </div>
               )}
-              <dl className="space-y-3 text-xs leading-6">
-                <div className="flex justify-between gap-2">
-                  <dt>တွက်ချက်ထားသော</dt>
-                  <dd>
-                    {source
-                      ? `${fmt(source.expectedQuantity)} ${source.saleUnit}`
-                      : "—"}
-                  </dd>
+              {record && record.stockKind !== "BULK" ? (
+                <div className="rounded-xl bg-muted/60 p-3">
+                  <p className="text-xs leading-7">မူလ Finished Goods ပမာဏ</p>
+                  <p className="text-2xl font-bold">
+                    {fmt(record.actualQuantity)} {record.saleUnit}
+                  </p>
                 </div>
-                <div className="flex justify-between gap-2 text-amber-700 dark:text-amber-400">
-                  <dt>ကွာခြားမှု</dt>
-                  <dd>
-                    {difference === null
-                      ? "—"
-                      : `${difference > 0 ? "+" : ""}${fmt(difference)} ${source?.saleUnit}`}
-                  </dd>
-                </div>
-              </dl>
-              <div className="rounded-xl bg-blue-600 p-4 text-white dark:bg-blue-600">
-                <p className="flex items-center gap-2 text-xs">
-                  <Warehouse className="size-4" />
-                  {record?.status === "CONFIRMED"
-                    ? "လက်ခံပြီးပမာဏ"
-                    : "လက်ခံမည့်ပမာဏ"}
-                </p>
-                <p className="mt-2 text-2xl font-bold tabular-nums">
-                  {source && actual !== null
-                    ? `${fmt(actual)} ${source.saleUnit}`
-                    : "—"}
-                </p>
-              </div>
-              <div className="rounded-xl bg-muted/60 p-3">
-                <p className="text-xs text-muted-foreground">
-                  Costing ကိုးကားတန်ဖိုး
-                </p>
-                <p className="mt-1 break-words text-lg font-bold tabular-nums">
-                  {source && actual !== null
-                    ? money(
-                        source.currency,
-                        record && !dirty
-                          ? record.referenceValue
-                          : actual * source.costPerUnit,
-                      )
-                    : "—"}
-                </p>
-                <p className="mt-1 text-[10px] leading-6 text-muted-foreground">
-                  အလျော့ဆုံးရှုံးမှု ပြန်ခွဲတွက်ထားခြင်း မပါပါ။
-                  အပြီးသတ်တန်ဖိုးကို Server က တွက်ပေးပါမည်။
-                </p>
-              </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-blue-50 p-3 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                      <p className="text-xs leading-6">အထုပ်ကြီး</p>
+                      <p className="mt-2 break-words text-2xl font-bold">
+                        {actual !== null ? fmt(actual) : "—"}{" "}
+                        <span className="text-sm">
+                          {bulkMeta?.packageUnit || "အထုပ်"}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-emerald-50 p-3 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                      <p className="text-xs leading-6">စုစုပေါင်းပါဝင်ပမာဏ</p>
+                      <p className="mt-2 break-words text-2xl font-bold">
+                        {bulkTotal ? displayDecimal(bulkTotal) : "—"}{" "}
+                        <span className="text-sm">{bulkMeta?.baseUnit}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-muted/60 p-3">
+                    <p className="text-xs text-muted-foreground">
+                      ဝယ်ယူကိုးကားတန်ဖိုး
+                    </p>
+                    <p className="mt-1 break-words text-lg font-bold tabular-nums">
+                      {bulkValue && source
+                        ? `${displayDecimal(bulkValue)} ${source.currency}`
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-[10px] leading-6 text-muted-foreground">
+                      လက်ခံအထုပ်အရေအတွက် × တစ်အထုပ်ဝယ်ဈေး။ အပြီးသတ်ကို Server က
+                      snapshot အတိုင်း တွက်မည်။
+                    </p>
+                  </div>
+                  <p className="rounded-xl bg-blue-50 p-3 text-xs leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                    {bulkReady && bulkTotal
+                      ? `${record?.status === "CONFIRMED" ? "Warehouse သို့ လက်ခံဝင်ပြီး" : "အတည်ပြုလျှင် Warehouse သို့ ဝင်မည့်ပမာဏ"} — ${form.actual} ${bulkMeta?.packageUnit} / ${displayDecimal(bulkTotal)} ${bulkMeta?.baseUnit}။`
+                      : "Bulk Backend ချိတ်ပြီးမှ အထုပ်ကြီး Stock သိမ်းနိုင်ပါမည်။"}{" "}
+                    အထုပ်နှင့် ပါဝင်ပမာဏသည် Stock တစ်ခုတည်းကို
+                    ယူနစ်နှစ်မျိုးဖြင့် ပြထားခြင်း ဖြစ်သည်။ ခွဲထုတ်ခြင်းကို
+                    Production မှ လုပ်ပါ။
+                  </p>
+                </>
+              )}
               <div className="space-y-1 text-xs leading-6">
                 <p>
                   ဂိုဒေါင် —{" "}
@@ -1486,7 +1593,9 @@ function Workspace({ identity }: { identity: string }) {
                   <div className="grid gap-2">
                     <Button
                       className="min-h-12 bg-blue-600 text-xs text-white hover:bg-blue-700"
-                      disabled={disabled || !record || dirty}
+                      disabled={
+                        disabled || !record || dirty || !bulkReady || readOnly
+                      }
                       onClick={() => setAction("confirm")}
                     >
                       <Check className="size-4" />
@@ -1495,7 +1604,9 @@ function Workspace({ identity }: { identity: string }) {
                     <Button
                       variant="outline"
                       className="min-h-11"
-                      disabled={disabled || !source || locationsBusy}
+                      type="button"
+                      disabled={busy || boot || !!pending || readOnly}
+                      aria-describedby="receiving-save-reasons"
                       onClick={save}
                     >
                       {busy ? (
@@ -1505,10 +1616,34 @@ function Workspace({ identity }: { identity: string }) {
                       )}
                       မူကြမ်းသိမ်းရန်
                     </Button>
+                    <div
+                      id="receiving-save-reasons"
+                      role="status"
+                      aria-live="polite"
+                      className="rounded-xl border p-3 text-xs leading-7"
+                    >
+                      {saveProblems.length ? (
+                        <>
+                          <p className="font-semibold">
+                            Server တွင် သိမ်းနိုင်ရန် လိုအပ်ချက်
+                          </p>
+                          <ul className="list-inside list-disc">
+                            {saveProblems.map((reason) => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : (
+                        <p className="text-emerald-700 dark:text-emerald-300">
+                          လိုအပ်သောအချက်များ ပြည့်စုံပါပြီ။ မူကြမ်းသိမ်းရန်
+                          နှိပ်ပါ။
+                        </p>
+                      )}
+                    </div>
                     {record && (
                       <Button
                         variant="ghost"
-                        disabled={disabled || dirty}
+                        disabled={disabled || dirty || readOnly || !bulkReady}
                         onClick={() => setAction("cancel")}
                       >
                         မူကြမ်းပယ်ဖျက်ရန်
@@ -1533,14 +1668,73 @@ function Workspace({ identity }: { identity: string }) {
         <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Receiving Actions</DialogTitle>
-            <DialogDescription>နေရာသတ်မှတ်ခြင်း၊ မှတ်တမ်းများနှင့် စာရင်းလုပ်ဆောင်ချက်များ</DialogDescription>
+            <DialogDescription>
+              နေရာသတ်မှတ်ခြင်း၊ မှတ်တမ်းများနှင့် စာရင်းလုပ်ဆောင်ချက်များ
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
-            <Button variant="outline" className="min-h-11 justify-start" disabled={busy} onClick={() => { setMoreOpen(false); setHistoryPage(0); setHistoryOpen(true); setHistoryRevision(v => v + 1); }}><History className="size-4" /> Receiving History</Button>
-            <Button variant="outline" className="min-h-11 justify-start" disabled={busy || !!pending} onClick={() => { setMoreOpen(false); setPlaceWarehouse(form.warehouseId); setPlaceNotice(""); setSetup(true); }}><Settings2 className="size-4" /> Warehouse / Location ထည့်ရန်</Button>
-            <Button variant="outline" className="min-h-11 justify-start" disabled={busy} onClick={() => { setMoreOpen(false); void refreshWarehouses(); setLocationRevision(v => v + 1); }}><RefreshCw className="size-4" /> Warehouse နေရာစာရင်း Refresh</Button>
-            <Button variant="outline" className="min-h-11 justify-start" disabled={busy || boot || !!pending} onClick={() => { setMoreOpen(false); setAction("new"); }}><Plus className="size-4" /> Receiving အသစ်</Button>
-            {record?.status === "DRAFT" && <Button variant="ghost" className="min-h-11 justify-start text-destructive" disabled={disabled || dirty} onClick={() => { setMoreOpen(false); setAction("cancel"); }}>မူကြမ်းပယ်ဖျက်ရန်</Button>}
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy}
+              onClick={() => {
+                setMoreOpen(false);
+                setHistoryPage(0);
+                setHistoryOpen(true);
+                setHistoryRevision((v) => v + 1);
+              }}
+            >
+              <History className="size-4" /> Receiving History
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy || !!pending}
+              onClick={() => {
+                setMoreOpen(false);
+                setPlaceWarehouse(form.warehouseId);
+                setPlaceNotice("");
+                setSetup(true);
+              }}
+            >
+              <Settings2 className="size-4" /> Warehouse / Location ထည့်ရန်
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy}
+              onClick={() => {
+                setMoreOpen(false);
+                void refreshWarehouses();
+                setLocationRevision((v) => v + 1);
+              }}
+            >
+              <RefreshCw className="size-4" /> Warehouse နေရာစာရင်း Refresh
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy || boot || !!pending}
+              onClick={() => {
+                setMoreOpen(false);
+                setAction("new");
+              }}
+            >
+              <Plus className="size-4" /> Receiving အသစ်
+            </Button>
+            {record?.status === "DRAFT" && (
+              <Button
+                variant="ghost"
+                className="min-h-11 justify-start text-destructive"
+                disabled={disabled || dirty}
+                onClick={() => {
+                  setMoreOpen(false);
+                  setAction("cancel");
+                }}
+              >
+                မူကြမ်းပယ်ဖျက်ရန်
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -1711,14 +1905,12 @@ function Workspace({ identity }: { identity: string }) {
             <div className="space-y-2 rounded-xl bg-muted/50 p-4 text-sm leading-7">
               <p>{source.productName}</p>
               <p>
-                လက်ခံပမာဏ — {form.actual} {source.saleUnit}
+                လက်ခံအထုပ် — {form.actual} {bulkMeta?.packageUnit}
               </p>
               <p>
-                ကွာခြားမှု — {difference} {source.saleUnit}
+                စုစုပေါင်း — {bulkTotal ? displayDecimal(bulkTotal) : "—"}{" "}
+                {bulkMeta?.baseUnit}
               </p>
-              {difference !== 0 && (
-                <p className="break-words">အကြောင်းရင်း — {form.reason}</p>
-              )}
               <p>
                 {selectedWarehouse?.name} / {selectedLocation?.name}
               </p>
@@ -1841,7 +2033,9 @@ function Workspace({ identity }: { identity: string }) {
                   </span>
                 </span>
                 <span className="shrink-0 text-xs">
-                  {fmt(r.actualQuantity)} {r.saleUnit}
+                  {r.stockKind === "BULK" && r.snapshot.bulk
+                    ? `${r.bulkPackageCount} ${r.snapshot.bulk.packageUnit} · ${displayDecimal(r.bulkBaseQuantity!)} ${r.snapshot.bulk.baseUnit}`
+                    : `${fmt(r.actualQuantity)} ${r.saleUnit} · Finished Goods အဟောင်း`}
                 </span>
               </Button>
             ))}
