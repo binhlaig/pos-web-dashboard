@@ -54,6 +54,7 @@ import { receivingRequest, decodeSource, photoOf } from "@/lib/receiving-api";
 
 import {
   bulkBalances,
+  decimal,
   bulkReceivingHistory,
   confirmedBulkReceipts,
   quantity,
@@ -61,11 +62,62 @@ import {
   packageRemainder,
   rowKey,
   stockKey,
-  type WarehouseBalance as Balance,
+  type WarehouseBalance as BulkBalance,
   type WarehouseMovement as Movement,
 } from "@/lib/factory-warehouse-bulk";
 
 import type { Receipt } from "@/lib/receiving-bulk-api";
+
+type Balance = BulkBalance & {
+  productionConsumedQuantity?: string | null;
+};
+// V46 Bulk balance totals are exact decimal strings. A missing total is unknown,
+// not zero; remaining stock has already been reduced by the backend.
+function stockTotal(row: Record<string, unknown>, field: string): string | null {
+  if (row[field] == null) return null;
+  const value = decimal(row[field]);
+  if (value.startsWith("-"))
+    throw new StockError(`Bulk Stock ${field} ပမာဏ အနုတ်ဖြစ်နေပါသည်။`, 502);
+  return value;
+}
+function warehouseBulkBalances(
+  raw: unknown,
+  receipts: Receipt[],
+  filters: Filters,
+  page: number,
+  size: number,
+): StockPage<Balance> {
+  if (!Array.isArray(raw))
+    throw new StockError("Bulk balance API မှ array response လိုအပ်ပါသည်။", 502);
+  const rows: Record<string, unknown>[] = raw.map((value: unknown) => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new StockError("Bulk Stock response ပုံစံ မမှန်ပါ။", 502);
+    const row = value as Record<string, unknown>;
+    return {
+      ...row,
+      // Prefer the explicit current balance; never subtract consumed quantity here.
+      base_quantity: stockTotal(row, "remaining_quantity") ?? row.base_quantity ?? row.quantity,
+    };
+  });
+  // The existing decoder validates every stock identity, conversion and balance.
+  const result = bulkBalances(rows, receipts, filters, page, size);
+  const byKey = new Map(rows.map(row => [stockKey({
+    itemId: row.item_id as number,
+    sourceVersion: row.source_version as number,
+    warehouseId: row.warehouse_id as number,
+    locationId: row.location_id as number,
+    batch: row.batch as string,
+  }), row]));
+  return { ...result, content: result.content.map(balance => {
+    const row = byKey.get(stockKey(balance))!;
+    return {
+      ...balance,
+      // Use audited server totals, keeping immutable Receiving sums as a legacy fallback.
+      receivedQuantity: stockTotal(row, "received_quantity") ?? balance.receivedQuantity,
+      productionConsumedQuantity: stockTotal(row, "production_consumed_quantity"),
+    };
+  }) };
+}
 
 type StockKind = "BULK" | "FINISHED";
 type Filters = {
@@ -240,6 +292,14 @@ function ProductDetail({
                     {product.unit}
                   </p>
                 </div>
+                {product.stockKind === "BULK" && (
+                  <div className="rounded-lg bg-amber-50 p-2 leading-6 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    Production ထုတ်ယူပြီး
+                    <p className="break-all font-bold">
+                      {product.productionConsumedQuantity == null ? "—" : `${quantity(product.productionConsumedQuantity)} ${product.unit}`}
+                    </p>
+                  </div>
+                )}
                 {product.stockKind === "BULK" ? (
                   <div className="rounded-lg bg-amber-50 p-2 leading-6 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                     လက်ကျန်အထုပ်ညီမျှပမာဏ
@@ -619,7 +679,7 @@ function StockWorkspace() {
         ]);
         // Validate the history payload before using it in the synchronous table renderer.
         bulkReceivingHistory(receipts, filters, 0, ACTIVITY_SIZE);
-        const balances = bulkBalances(raw, receipts, filters, page, SIZE);
+        const balances = warehouseBulkBalances(raw, receipts, filters, page, SIZE);
         if (active) setBulkHistory({ key: dataKey, receipts });
         return balances;
       }
@@ -1472,8 +1532,14 @@ function StockWorkspace() {
                   <StockMetric
                     icon={<Cog className="size-5" />}
                     label="Production ထုတ်ယူပြီး"
-                    value="—"
-                    description="ထုတ်ယူပမာဏ မရရှိသေးပါ"
+                    value={selected.productionConsumedQuantity == null
+                      ? "—"
+                      : `${quantity(selected.productionConsumedQuantity)} ${selected.unit}`}
+                    description={selected.productionConsumedQuantity == null
+                      ? "API မှ production_consumed_quantity မပါသေးပါ"
+                      : selected.productionConsumedQuantity === "0"
+                        ? "ထုတ်ယူအတည်ပြုမှု မရှိသေးပါ"
+                        : packageRemainder(selected.productionConsumedQuantity, selected.quantityPerPackage!, selected.packageUnit!, selected.unit)}
                     color="amber"
                   />
                 ) : (
@@ -1538,7 +1604,7 @@ function StockWorkspace() {
                 <Info className="mt-1 size-4 shrink-0" />
                 <p>
                   {selected.stockKind === "BULK"
-                    ? "အထုပ်နှင့် kg / L / ခု ပမာဏသည် Stock တစ်ခုတည်း၏ ဖော်ပြချက်နှစ်မျိုးဖြစ်ပါသည်။"
+                    ? "လက်ကျန်သည် Production ထုတ်ယူမှု နုတ်ပြီးသားဖြစ်၍ ထပ်မနုတ်ပါ။ အထုပ်နှင့် kg / L / ခု သည် Stock တစ်ခုတည်း၏ ဖော်ပြချက်နှစ်မျိုးဖြစ်ပါသည်။"
                     : "ရောင်းပြီးပမာဏကို လက်ကျန်မှ ထပ်မနုတ်ပါ။"}
                 </p>
               </div>
