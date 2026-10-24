@@ -53,7 +53,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "next-auth/react";
-import { useCurrency } from "@/components/currency-provider";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -290,7 +289,7 @@ function sheetMoney(code: string, value: number) {
   return code === "JPY"
     ? `¥${amount}`
     : code === "MMK"
-      ? `${amount} Ks`
+      ? `${amount} ကျပ်`
       : `${amount}${code ? ` ${code}` : ""}`;
 }
 // Empty discount is a valid intermediate edit (for example 10 -> empty -> 0).
@@ -1961,7 +1960,6 @@ function ConnectedCostingPage() {
     blockRef = useRef(false),
     listSeq = useRef(0);
   const { data: session } = useSession();
-  const { currencySettings } = useCurrency();
   const user = session?.user as
     | {
         id?: string | number;
@@ -1972,7 +1970,7 @@ function ConnectedCostingPage() {
         shopCode?: string;
       }
     | undefined;
-  const shopCurrency = currencySettings.currencyCode,
+  const shopCurrency = "MMK",
     currency = sheet?.currencyCode || shopCurrency;
   const active = items.find((item) => item.id === activeId) ?? items[0];
   const signature = draftSignature(title, items),
@@ -2046,9 +2044,9 @@ function ConnectedCostingPage() {
         user?.shopCode ||
         localStorage.getItem("pos_shop_id") ||
         localStorage.getItem("pos_shop_code");
-    if (!account || !shop || !shopCurrency)
+    if (!account || !shop)
       throw new Error(
-        "Login၊ ဆိုင်နှင့် ငွေကြေး Settings ရရှိရန် လိုအပ်ပါသည်။",
+        "Login နှင့် ဆိုင်အချက်အလက် ရရှိရန် လိုအပ်ပါသည်။",
       );
     return `binhlaig:factory-costing:v${version}:${encodeURIComponent(String(account))}:${encodeURIComponent(String(shop))}:${shopCurrency}`;
   }
