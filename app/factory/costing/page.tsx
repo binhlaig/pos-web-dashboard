@@ -293,8 +293,14 @@ function sheetMoney(code: string, value: number) {
       ? `${amount} Ks`
       : `${amount}${code ? ` ${code}` : ""}`;
 }
+// Empty discount is a valid intermediate edit (for example 10 -> empty -> 0).
+// Keep the input text untouched until blur; use zero for preview and persistence.
+function normalizeDiscount(inputs: Inputs): Inputs {
+  return inputs.discount.trim() ? inputs : { ...inputs, discount: "0" };
+}
 // Pure calculation helper. Monetary calculations keep full precision until display.
 function calculatePacking(inputs: Inputs) {
+  inputs = normalizeDiscount(inputs);
   const count = isCountType(inputs.productType);
   if (!inputs.product.trim()) return { error: "ပစ္စည်းအမည် ဖြည့်ပါ။" };
   if (inputs.mode === "margin" && Number(inputs.rounding) <= 0)
@@ -493,6 +499,13 @@ function Field({
                 max={max}
                 step={step}
                 value={value}
+                onBlur={() => {
+                  field.onBlur();
+                  if (name === "discount" && !value.trim()) {
+                    field.onChange("0");
+                    onChange("0");
+                  }
+                }}
                 onChange={(event) => {
                   field.onChange(event.target.value);
                   onChange(event.target.value);
@@ -1669,35 +1682,37 @@ function ProductCalculator({
                         })}
                       </div>
                     </div>
-                    <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
-                      <GroupTitle number="03" title="လျှော့ဈေး စမ်းတွက်ပါ" />
-                      <div className="grid grid-cols-2 items-end gap-4">
-                        {numberField("discount", "လျှော့ဈေး", "%", 99.99)}
-                        <div className="pb-1">
-                          <p className="mb-2 text-[11px] text-slate-500">
-                            လျှော့ပြီးရောင်းဈေး
-                          </p>
-                          <p className="break-words text-lg font-bold tabular-nums">
-                            {money(result.actualPrice!)}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="mt-3 text-xs leading-6 text-slate-500">
-                        လျှော့ပြီး Margin{" "}
-                        <MarginStatus
-                          value={result.actualMargin}
-                          minimum={Number(inputs.minimumMargin)}
-                        />
+                  </>
+                )}
+                <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+                  <GroupTitle number="03" title="လျှော့ဈေး စမ်းတွက်ပါ" />
+                  <div className="grid grid-cols-2 items-end gap-4">
+                    {numberField("discount", "လျှော့ဈေး", "%", 99.99)}
+                    <div className="pb-1">
+                      <p className="mb-2 text-[11px] text-slate-500">
+                        လျှော့ပြီးရောင်းဈေး
+                      </p>
+                      <p className="break-words text-lg font-bold tabular-nums">
+                        {result.error ? "—" : money(result.actualPrice!)}
                       </p>
                     </div>
-                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-                      Margin {inputs.minimumMargin}% ရရန် အနည်းဆုံးဈေး{" "}
-                      <strong>{money(result.minimumPrice!)}</strong>။ လျှော့ဈေး{" "}
-                      {inputs.discount}% ပါပေးလျှင် မူလသတ်မှတ်ဈေး အနည်းဆုံး{" "}
-                      <strong>{money(result.minimumListPrice!)}</strong>{" "}
-                      ဖြစ်ရပါမည်။
-                    </p>
-                  </>
+                  </div>
+                  <p className="mt-3 text-xs leading-6 text-slate-500">
+                    လျှော့ပြီး Margin{" "}
+                    <MarginStatus
+                      value={result.error ? null : result.actualMargin}
+                      minimum={Number(inputs.minimumMargin)}
+                    />
+                  </p>
+                </div>
+                {!result.error && (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                    Margin {inputs.minimumMargin}% ရရန် အနည်းဆုံးဈေး{" "}
+                    <strong>{money(result.minimumPrice!)}</strong>။ လျှော့ဈေး{" "}
+                    {normalizeDiscount(inputs).discount}% ပါပေးလျှင် မူလသတ်မှတ်ဈေး အနည်းဆုံး{" "}
+                    <strong>{money(result.minimumListPrice!)}</strong>{" "}
+                    ဖြစ်ရပါမည်။
+                  </p>
                 )}
                 {result.error && (
                   <p className="text-xs leading-7 text-amber-700 dark:text-amber-300">
@@ -2248,7 +2263,10 @@ function ConnectedCostingPage() {
         body: JSON.stringify(
           savePayload(
             title,
-            items as {
+            items.map((item) => ({
+              ...item,
+              inputs: normalizeDiscount(item.inputs),
+            })) as {
               id: string;
               inputs: Record<string, string | undefined>;
             }[],
