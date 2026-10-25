@@ -88,6 +88,28 @@ const productTypes: { value: ProductType; label: string }[] = [
   { value: "VOLUME", label: "ဆီ၊ အရည်အလွတ် — L → ml" },
   { value: "COUNT", label: "အခြားပစ္စည်း — အရေအတွက်ဖြင့်" },
 ];
+// UI-only choice. Persist using existing COUNT inputs in exact whole kyattha.
+// No kg conversion or new backend enum is introduced.
+type CostingTypeChoice = ProductType | "VISS";
+const costingTypeChoices: {value: CostingTypeChoice; label: string}[] = [
+  {value: "VISS", label: "ပိဿာ / ကျပ်သား — မြန်မာအလေးချိန်"}, ...productTypes,
+];
+function isViss(inputs: Inputs) {
+  return inputs.productType === "COUNT" && inputs.containerName === "ပိဿာ" &&
+    inputs.unitName === "ကျပ်သား" && inputs.unitsPerContainer === "100";
+}
+function selectedCostingType(inputs: Inputs): CostingTypeChoice {
+  return isViss(inputs) ? "VISS" : inputs.productType;
+}
+function selectCostingType(current: Inputs, choice: CostingTypeChoice): Inputs {
+  const viss = choice === "VISS", productType = viss ? "COUNT" : choice;
+  const count = isCountType(productType);
+  return {...current, productType,weightKg:"1",lossKg:"0",containers:"1",
+    unitsPerContainer:viss ? "100" : "",packGrams:viss ? "25" : count ? "1" : "1000",
+    purchasePriceMode:count ? "container" : "total",purchase:"",sellingPrice:"",packaging:"0",processing:"0",
+    containerName:viss ? "ပိဿာ" : productType === "PACKAGED_SNACK" ? "ပုံး" : "ကတ်",
+    unitName:viss ? "ကျပ်သား" : productType === "PACKAGED_SNACK" ? "ထုပ်" : productType === "COUNT" ? "ခု" : "ဘူး"};
+}
 function isCountType(type: ProductType) {
   return (
     type === "BOTTLED_DRINK" || type === "PACKAGED_SNACK" || type === "COUNT"
@@ -108,7 +130,7 @@ function quantityUnits(inputs: Inputs) {
         ? "ml"
         : "g",
     divisor: count ? 1 : 1000,
-    sale: count
+    sale: isViss(inputs) ? "ထုပ်" : count
       ? Number(inputs.packGrams) === 1
         ? inputs.unitName
         : "တွဲ"
@@ -144,25 +166,25 @@ type Inputs = {
 const initial: Inputs = {
   originalImage: "",
   packedImage: "",
-  productType: "WEIGHT",
+  productType: "COUNT",
   containers: "1",
-  unitsPerContainer: "24",
-  containerName: "ကတ်",
-  unitName: "ဘူး",
-  purchasePriceMode: "total",
-  product: "ကုန်ပစ္စည်း 1",
-  weightKg: "10",
-  purchase: "100000",
-  processing: "10000",
-  lossKg: "1",
-  packGrams: "500",
-  packaging: "200",
-  sellingPrice: "8500",
-  targetPercent: "25",
+  unitsPerContainer: "100",
+  containerName: "ပိဿာ",
+  unitName: "ကျပ်သား",
+  purchasePriceMode: "container",
+  product: "",
+  weightKg: "1",
+  purchase: "",
+  processing: "0",
+  lossKg: "0",
+  packGrams: "25",
+  packaging: "0",
+  sellingPrice: "",
+  targetPercent: "20",
   minimumMargin: "15",
-  discount: "10",
+  discount: "0",
   rounding: "100",
-  mode: "price",
+  mode: "margin",
   basis: "margin",
 };
 const numberFormat = new Intl.NumberFormat("en-US", {
@@ -575,7 +597,7 @@ function SelectField({
                 props.onBlur?.(event);
               }}
               onChange={(event) => {
-                field.onChange(event.target.value);
+                field.onChange(name === "productType" && event.target.value === "VISS" ? "COUNT" : event.target.value);
                 props.onChange?.(event);
               }}
               className={`${inputClass} appearance-auto pr-2`}
@@ -1035,6 +1057,8 @@ function ProductCalculator({
   readOnly,
   serverCalculation,
   currencyCode,
+  onSave,
+  saveDisabled = false,
 }: {
   inputs: Inputs;
   setInputs: Dispatch<SetStateAction<Inputs>>;
@@ -1042,9 +1066,14 @@ function ProductCalculator({
   readOnly: boolean;
   serverCalculation?: CostingResult;
   currencyCode: string;
+  onSave?: () => void;
+  saveDisabled?: boolean;
 }) {
   const [notice, setNotice] = useState("");
   const [tab, setTab] = useState("purchase");
+  const [simple, setSimple] = useState(
+    !serverCalculation && inputs.mode === "margin" && inputs.basis === "margin",
+  );
   const form = useForm<Inputs>({
     resolver: zodResolver(draftSchema),
     values: inputs,
@@ -1099,31 +1128,11 @@ function ProductCalculator({
     />
   );
 
-  function changeProductType(productType: ProductType) {
-    const count = isCountType(productType);
-    setInputs((current) => ({
-      ...current,
-      productType,
-      weightKg: "",
-      lossKg: "0",
-      packGrams: count ? "1" : "",
-      containers: "",
-      unitsPerContainer: "",
-      purchasePriceMode: "total",
-      purchase: "",
-      sellingPrice: "",
-      packaging: "0",
-      containerName: productType === "PACKAGED_SNACK" ? "ပုံး" : "ကတ်",
-      unitName:
-        productType === "PACKAGED_SNACK"
-          ? "ထုပ်"
-          : productType === "COUNT"
-            ? "ခု"
-            : "ဘူး",
-    }));
-    setNotice(
-      "တွက်ချက်ယူနစ် ပြောင်းထားပါသည်။ ဝယ်ယူပမာဏ၊ ဝယ်ဈေးနှင့် ရောင်းဈေးကို ပြန်ဖြည့်ပါ။ ထပ်မံထုပ်ပိုးလျှင် ထုပ်ပိုးခကိုပါ ဖြည့်ပါ။",
-    );
+  function changeProductType(choice: CostingTypeChoice) {
+    setInputs(current => selectCostingType(current, choice));
+    setNotice(choice === "VISS"
+      ? "1 ပိဿာ = 100 ကျပ်သား။ တစ်ပိဿာဝယ်ဈေးနှင့် ခွဲရောင်းမည့် ကျပ်သားကို ဖြည့်ပါ။"
+      : "ယူနစ် ပြောင်းထားပါသည်။ ဝယ်ဈေးနှင့် လိုအပ်သောပမာဏကို ပြန်ဖြည့်ပါ။");
   }
 
   return (
@@ -1140,9 +1149,15 @@ function ProductCalculator({
                 <Package className="size-5 text-muted-foreground" />
               </span>
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold">{inputs.product.trim() || "ပစ္စည်းအသစ်"}</h2>
+                <h2 className="truncate text-sm font-semibold">
+                  {inputs.product.trim() || "ပစ္စည်းအသစ်"}
+                </h2>
                 <p className="truncate text-[11px] leading-6 text-muted-foreground">
-                  {productTypes.find((type) => type.value === inputs.productType)?.label}
+                  {
+                    costingTypeChoices.find(
+                      (type) => type.value === selectedCostingType(inputs),
+                    )?.label
+                  }
                 </p>
               </div>
             </div>
@@ -1150,586 +1165,830 @@ function ProductCalculator({
               {readOnly ? "Read only" : "Editing"}
             </span>
           </div>
-          <Tabs
-            value={tab}
-            onValueChange={(value) => setTab(String(value))}
-            className="gap-0"
-          >
-            <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800 sm:px-5">
-              <TabsList
-                aria-label="တွက်ချက်မှုအဆင့်များ"
-                className="grid h-auto min-h-12 w-full grid-cols-2 rounded-xl border-0 bg-slate-100 p-1 dark:bg-slate-800"
-              >
-                <TabsTrigger
-                  value="purchase"
-                  className="min-h-11 whitespace-normal px-2 text-xs leading-6 data-[selected]:bg-white data-[state=active]:bg-white dark:data-[selected]:bg-slate-700 dark:data-[state=active]:bg-slate-700"
-                >
-                  <span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
-                    1
-                  </span>
-                  ဝယ်ယူမှုနှင့် ခွဲရောင်းပုံ
-                </TabsTrigger>
-                <TabsTrigger
-                  value="pricing"
-                  className="min-h-11 whitespace-normal px-2 text-xs leading-6 data-[selected]:bg-white data-[state=active]:bg-white dark:data-[selected]:bg-slate-700 dark:data-[state=active]:bg-slate-700"
-                >
-                  <span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
-                    2
-                  </span>
-                  ရောင်းဈေးနှင့် အမြတ်
-                </TabsTrigger>
-              </TabsList>
-            </div>
-            <TabsContent value="purchase" className="m-0 p-4 sm:p-5">
-              <fieldset disabled={readOnly} className="min-w-0">
-                <div className="space-y-5">
-                  <div>
-                    <GroupTitle number="01" title="ပစ္စည်းနှင့် တွက်ချက်ပုံ" />
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="product"
-                        render={({ field }) => (
-                          <FormItem className="gap-1.5">
-                            <FormLabel className="text-xs leading-6">ပစ္စည်းအမည်</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                value={inputs.product}
-                                maxLength={200}
-                                placeholder="ဥပမာ — ကြက်သွန်နီ 1 kg"
-                                onChange={(event) => {
-                                  field.onChange(event.target.value);
-                                  update("product", event.target.value);
-                                }}
-                                className={inputClass}
-                              />
-                            </FormControl>
-                            <FormMessage className="text-[10px]" />
-                          </FormItem>
-                        )}
-                      />
-                      <SelectField
-                        name="productType"
-                        label="ပစ္စည်းအမျိုးအစား"
-                        value={inputs.productType}
-                        onChange={(event) => changeProductType(event.target.value as ProductType)}
-                      >
-                        {productTypes.map((type) => (
-                          <option key={type.value} value={type.value}>{type.label}</option>
-                        ))}
-                      </SelectField>
-                    </div>
-                    <div className="mt-4 rounded-xl border border-border p-3">
-                      <p className="text-xs font-semibold">ကုန်ပစ္စည်းဓာတ်ပုံများ</p>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <ProductImageUpload
-                          title="မူလဝယ်ယူသောအထုပ်ပုံ"
-                          hint="မပြင်ဆင်ရသေးသော မူလအထုပ်ပုံ"
-                          value={inputs.originalImage}
-                          onChange={(value) => update("originalImage", value)}
-                          onBusyChange={onImageBusy}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-5">
+            <p className="text-xs leading-6 text-muted-foreground">
+              {simple
+                ? "အခြေခံဝယ်ဈေး + အမြတ် % ဖြည့်ပြီး စံရောင်းဈေးတွက်ပါ။"
+                : "ပမာဏ၊ ခွဲရောင်းပုံနှင့် ဈေးတွက်နည်းကို အသေးစိတ်ပြင်ပါ။"}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={readOnly}
+              className="min-h-10 text-xs"
+              onClick={() => {
+                if (!simple)
+                  setInputs((current) => ({
+                    ...current,
+                    mode: "margin",
+                    basis: "margin",
+                    targetPercent: current.targetPercent.trim() || "20",
+                    rounding:
+                      Number(current.rounding) > 0 ? current.rounding : "1",
+                  }));
+                setSimple(!simple);
+                setTab("purchase");
+              }}
+            >
+              {simple ? "အသေးစိတ် ပြင်ရန်" : "အမြတ် % ဖြင့် အလွယ်တွက်ရန်"}
+            </Button>
+          </div>
+          {simple ? (
+            <fieldset
+              disabled={readOnly}
+              className="min-w-0 space-y-4 p-4 sm:p-5"
+            >
+              <GroupTitle number="01" title="ပစ္စည်းရွေးပြီး ဝယ်ဈေးဖြည့်ပါ" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="product"
+                  render={({ field }) => (
+                    <FormItem className="gap-1.5">
+                      <FormLabel className="text-xs leading-6">
+                        ပစ္စည်းအမည်
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={inputs.product}
+                          maxLength={200}
+                          placeholder="ဥပမာ — ကြက်သွန်နီ 1 kg"
+                          onChange={(event) => {
+                            field.onChange(event.target.value);
+                            update("product", event.target.value);
+                          }}
+                          className={inputClass}
                         />
-                        <ProductImageUpload
-                          title="ထုပ်ပိုးပြီးပစ္စည်းပုံ"
-                          hint="ရောင်းချရန်အဆင်သင့်ဖြစ်သော အထုပ်ပုံ"
-                          value={inputs.packedImage}
-                          onChange={(value) => update("packedImage", value)}
-                          onBusyChange={onImageBusy}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
-                    <GroupTitle
-                      number="02"
-                      title="ဝယ်ယူပမာဏ"
-                      note={
-                        units.count
-                          ? "ဝယ်လာသော ကတ်/ပုံးမှ ရောင်းနိုင်သော အရေအတွက်ကို တွက်ပါ။"
-                          : "ဝယ်ယူပမာဏမှ အလျော့နုတ်ပြီး ခွဲထည့်မည့်ပမာဏကို သတ်မှတ်ပါ။"
-                      }
+                      </FormControl>
+                      <FormMessage className="text-[10px]" />
+                    </FormItem>
+                  )}
+                />
+                <SelectField
+                  name="productType"
+                  label="ပစ္စည်းအမျိုးအစား"
+                  value={selectedCostingType(inputs)}
+                  onChange={(event) =>
+                    changeProductType(event.target.value as CostingTypeChoice)
+                  }
+                >
+                  {costingTypeChoices.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {units.count ? (
+                  <>
+                    {numberField(
+                      "containers",
+                      `အခြေခံတွက်မည့် ${inputs.containerName}`,
+                      inputs.containerName,
+                      undefined,
+                      "1",
+                    )}
+                    {isViss(inputs) ? <p className="self-center rounded-xl bg-muted p-3 text-xs leading-7">1 ပိဿာ = 100 ကျပ်သား</p> : numberField(
+                      "unitsPerContainer",
+                      `တစ်${inputs.containerName}တွင်ပါသောပမာဏ`,
+                      inputs.unitName,
+                      undefined,
+                      "1",
+                    )}
+                  </>
+                ) : (
+                  numberField(
+                    "weightKg",
+                    "အခြေခံတွက်မည့်ပမာဏ",
+                    units.large,
+                    undefined,
+                    "0.001",
+                  )
+                )}
+                {numberField(
+                  "purchase",
+                  units.count && inputs.purchasePriceMode === "container"
+                    ? `တစ်${inputs.containerName} ဝယ်ဈေး`
+                    : "အခြေခံပမာဏအတွက် ဝယ်ဈေး",
+                  currency === "MMK" ? "ကျပ်" : currency,
+                )}
+                {numberField(
+                  "targetPercent",
+                  "လိုချင်သော အမြတ် (Margin)",
+                  "%",
+                  99.99,
+                )}
+              </div>
+              <p className="rounded-xl bg-blue-50 p-3 text-xs leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                {units.count
+                  ? `${inputs.containers || "—"} ${inputs.containerName} ကို အခြေခံပြီး ရောင်းဈေး တွက်ပါသည်။`
+                  : `${inputs.weightKg || "—"} ${units.large} ကို အခြေခံပြီး ရောင်းဈေး တွက်ပါသည်။`}
+                သယ်ယူခကို Receiving မှာ ထည့်ရန်ဖြစ်ပါသည်။ ဒီနေရာမှာ
+                ထပ်မပေါင်းပါနှင့်။
+              </p>
+              {isViss(inputs) && <div className="space-y-3 rounded-xl border border-blue-200 p-3">
+                {numberField("packGrams", "ခွဲရောင်းမည့် အလေးချိန်", "ကျပ်သား", undefined, "1")}
+                <div className="flex flex-wrap gap-2">{[10,25,50,100].map(weight=><Button key={weight} type="button" variant="outline" aria-pressed={Number(inputs.packGrams)===weight} onClick={()=>update("packGrams",String(weight))}>{weight} ကျပ်သား</Button>)}</div>
+                <p className="text-xs leading-7 text-muted-foreground">ကျပ်သားသည် အလေးချိန်၊ ကျပ်သည် ငွေကြေးဖြစ်ပါသည်။ ကျပ်သားအပြည့်ကိန်းဖြင့် ခွဲရောင်းနိုင်ပါသည်။ kg / g သို့ အလိုအလျောက် မပြောင်းပါ။</p>
+              </div>}
+              <details className="rounded-xl border p-3">
+                <summary className="cursor-pointer text-xs font-semibold leading-7">
+                  ခွဲရောင်းပုံ၊ အလေအလွင့်နှင့် အပိုသတ်မှတ်ချက်များ
+                  (လိုအပ်မှပြင်ပါ)
+                </summary>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {!isViss(inputs) && numberField(
+                    "packGrams",
+                    "တစ်ရောင်းယူနစ်ပါပမာဏ",
+                    units.small,
+                    undefined,
+                    "1",
+                  )}
+                  {numberField(
+                    "lossKg",
+                    "စံအလေအလွင့်ပမာဏ",
+                    units.large,
+                    undefined,
+                    units.count ? "1" : "0.001",
+                  )}
+                  {numberField(
+                    "processing",
+                    "စံထုတ်လုပ်မှု / ပြင်ဆင်ခ (သယ်ယူခမပါ)",
+                    currency === "MMK" ? "ကျပ်" : currency,
+                  )}
+                  {numberField(
+                    "packaging",
+                    "တစ်ရောင်းယူနစ် ထုပ်ပိုးခ",
+                    currency === "MMK" ? "ကျပ်" : currency,
+                  )}
+                  {numberField("discount", "လျှော့ဈေး", "%", 99.99)}
+                  {numberField(
+                    "rounding",
+                    "ရောင်းဈေး ဝိုင်းယူနစ်",
+                    currency === "MMK" ? "ကျပ်" : currency,
+                  )}
+                  {numberField(
+                    "minimumMargin",
+                    "အနည်းဆုံး Margin သတိပေးချက်",
+                    "%",
+                    99.99,
+                  )}
+                </div>
+              </details>
+              <details className="rounded-xl border p-3">
+                <summary className="cursor-pointer text-xs font-semibold leading-7">
+                  ပစ္စည်းဓာတ်ပုံ ထည့်ရန် (မထည့်လည်းရပါသည်)
+                </summary>
+                <div className="mt-4 rounded-xl border border-border p-3">
+                  <p className="text-xs font-semibold">
+                    ကုန်ပစ္စည်းဓာတ်ပုံများ
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <ProductImageUpload
+                      title="မူလဝယ်ယူသောအထုပ်ပုံ"
+                      hint="မပြင်ဆင်ရသေးသော မူလအထုပ်ပုံ"
+                      value={inputs.originalImage}
+                      onChange={(value) => update("originalImage", value)}
+                      onBusyChange={onImageBusy}
                     />
-                    <div className="grid grid-cols-2 gap-3">
-                      {units.count ? (
-                        <>
-                          <SelectField
-                            name="containerName"
-                            label="ဝယ်ယူထုပ်ပိုးပုံ"
-                            value={inputs.containerName}
-                            onChange={(event) =>
-                              update("containerName", event.target.value)
-                            }
-                          >
-                            {["ကတ်", "ပုံး", "အိတ်", "ပါကင်", "ထုပ်ကြီး"].map(
-                              (name) => (
-                                <option key={name}>{name}</option>
-                              ),
-                            )}
-                          </SelectField>
-                          <SelectField
-                            name="unitName"
-                            label="ရေတွက်ယူနစ်"
-                            value={inputs.unitName}
-                            onChange={(event) =>
-                              update("unitName", event.target.value)
-                            }
-                          >
-                            {[
-                              "ဘူး",
-                              "ထုပ်",
-                              "ခု",
-                              "ချောင်း",
-                              "လုံး",
-                              "စုံ",
-                            ].map((name) => (
-                              <option key={name}>{name}</option>
-                            ))}
-                          </SelectField>
-                          {numberField(
-                            "containers",
-                            `ဝယ်ယူသော ${inputs.containerName}`,
-                            inputs.containerName,
-                            undefined,
-                            "1",
-                          )}
-                          {numberField(
-                            "unitsPerContainer",
-                            `တစ်${inputs.containerName}တွင်ပါသောပမာဏ`,
-                            inputs.unitName,
-                            undefined,
-                            "1",
-                          )}
-                        </>
-                      ) : (
-                        numberField(
-                          "weightKg",
-                          "စုစုပေါင်းဝယ်ယူပမာဏ",
-                          units.large,
-                          undefined,
-                          "0.001",
-                        )
-                      )}
-                      {numberField(
-                        "packGrams",
-                        units.count
-                          ? "တစ်ရောင်းယူနစ်တွင် ပါမည့်ပမာဏ"
-                          : `ခွဲထည့်မည့် တစ်${units.sale}ပမာဏ`,
-                        units.small,
-                        undefined,
-                        "1",
-                      )}
-                    </div>
-                    <p className="mt-3 flex items-start gap-2 rounded-xl bg-blue-50 px-3 py-2 text-[11px] leading-6 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-                      <Info className="mt-1 size-3.5 shrink-0" />
-                      {units.count
-                        ? `ရောင်းယူနစ်ပမာဏ 1 ဆို တစ်${inputs.unitName}ချင်း၊ 6 ဆို 6 ${inputs.unitName} တစ်တွဲ။ အသင့်ထုပ်ကို ထပ်မထုပ်လျှင် ထုပ်ပိုးခ 0 ထည့်ပါ။`
-                        : `kg / L ကို ဒဿမ 3 နေရာအထိ၊ g / ml ကို အပြည့်ကိန်းဖြင့် ဖြည့်ပါ။`}
-                    </p>
+                    <ProductImageUpload
+                      title="ထုပ်ပိုးပြီးပစ္စည်းပုံ"
+                      hint="ရောင်းချရန်အဆင်သင့်ဖြစ်သော အထုပ်ပုံ"
+                      value={inputs.packedImage}
+                      onChange={(value) => update("packedImage", value)}
+                      onBusyChange={onImageBusy}
+                    />
                   </div>
-                  <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
-                    <GroupTitle number="03" title="ဝယ်ဈေးနှင့် ကုန်ကျစရိတ်" />
-                    {units.count && (
-                      <div className="mb-3">
+                </div>
+              </details>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
+                <p className="text-xs leading-7">
+                  စံရောင်းဈေး / {inputs.packGrams || "—"} {units.small}
+                </p>
+                <p className="break-words text-2xl font-bold leading-10 text-emerald-800 dark:text-emerald-300">
+                  {result.error ? "—" : money(result.price!)}
+                </p>
+                <p className="text-xs leading-7">
+                  {result.error ||
+                    `တစ်ယူနစ်ကုန်ကျစရိတ် ${money(result.costPerPack!)} · Margin ${percent(result.margin)}`}
+                </p>
+                <p className="mt-1 text-[11px] leading-6 text-muted-foreground">
+                  Receiving သယ်ယူခ မပါသေးသော စံဈေးဖြစ်ပါသည်။ တကယ်ရရှိမှုနှင့်
+                  စရိတ်အရ အမြတ်ကွာနိုင်ပါသည်။
+                </p>
+              </div>
+              <Button
+                type="button"
+                disabled={readOnly || saveDisabled || !onSave || !!result.error}
+                onClick={onSave}
+                className="min-h-12 w-full bg-blue-600 text-white"
+              >
+                စာရင်းမူကြမ်း သိမ်းမည်
+              </Button>
+            </fieldset>
+          ) : (
+            <Tabs
+              value={tab}
+              onValueChange={(value) => setTab(String(value))}
+              className="gap-0"
+            >
+              <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800 sm:px-5">
+                <TabsList
+                  aria-label="တွက်ချက်မှုအဆင့်များ"
+                  className="grid h-auto min-h-12 w-full grid-cols-2 rounded-xl border-0 bg-slate-100 p-1 dark:bg-slate-800"
+                >
+                  <TabsTrigger
+                    value="purchase"
+                    className="min-h-11 whitespace-normal px-2 text-xs leading-6 data-[selected]:bg-white data-[state=active]:bg-white dark:data-[selected]:bg-slate-700 dark:data-[state=active]:bg-slate-700"
+                  >
+                    <span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                      1
+                    </span>
+                    ဝယ်ယူမှုနှင့် ခွဲရောင်းပုံ
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="pricing"
+                    className="min-h-11 whitespace-normal px-2 text-xs leading-6 data-[selected]:bg-white data-[state=active]:bg-white dark:data-[selected]:bg-slate-700 dark:data-[state=active]:bg-slate-700"
+                  >
+                    <span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                      2
+                    </span>
+                    ရောင်းဈေးနှင့် အမြတ်
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="purchase" className="m-0 p-4 sm:p-5">
+                <fieldset disabled={readOnly} className="min-w-0">
+                  <div className="space-y-5">
+                    <div>
+                      <GroupTitle
+                        number="01"
+                        title="ပစ္စည်းနှင့် တွက်ချက်ပုံ"
+                      />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <FormField
+                          control={form.control}
+                          name="product"
+                          render={({ field }) => (
+                            <FormItem className="gap-1.5">
+                              <FormLabel className="text-xs leading-6">
+                                ပစ္စည်းအမည်
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={inputs.product}
+                                  maxLength={200}
+                                  placeholder="ဥပမာ — ကြက်သွန်နီ 1 kg"
+                                  onChange={(event) => {
+                                    field.onChange(event.target.value);
+                                    update("product", event.target.value);
+                                  }}
+                                  className={inputClass}
+                                />
+                              </FormControl>
+                              <FormMessage className="text-[10px]" />
+                            </FormItem>
+                          )}
+                        />
                         <SelectField
-                          name="purchasePriceMode"
-                          label="ဝယ်ဈေးသတ်မှတ်ပုံ"
-                          value={inputs.purchasePriceMode}
+                          name="productType"
+                          label="ပစ္စည်းအမျိုးအစား"
+                          value={selectedCostingType(inputs)}
                           onChange={(event) =>
-                            update(
-                              "purchasePriceMode",
-                              event.target.value as Inputs["purchasePriceMode"],
-                            )
+                            changeProductType(event.target.value as CostingTypeChoice)
                           }
                         >
-                          <option value="total">
-                            အားလုံး၏ စုစုပေါင်းဝယ်ဈေး
-                          </option>
-                          <option value="container">
-                            တစ်{inputs.containerName} ဝယ်ဈေး
-                          </option>
+                          {costingTypeChoices.map((type) => (
+                            <option key={type.value} value={type.value}>
+                              {type.label}
+                            </option>
+                          ))}
                         </SelectField>
                       </div>
-                    )}
-                    <div className="grid grid-cols-1 gap-3">
-                      {numberField(
-                        "purchase",
-                        units.count && inputs.purchasePriceMode === "container"
-                          ? `တစ်${inputs.containerName} ဝယ်ဈေး`
-                          : "စုစုပေါင်းဝယ်ဈေး",
-                        currency,
-                      )}
-                    </div>
-                    <details className="group mt-4 rounded-xl border border-slate-200 bg-slate-50/70 px-3 dark:border-slate-700 dark:bg-slate-800/40">
-                      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-2 [&::-webkit-details-marker]:hidden">
-                        <div>
-                          <p className="text-xs font-semibold leading-6">
-                            အလျော့နှင့် အပိုကုန်ကျစရိတ် ပြင်ရန်
-                          </p>
-                          <p className="text-[10px] leading-6 text-slate-400">
-                            အလျော့ {inputs.lossKg || "0"} {units.large} · အပို{" "}
-                            {money(Number(inputs.processing) || 0)} · ထုပ်ပိုး{" "}
-                            {money(Number(inputs.packaging) || 0)}
-                          </p>
+                      <div className="mt-4 rounded-xl border border-border p-3">
+                        <p className="text-xs font-semibold">
+                          ကုန်ပစ္စည်းဓာတ်ပုံများ
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <ProductImageUpload
+                            title="မူလဝယ်ယူသောအထုပ်ပုံ"
+                            hint="မပြင်ဆင်ရသေးသော မူလအထုပ်ပုံ"
+                            value={inputs.originalImage}
+                            onChange={(value) => update("originalImage", value)}
+                            onBusyChange={onImageBusy}
+                          />
+                          <ProductImageUpload
+                            title="ထုပ်ပိုးပြီးပစ္စည်းပုံ"
+                            hint="ရောင်းချရန်အဆင်သင့်ဖြစ်သော အထုပ်ပုံ"
+                            value={inputs.packedImage}
+                            onChange={(value) => update("packedImage", value)}
+                            onBusyChange={onImageBusy}
+                          />
                         </div>
-                        <ChevronDown className="size-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
-                      </summary>
-                      <div className="grid grid-cols-2 gap-3 border-t border-slate-200 py-3 dark:border-slate-700">
-                        {numberField(
-                          "lossKg",
+                      </div>
+                    </div>
+                    <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+                      <GroupTitle
+                        number="02"
+                        title="ဝယ်ယူပမာဏ"
+                        note={
                           units.count
-                            ? "ပျက်စီး / ရောင်းမရသောပမာဏ"
-                            : "အလျော့ပမာဏ",
-                          units.large,
+                            ? "ဝယ်လာသော ကတ်/ပုံးမှ ရောင်းနိုင်သော အရေအတွက်ကို တွက်ပါ။"
+                            : "ဝယ်ယူပမာဏမှ အလျော့နုတ်ပြီး ခွဲထည့်မည့်ပမာဏကို သတ်မှတ်ပါ။"
+                        }
+                      />
+                      <div className="grid grid-cols-2 gap-3">
+                        {units.count ? (
+                          <>
+                            <SelectField
+                              name="containerName"
+                              label="ဝယ်ယူထုပ်ပိုးပုံ"
+                              value={inputs.containerName}
+                              onChange={(event) =>
+                                update("containerName", event.target.value)
+                              }
+                            >
+                              {["ကတ်", "ပုံး", "အိတ်", "ပါကင်", "ထုပ်ကြီး", "ပိဿာ"].map(
+                                (name) => (
+                                  <option key={name}>{name}</option>
+                                ),
+                              )}
+                            </SelectField>
+                            <SelectField
+                              name="unitName"
+                              label="ရေတွက်ယူနစ်"
+                              value={inputs.unitName}
+                              onChange={(event) =>
+                                update("unitName", event.target.value)
+                              }
+                            >
+                              {[
+                                "ဘူး",
+                                "ထုပ်",
+                                "ခု",
+                                "ချောင်း",
+                                "လုံး",
+                                "စုံ",
+                                "ကျပ်သား",
+                              ].map((name) => (
+                                <option key={name}>{name}</option>
+                              ))}
+                            </SelectField>
+                            {numberField(
+                              "containers",
+                              `ဝယ်ယူသော ${inputs.containerName}`,
+                              inputs.containerName,
+                              undefined,
+                              "1",
+                            )}
+                            {isViss(inputs) ? <p className="self-center rounded-xl bg-muted p-3 text-xs leading-7">1 ပိဿာ = 100 ကျပ်သား</p> : numberField(
+                              "unitsPerContainer",
+                              `တစ်${inputs.containerName}တွင်ပါသောပမာဏ`,
+                              inputs.unitName,
+                              undefined,
+                              "1",
+                            )}
+                          </>
+                        ) : (
+                          numberField(
+                            "weightKg",
+                            "စုစုပေါင်းဝယ်ယူပမာဏ",
+                            units.large,
+                            undefined,
+                            "0.001",
+                          )
+                        )}
+                        {numberField(
+                          "packGrams",
+                          units.count
+                            ? "တစ်ရောင်းယူနစ်တွင် ပါမည့်ပမာဏ"
+                            : `ခွဲထည့်မည့် တစ်${units.sale}ပမာဏ`,
+                          units.small,
                           undefined,
-                          units.count ? "1" : "0.001",
+                          "1",
                         )}
+                      </div>
+                      <p className="mt-3 flex items-start gap-2 rounded-xl bg-blue-50 px-3 py-2 text-[11px] leading-6 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                        <Info className="mt-1 size-3.5 shrink-0" />
+                        {units.count
+                          ? `ရောင်းယူနစ်ပမာဏ 1 ဆို တစ်${inputs.unitName}ချင်း၊ 6 ဆို 6 ${inputs.unitName} တစ်တွဲ။ အသင့်ထုပ်ကို ထပ်မထုပ်လျှင် ထုပ်ပိုးခ 0 ထည့်ပါ။`
+                          : `kg / L ကို ဒဿမ 3 နေရာအထိ၊ g / ml ကို အပြည့်ကိန်းဖြင့် ဖြည့်ပါ။`}
+                      </p>
+                    </div>
+                    <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+                      <GroupTitle number="03" title="ဝယ်ဈေးနှင့် ကုန်ကျစရိတ်" />
+                      {units.count && (
+                        <div className="mb-3">
+                          <SelectField
+                            name="purchasePriceMode"
+                            label="ဝယ်ဈေးသတ်မှတ်ပုံ"
+                            value={inputs.purchasePriceMode}
+                            onChange={(event) =>
+                              update(
+                                "purchasePriceMode",
+                                event.target
+                                  .value as Inputs["purchasePriceMode"],
+                              )
+                            }
+                          >
+                            <option value="total">
+                              အားလုံး၏ စုစုပေါင်းဝယ်ဈေး
+                            </option>
+                            <option value="container">
+                              တစ်{inputs.containerName} ဝယ်ဈေး
+                            </option>
+                          </SelectField>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-1 gap-3">
                         {numberField(
-                          "processing",
-                          "သယ်ယူခနှင့် အခြားကုန်ကျစရိတ်",
-                          currency,
-                        )}
-                        {numberField(
-                          "packaging",
-                          "တစ်ရောင်းယူနစ် ထုပ်ပိုးခ",
+                          "purchase",
+                          units.count &&
+                            inputs.purchasePriceMode === "container"
+                            ? `တစ်${inputs.containerName} ဝယ်ဈေး`
+                            : "စုစုပေါင်းဝယ်ဈေး",
                           currency,
                         )}
                       </div>
-                    </details>
-                  </div>
-                  {!purchaseResult.error && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2 dark:border-blue-500/20 dark:bg-blue-500/10">
-                      <span className="text-xs leading-7 text-blue-700 dark:text-blue-300">
-                        ရောင်းနိုင်ပမာဏ{" "}
-                        {numberFormat.format(purchaseResult.packs!)}{" "}
-                        {units.sale}
-                      </span>
-                      <span className="text-xs font-semibold leading-7 text-blue-700 dark:text-blue-300">
-                        တစ်ယူနစ် {money(purchaseResult.costPerPack!)}
-                      </span>
+                      <details className="group mt-4 rounded-xl border border-slate-200 bg-slate-50/70 px-3 dark:border-slate-700 dark:bg-slate-800/40">
+                        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-2 [&::-webkit-details-marker]:hidden">
+                          <div>
+                            <p className="text-xs font-semibold leading-6">
+                              အလျော့နှင့် အပိုကုန်ကျစရိတ် ပြင်ရန်
+                            </p>
+                            <p className="text-[10px] leading-6 text-slate-400">
+                              အလျော့ {inputs.lossKg || "0"} {units.large} · အပို{" "}
+                              {money(Number(inputs.processing) || 0)} · ထုပ်ပိုး{" "}
+                              {money(Number(inputs.packaging) || 0)}
+                            </p>
+                          </div>
+                          <ChevronDown className="size-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="grid grid-cols-2 gap-3 border-t border-slate-200 py-3 dark:border-slate-700">
+                          {numberField(
+                            "lossKg",
+                            units.count
+                              ? "ပျက်စီး / ရောင်းမရသောပမာဏ"
+                              : "အလျော့ပမာဏ",
+                            units.large,
+                            undefined,
+                            units.count ? "1" : "0.001",
+                          )}
+                          {numberField(
+                            "processing",
+                            "စံထုတ်လုပ်မှု / ပြင်ဆင်ခ (သယ်ယူခမပါ)",
+                            currency,
+                          )}
+                          {numberField(
+                            "packaging",
+                            "တစ်ရောင်းယူနစ် ထုပ်ပိုးခ",
+                            currency,
+                          )}
+                        </div>
+                      </details>
                     </div>
-                  )}
-                  {notice && (
-                    <p
-                      role="status"
-                      className="text-xs leading-6 text-blue-600 dark:text-blue-300"
-                    >
-                      {notice}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="min-h-11 text-xs"
-                      onClick={() => {
-                        setInputs((current) => ({
-                          ...current,
-                          purchase: "",
-                          processing: "0",
-                          packaging: "0",
-                          sellingPrice: "",
-                          discount: "0",
-                        }));
-                        setNotice("ဤပစ္စည်း၏ ဈေးများ ရှင်းပြီးပါပြီ။");
-                      }}
-                    >
-                      <RotateCcw />
-                      ဈေးများရှင်းရန်
-                    </Button>
-                    <Button
-                      type="button"
-                      className="min-h-11 rounded-xl bg-blue-600 text-xs text-white"
-                      onClick={() => setTab("pricing")}
-                    >
-                      ရောင်းဈေး ဆက်တွက်မည်
-                      <TrendingUp />
-                    </Button>
+                    {!purchaseResult.error && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2 dark:border-blue-500/20 dark:bg-blue-500/10">
+                        <span className="text-xs leading-7 text-blue-700 dark:text-blue-300">
+                          ရောင်းနိုင်ပမာဏ{" "}
+                          {numberFormat.format(purchaseResult.packs!)}{" "}
+                          {units.sale}
+                        </span>
+                        <span className="text-xs font-semibold leading-7 text-blue-700 dark:text-blue-300">
+                          တစ်ယူနစ် {money(purchaseResult.costPerPack!)}
+                        </span>
+                      </div>
+                    )}
+                    {notice && (
+                      <p
+                        role="status"
+                        className="text-xs leading-6 text-blue-600 dark:text-blue-300"
+                      >
+                        {notice}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="min-h-11 text-xs"
+                        onClick={() => {
+                          setInputs((current) => ({
+                            ...current,
+                            purchase: "",
+                            processing: "0",
+                            packaging: "0",
+                            sellingPrice: "",
+                            discount: "0",
+                          }));
+                          setNotice("ဤပစ္စည်း၏ ဈေးများ ရှင်းပြီးပါပြီ။");
+                        }}
+                      >
+                        <RotateCcw />
+                        ဈေးများရှင်းရန်
+                      </Button>
+                      <Button
+                        type="button"
+                        className="min-h-11 rounded-xl bg-blue-600 text-xs text-white"
+                        onClick={() => setTab("pricing")}
+                      >
+                        ရောင်းဈေး ဆက်တွက်မည်
+                        <TrendingUp />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </fieldset>
-            </TabsContent>
-            <TabsContent value="pricing" className="m-0 p-4 sm:p-5">
-              <fieldset disabled={readOnly} className="min-w-0 space-y-4">
-                <GroupTitle number="01" title="ဈေးတွက်မည့်နည်းလမ်း" />
-                <div
-                  role="group"
-                  aria-label="ဈေးတွက်နည်း"
-                  className="grid grid-cols-2 gap-2"
-                >
-                  {(
-                    [
-                      { value: "margin", label: "အမြတ် % မှ ဈေးတွက်" },
-                      { value: "price", label: "ဈေးမှ အမြတ်တွက်" },
-                    ] as const
-                  ).map((mode) => (
-                    <Button
-                      key={mode.value}
-                      type="button"
-                      variant={
-                        inputs.mode === mode.value ? "default" : "outline"
-                      }
-                      aria-pressed={inputs.mode === mode.value}
-                      onClick={() => update("mode", mode.value)}
-                      className={`min-h-12 whitespace-normal rounded-xl px-2 text-xs leading-6 ${inputs.mode === mode.value ? "bg-blue-600 text-white" : ""}`}
-                    >
-                      {mode.label}
-                    </Button>
-                  ))}
-                </div>
-                {inputs.mode === "margin" ? (
-                  <div className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
-                    <SelectField
-                      name="basis"
-                      label="အမြတ်ရာခိုင်နှုန်း၏ အခြေခံ"
-                      value={inputs.basis}
-                      onChange={(event) =>
-                        update("basis", event.target.value as Basis)
-                      }
-                    >
-                      <option value="margin">ရောင်းရငွေအပေါ် — Margin</option>
-                      <option value="markup">ကုန်ကျစရိတ်ပေါ် — Markup</option>
-                    </SelectField>
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-semibold leading-7 text-blue-800 dark:text-blue-200">
-                        လိုချင်သော{" "}
-                        {inputs.basis === "margin" ? "Margin" : "Markup"}
-                      </span>
-                      <span className="relative block">
+                </fieldset>
+              </TabsContent>
+              <TabsContent value="pricing" className="m-0 p-4 sm:p-5">
+                <fieldset disabled={readOnly} className="min-w-0 space-y-4">
+                  <GroupTitle number="01" title="ဈေးတွက်မည့်နည်းလမ်း" />
+                  <div
+                    role="group"
+                    aria-label="ဈေးတွက်နည်း"
+                    className="grid grid-cols-2 gap-2"
+                  >
+                    {(
+                      [
+                        { value: "margin", label: "အမြတ် % မှ ဈေးတွက်" },
+                        { value: "price", label: "ဈေးမှ အမြတ်တွက်" },
+                      ] as const
+                    ).map((mode) => (
+                      <Button
+                        key={mode.value}
+                        type="button"
+                        variant={
+                          inputs.mode === mode.value ? "default" : "outline"
+                        }
+                        aria-pressed={inputs.mode === mode.value}
+                        onClick={() => update("mode", mode.value)}
+                        className={`min-h-12 whitespace-normal rounded-xl px-2 text-xs leading-6 ${inputs.mode === mode.value ? "bg-blue-600 text-white" : ""}`}
+                      >
+                        {mode.label}
+                      </Button>
+                    ))}
+                  </div>
+                  {inputs.mode === "margin" ? (
+                    <div className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
+                      <SelectField
+                        name="basis"
+                        label="အမြတ်ရာခိုင်နှုန်း၏ အခြေခံ"
+                        value={inputs.basis}
+                        onChange={(event) =>
+                          update("basis", event.target.value as Basis)
+                        }
+                      >
+                        <option value="margin">ရောင်းရငွေအပေါ် — Margin</option>
+                        <option value="markup">ကုန်ကျစရိတ်ပေါ် — Markup</option>
+                      </SelectField>
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-semibold leading-7 text-blue-800 dark:text-blue-200">
+                          လိုချင်သော{" "}
+                          {inputs.basis === "margin" ? "Margin" : "Markup"}
+                        </span>
+                        <span className="relative block">
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            max={inputs.basis === "margin" ? 99.99 : undefined}
+                            value={inputs.targetPercent}
+                            onChange={(event) =>
+                              update("targetPercent", event.target.value)
+                            }
+                            className={`${inputClass} h-14 border-blue-300 pr-12 text-2xl font-bold text-blue-700 dark:border-blue-500/40 dark:text-blue-200`}
+                          />
+                          <span className="pointer-events-none absolute right-4 top-3 text-xl font-semibold text-blue-500">
+                            %
+                          </span>
+                        </span>
+                      </label>
+                      <div
+                        role="group"
+                        aria-label="အမြတ်ရာခိုင်နှုန်း အမြန်ရွေးရန်"
+                        className="grid grid-cols-5 gap-2"
+                      >
+                        {[10, 15, 20, 25, 30].map((target) => (
+                          <Button
+                            key={target}
+                            type="button"
+                            variant="outline"
+                            aria-pressed={
+                              Number(inputs.targetPercent) === target
+                            }
+                            onClick={() =>
+                              update("targetPercent", String(target))
+                            }
+                            className={`min-h-11 min-w-0 rounded-xl px-1 text-sm font-bold tabular-nums ${Number(inputs.targetPercent) === target ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-400 dark:bg-blue-500 dark:text-white" : "border-blue-200 bg-white text-blue-700 dark:border-blue-500/20 dark:bg-slate-900 dark:text-blue-300"}`}
+                          >
+                            {target}%
+                          </Button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] leading-7 text-blue-800 dark:text-blue-200">
+                        {inputs.basis === "margin"
+                          ? "Margin = အမြတ် ÷ ရောင်းရငွေ × 100။ အပေါ်သို့ ဈေးဝိုင်းပြီးနောက် အမှန်တကယ် Margin က ရည်မှန်းချက်ထက် အနည်းငယ်ပိုနိုင်ပါသည်။"
+                          : "Markup = အမြတ် ÷ ကုန်ကျစရိတ် × 100။ Markup % နှင့် Margin % တို့ မတူပါ။"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-semibold leading-7 text-blue-800 dark:text-blue-200">
+                          တစ်ရောင်းယူနစ် ({units.sale}) ရောင်းဈေး ဖြည့်ပါ
+                        </span>
                         <Input
                           type="number"
                           inputMode="decimal"
                           min={0}
-                          max={inputs.basis === "margin" ? 99.99 : undefined}
-                          value={inputs.targetPercent}
+                          value={inputs.sellingPrice}
                           onChange={(event) =>
-                            update("targetPercent", event.target.value)
+                            update("sellingPrice", event.target.value)
                           }
-                          className={`${inputClass} h-14 border-blue-300 pr-12 text-2xl font-bold text-blue-700 dark:border-blue-500/40 dark:text-blue-200`}
+                          className={`${inputClass} h-14 border-blue-300 text-2xl font-bold text-blue-700 dark:border-blue-500/40 dark:text-blue-200`}
                         />
-                        <span className="pointer-events-none absolute right-4 top-3 text-xl font-semibold text-blue-500">
-                          %
-                        </span>
-                      </span>
-                    </label>
-                    <div
-                      role="group"
-                      aria-label="အမြတ်ရာခိုင်နှုန်း အမြန်ရွေးရန်"
-                      className="grid grid-cols-5 gap-2"
+                      </label>
+                      <p className="mt-2 text-[11px] leading-6 text-blue-700 dark:text-blue-300">
+                        ငွေကြေး {currency || "—"} · ရောင်းဈေးပြောင်းသည်နှင့်
+                        အမြတ် % ကို ပြန်တွက်ပေးပါမည်။
+                      </p>
+                    </div>
+                  )}
+                  {!result.error && (
+                    <div className="overflow-hidden rounded-2xl border border-blue-200 dark:border-blue-500/25">
+                      <div className="bg-blue-600 p-4 text-white dark:bg-blue-500">
+                        <p className="text-xs font-medium leading-7 text-blue-100">
+                          လက်ရှိသတ်မှတ်ထားသော ရောင်းဈေး
+                        </p>
+                        <p className="mt-1 break-words text-3xl font-bold leading-normal tabular-nums">
+                          {money(result.price!)}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-6 text-blue-100">
+                          တစ်ရောင်းယူနစ် = {inputs.packGrams} {units.small} ·
+                          တွက်ချက်မှုအတွက် ရွေးထားသောဈေး
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 bg-white p-3 dark:bg-slate-950">
+                        <div>
+                          <p className="mb-1 text-[10px] leading-6 text-slate-500">
+                            အမှန်တကယ်ရရှိမည့် Margin
+                          </p>
+                          <MarginStatus
+                            value={result.margin}
+                            minimum={Number(inputs.minimumMargin)}
+                          />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-[10px] leading-6 text-slate-500">
+                            တစ်ယူနစ် အမြတ် / အရှုံး
+                          </p>
+                          <p
+                            className={`pt-1 text-lg font-bold leading-8 tabular-nums ${result.profitPerPack! < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300"}`}
+                          >
+                            {money(result.profitPerPack!)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3 sm:grid-cols-2 dark:border-amber-500/20 dark:bg-amber-500/5">
+                    <div>
+                      {numberField(
+                        "minimumMargin",
+                        "သတိပေးရန် အနည်းဆုံး Margin",
+                        "%",
+                        99.99,
+                      )}
+                      <p className="mt-1 text-[10px] leading-6 text-amber-800 dark:text-amber-300">
+                        ဤ % အောက်ကျလျှင် အဝါရောင်ပြမည်။
+                      </p>
+                    </div>
+                    <SelectField
+                      name="rounding"
+                      label="အကြံပြုဈေးကို အပေါ်သို့ဝိုင်းရန်"
+                      value={inputs.rounding || "0"}
+                      onChange={(event) =>
+                        update("rounding", event.target.value)
+                      }
                     >
-                      {[10, 15, 20, 25, 30].map((target) => (
-                        <Button
-                          key={target}
-                          type="button"
-                          variant="outline"
-                          aria-pressed={Number(inputs.targetPercent) === target}
-                          onClick={() =>
-                            update("targetPercent", String(target))
-                          }
-                          className={`min-h-11 min-w-0 rounded-xl px-1 text-sm font-bold tabular-nums ${Number(inputs.targetPercent) === target ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-400 dark:bg-blue-500 dark:text-white" : "border-blue-200 bg-white text-blue-700 dark:border-blue-500/20 dark:bg-slate-900 dark:text-blue-300"}`}
-                        >
-                          {target}%
-                        </Button>
+                      <option value="0">မဝိုင်းပါ</option>
+                      {[1, 10, 50, 100, 500, 1000].map((step) => (
+                        <option key={step} value={step}>
+                          {numberFormat.format(step)} {currency} အလိုက်
+                        </option>
                       ))}
-                    </div>
-                    <p className="text-[11px] leading-7 text-blue-800 dark:text-blue-200">
-                      {inputs.basis === "margin"
-                        ? "Margin = အမြတ် ÷ ရောင်းရငွေ × 100။ အပေါ်သို့ ဈေးဝိုင်းပြီးနောက် အမှန်တကယ် Margin က ရည်မှန်းချက်ထက် အနည်းငယ်ပိုနိုင်ပါသည်။"
-                        : "Markup = အမြတ် ÷ ကုန်ကျစရိတ် × 100။ Markup % နှင့် Margin % တို့ မတူပါ။"}
-                    </p>
+                    </SelectField>
                   </div>
-                ) : (
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-semibold leading-7 text-blue-800 dark:text-blue-200">
-                        တစ်ရောင်းယူနစ် ({units.sale}) ရောင်းဈေး ဖြည့်ပါ
-                      </span>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        value={inputs.sellingPrice}
-                        onChange={(event) =>
-                          update("sellingPrice", event.target.value)
-                        }
-                        className={`${inputClass} h-14 border-blue-300 text-2xl font-bold text-blue-700 dark:border-blue-500/40 dark:text-blue-200`}
-                      />
-                    </label>
-                    <p className="mt-2 text-[11px] leading-6 text-blue-700 dark:text-blue-300">
-                      ငွေကြေး {currency || "—"} · ရောင်းဈေးပြောင်းသည်နှင့် အမြတ်
-                      % ကို ပြန်တွက်ပေးပါမည်။
-                    </p>
-                  </div>
-                )}
-                {!result.error && (
-                  <div className="overflow-hidden rounded-2xl border border-blue-200 dark:border-blue-500/25">
-                    <div className="bg-blue-600 p-4 text-white dark:bg-blue-500">
-                      <p className="text-xs font-medium leading-7 text-blue-100">
-                        လက်ရှိသတ်မှတ်ထားသော ရောင်းဈေး
-                      </p>
-                      <p className="mt-1 break-words text-3xl font-bold leading-normal tabular-nums">
-                        {money(result.price!)}
-                      </p>
-                      <p className="mt-1 text-[11px] leading-6 text-blue-100">
-                        တစ်ရောင်းယူနစ် = {inputs.packGrams} {units.small} ·
-                        တွက်ချက်မှုအတွက် ရွေးထားသောဈေး
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 bg-white p-3 dark:bg-slate-950">
-                      <div>
-                        <p className="mb-1 text-[10px] leading-6 text-slate-500">
-                          အမှန်တကယ်ရရှိမည့် Margin
-                        </p>
-                        <MarginStatus
-                          value={result.margin}
-                          minimum={Number(inputs.minimumMargin)}
+                  {!result.error && (
+                    <>
+                      <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+                        <GroupTitle
+                          number="02"
+                          title="ရောင်းဈေးတစ်ခုကို ရွေးပါ"
+                          note="ရည်မှန်း Margin နှင့် ဈေးဝိုင်းပြီးနောက် တကယ်ရမည့် Margin ကို ခွဲပြထားသည်။"
                         />
+                        <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-3">
+                          {result.comparison!.map((option) => {
+                            const selected =
+                              Math.abs(result.price! - option.price) < 0.000001;
+                            return (
+                              <Button
+                                key={option.target}
+                                type="button"
+                                variant="outline"
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  setInputs((current) => ({
+                                    ...current,
+                                    mode: "price",
+                                    sellingPrice: String(option.price),
+                                  }))
+                                }
+                                className={`h-auto min-h-36 min-w-0 flex-col items-stretch gap-2 whitespace-normal rounded-xl px-3 py-3 text-left ${selected ? "border-blue-500 bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/10" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}
+                              >
+                                <span className="flex items-center justify-between gap-1 text-[11px] font-medium leading-6 text-slate-500">
+                                  ရည်မှန်း {option.target}%
+                                  {selected && (
+                                    <CheckCircle2
+                                      aria-label="ရွေးထားသောဈေး"
+                                      className="!size-4 text-blue-600"
+                                    />
+                                  )}
+                                </span>
+                                <strong className="max-w-full break-words text-lg leading-7 tabular-nums text-blue-700 dark:text-blue-300">
+                                  {money(option.price)}
+                                </strong>
+                                <span className="text-[10px] leading-6 text-slate-500">
+                                  တကယ်ရမည့် Margin
+                                </span>
+                                <span
+                                  className={`text-base font-bold tabular-nums ${option.margin != null && option.margin < Number(inputs.minimumMargin) ? "text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"}`}
+                                >
+                                  {percent(option.margin)}
+                                </span>
+                                <span
+                                  className={`text-[10px] leading-6 ${selected ? "font-semibold text-blue-700 dark:text-blue-300" : "text-slate-400"}`}
+                                >
+                                  {selected ? "ရွေးထားပြီး" : "ဤဈေးကို ရွေးရန်"}
+                                </span>
+                              </Button>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div>
-                        <p className="mb-1 text-[10px] leading-6 text-slate-500">
-                          တစ်ယူနစ် အမြတ် / အရှုံး
+                    </>
+                  )}
+                  <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+                    <GroupTitle number="03" title="လျှော့ဈေး စမ်းတွက်ပါ" />
+                    <div className="grid grid-cols-2 items-end gap-4">
+                      {numberField("discount", "လျှော့ဈေး", "%", 99.99)}
+                      <div className="pb-1">
+                        <p className="mb-2 text-[11px] text-slate-500">
+                          လျှော့ပြီးရောင်းဈေး
                         </p>
-                        <p
-                          className={`pt-1 text-lg font-bold leading-8 tabular-nums ${result.profitPerPack! < 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300"}`}
-                        >
-                          {money(result.profitPerPack!)}
+                        <p className="break-words text-lg font-bold tabular-nums">
+                          {result.error ? "—" : money(result.actualPrice!)}
                         </p>
                       </div>
                     </div>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3 sm:grid-cols-2 dark:border-amber-500/20 dark:bg-amber-500/5">
-                  <div>
-                    {numberField(
-                      "minimumMargin",
-                      "သတိပေးရန် အနည်းဆုံး Margin",
-                      "%",
-                      99.99,
-                    )}
-                    <p className="mt-1 text-[10px] leading-6 text-amber-800 dark:text-amber-300">
-                      ဤ % အောက်ကျလျှင် အဝါရောင်ပြမည်။
+                    <p className="mt-3 text-xs leading-6 text-slate-500">
+                      လျှော့ပြီး Margin{" "}
+                      <MarginStatus
+                        value={result.error ? null : result.actualMargin}
+                        minimum={Number(inputs.minimumMargin)}
+                      />
                     </p>
                   </div>
-                  <SelectField
-                    name="rounding"
-                    label="အကြံပြုဈေးကို အပေါ်သို့ဝိုင်းရန်"
-                    value={inputs.rounding || "0"}
-                    onChange={(event) => update("rounding", event.target.value)}
+                  {!result.error && (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                      Margin {inputs.minimumMargin}% ရရန် အနည်းဆုံးဈေး{" "}
+                      <strong>{money(result.minimumPrice!)}</strong>။ လျှော့ဈေး{" "}
+                      {normalizeDiscount(inputs).discount}% ပါပေးလျှင်
+                      မူလသတ်မှတ်ဈေး အနည်းဆုံး{" "}
+                      <strong>{money(result.minimumListPrice!)}</strong>{" "}
+                      ဖြစ်ရပါမည်။
+                    </p>
+                  )}
+                  {result.error && (
+                    <p className="text-xs leading-7 text-amber-700 dark:text-amber-300">
+                      ဝယ်ယူမှုအချက်အလက်များ ပြည့်စုံအောင် အရင်ဖြည့်ပါ။
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="min-h-11 text-xs"
+                    onClick={() => setTab("purchase")}
                   >
-                    <option value="0">မဝိုင်းပါ</option>
-                    {[1, 10, 50, 100, 500, 1000].map((step) => (
-                      <option key={step} value={step}>
-                        {numberFormat.format(step)} {currency} အလိုက်
-                      </option>
-                    ))}
-                  </SelectField>
-                </div>
-                {!result.error && (
-                  <>
-                    <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
-                      <GroupTitle
-                        number="02"
-                        title="ရောင်းဈေးတစ်ခုကို ရွေးပါ"
-                        note="ရည်မှန်း Margin နှင့် ဈေးဝိုင်းပြီးနောက် တကယ်ရမည့် Margin ကို ခွဲပြထားသည်။"
-                      />
-                      <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-3">
-                        {result.comparison!.map((option) => {
-                          const selected =
-                            Math.abs(result.price! - option.price) < 0.000001;
-                          return (
-                            <Button
-                              key={option.target}
-                              type="button"
-                              variant="outline"
-                              aria-pressed={selected}
-                              onClick={() =>
-                                setInputs((current) => ({
-                                  ...current,
-                                  mode: "price",
-                                  sellingPrice: String(option.price),
-                                }))
-                              }
-                              className={`h-auto min-h-36 min-w-0 flex-col items-stretch gap-2 whitespace-normal rounded-xl px-3 py-3 text-left ${selected ? "border-blue-500 bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-500/10" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}
-                            >
-                              <span className="flex items-center justify-between gap-1 text-[11px] font-medium leading-6 text-slate-500">
-                                ရည်မှန်း {option.target}%
-                                {selected && (
-                                  <CheckCircle2
-                                    aria-label="ရွေးထားသောဈေး"
-                                    className="!size-4 text-blue-600"
-                                  />
-                                )}
-                              </span>
-                              <strong className="max-w-full break-words text-lg leading-7 tabular-nums text-blue-700 dark:text-blue-300">
-                                {money(option.price)}
-                              </strong>
-                              <span className="text-[10px] leading-6 text-slate-500">
-                                တကယ်ရမည့် Margin
-                              </span>
-                              <span
-                                className={`text-base font-bold tabular-nums ${option.margin != null && option.margin < Number(inputs.minimumMargin) ? "text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"}`}
-                              >
-                                {percent(option.margin)}
-                              </span>
-                              <span
-                                className={`text-[10px] leading-6 ${selected ? "font-semibold text-blue-700 dark:text-blue-300" : "text-slate-400"}`}
-                              >
-                                {selected ? "ရွေးထားပြီး" : "ဤဈေးကို ရွေးရန်"}
-                              </span>
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
-                <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
-                  <GroupTitle number="03" title="လျှော့ဈေး စမ်းတွက်ပါ" />
-                  <div className="grid grid-cols-2 items-end gap-4">
-                    {numberField("discount", "လျှော့ဈေး", "%", 99.99)}
-                    <div className="pb-1">
-                      <p className="mb-2 text-[11px] text-slate-500">
-                        လျှော့ပြီးရောင်းဈေး
-                      </p>
-                      <p className="break-words text-lg font-bold tabular-nums">
-                        {result.error ? "—" : money(result.actualPrice!)}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-xs leading-6 text-slate-500">
-                    လျှော့ပြီး Margin{" "}
-                    <MarginStatus
-                      value={result.error ? null : result.actualMargin}
-                      minimum={Number(inputs.minimumMargin)}
-                    />
-                  </p>
-                </div>
-                {!result.error && (
-                  <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-                    Margin {inputs.minimumMargin}% ရရန် အနည်းဆုံးဈေး{" "}
-                    <strong>{money(result.minimumPrice!)}</strong>။ လျှော့ဈေး{" "}
-                    {normalizeDiscount(inputs).discount}% ပါပေးလျှင် မူလသတ်မှတ်ဈေး အနည်းဆုံး{" "}
-                    <strong>{money(result.minimumListPrice!)}</strong>{" "}
-                    ဖြစ်ရပါမည်။
-                  </p>
-                )}
-                {result.error && (
-                  <p className="text-xs leading-7 text-amber-700 dark:text-amber-300">
-                    ဝယ်ယူမှုအချက်အလက်များ ပြည့်စုံအောင် အရင်ဖြည့်ပါ။
-                  </p>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="min-h-11 text-xs"
-                  onClick={() => setTab("purchase")}
-                >
-                  <ShoppingCart />
-                  ဝယ်ယူမှု ပြန်ပြင်မည်
-                </Button>
-              </fieldset>
-            </TabsContent>
-          </Tabs>
+                    <ShoppingCart />
+                    ဝယ်ယူမှု ပြန်ပြင်မည်
+                  </Button>
+                </fieldset>
+              </TabsContent>
+            </Tabs>
+          )}
         </Card>
 
         <aside className="min-w-0 min-[1000px]:sticky min-[1000px]:top-20 print:static">
@@ -1741,9 +2000,14 @@ function ProductCalculator({
                   {serverCalculation ? "Server Result" : "Live Estimate"}
                 </span>
               </div>
-              <p className="truncate text-xs text-muted-foreground">{inputs.product || "ပစ္စည်းအမည်"}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {inputs.product || "ပစ္စည်းအမည်"}
+              </p>
               {result.error ? (
-                <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                <div
+                  role="status"
+                  className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+                >
                   <AlertTriangle className="mb-2 size-4" />
                   {result.error}
                 </div>
@@ -1751,46 +2015,84 @@ function ProductCalculator({
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-xl bg-muted/60 p-3">
-                      <p className="text-[10px] text-muted-foreground">ရောင်းနိုင်ပမာဏ</p>
-                      <p className="mt-2 text-xl font-bold tabular-nums">{numberFormat.format(result.packs!)}</p>
-                      <p className="text-[10px] text-muted-foreground">{units.sale}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        ရောင်းနိုင်ပမာဏ
+                      </p>
+                      <p className="mt-2 text-xl font-bold tabular-nums">
+                        {numberFormat.format(result.packs!)}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {units.sale}
+                      </p>
                     </div>
                     <div className="rounded-xl bg-muted/60 p-3">
-                      <p className="text-[10px] text-muted-foreground">တစ်ယူနစ်ကုန်ကျစရိတ်</p>
-                      <p className="mt-2 break-words text-base font-bold tabular-nums">{money(result.costPerPack!)}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        တစ်ယူနစ်ကုန်ကျစရိတ်
+                      </p>
+                      <p className="mt-2 break-words text-base font-bold tabular-nums">
+                        {money(result.costPerPack!)}
+                      </p>
                     </div>
                   </div>
                   <div className="rounded-xl bg-blue-600 p-4 text-white">
-                    <p className="text-[11px] text-blue-100">သတ်မှတ်ရောင်းဈေး</p>
-                    <p className="mt-2 break-words text-2xl font-bold tabular-nums">{money(result.price!)}</p>
-                    <p className="mt-1 text-[10px] text-blue-100">တစ်{units.sale} လျှင်</p>
+                    <p className="text-[11px] text-blue-100">
+                      သတ်မှတ်ရောင်းဈေး
+                    </p>
+                    <p className="mt-2 break-words text-2xl font-bold tabular-nums">
+                      {money(result.price!)}
+                    </p>
+                    <p className="mt-1 text-[10px] text-blue-100">
+                      တစ်{units.sale} လျှင်
+                    </p>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="min-w-0 rounded-xl border p-3">
-                      <p className="mb-2 text-[10px] text-muted-foreground">Margin</p>
-                      <MarginStatus value={result.margin} minimum={Number(inputs.minimumMargin)} />
+                      <p className="mb-2 text-[10px] text-muted-foreground">
+                        Margin
+                      </p>
+                      <MarginStatus
+                        value={result.margin}
+                        minimum={Number(inputs.minimumMargin)}
+                      />
                     </div>
                     <div className="min-w-0 rounded-xl border p-3">
-                      <p className="text-[10px] text-muted-foreground">ခန့်မှန်းအမြတ်</p>
-                      <p className={`mt-2 break-words text-base font-bold tabular-nums ${result.totalProfit! < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                      <p className="text-[10px] text-muted-foreground">
+                        ခန့်မှန်းအမြတ်
+                      </p>
+                      <p
+                        className={`mt-2 break-words text-base font-bold tabular-nums ${result.totalProfit! < 0 ? "text-rose-600" : "text-emerald-600"}`}
+                      >
                         {money(result.totalProfit!)}
                       </p>
                     </div>
                   </div>
                   <details className="rounded-xl border p-3">
-                    <summary className="cursor-pointer text-xs font-medium">အသေးစိတ်ရလဒ်များ</summary>
+                    <summary className="cursor-pointer text-xs font-medium">
+                      အသေးစိတ်ရလဒ်များ
+                    </summary>
                     <div className="mt-2 divide-y divide-border">
                       <Row label="ဝယ်ဈေး">{money(result.purchaseTotal!)}</Row>
-                      <Row label="ထုပ်ပိုးခ">{money(result.packagingCost!)}</Row>
+                      <Row label="ထုပ်ပိုးခ">
+                        {money(result.packagingCost!)}
+                      </Row>
                       <Row label="ရောင်းရငွေ">{money(result.revenue!)}</Row>
-                      <Row label="လျှော့ဈေးပြီး အမြတ်">{money(result.actualProfit!)}</Row>
-                      <Row label="လျှော့ဈေးပြီး Margin">{percent(result.actualMargin)}</Row>
-                      <Row label="လက်ကျန်ပမာဏ">{numberFormat.format(result.remainderBase!)} {units.small}</Row>
+                      <Row label="လျှော့ဈေးပြီး အမြတ်">
+                        {money(result.actualProfit!)}
+                      </Row>
+                      <Row label="လျှော့ဈေးပြီး Margin">
+                        {percent(result.actualMargin)}
+                      </Row>
+                      <Row label="လက်ကျန်ပမာဏ">
+                        {numberFormat.format(result.remainderBase!)}{" "}
+                        {units.small}
+                      </Row>
                     </div>
                   </details>
                 </>
               )}
-              <p className="text-[10px] leading-6 text-muted-foreground">ခန့်မှန်းချက်သာဖြစ်သည်။ Stock နှင့် Product ဈေးကို မပြောင်းပါ။</p>
+              <p className="text-[10px] leading-6 text-muted-foreground">
+                ခန့်မှန်းချက်သာဖြစ်သည်။ Stock နှင့် Product ဈေးကို မပြောင်းပါ။
+              </p>
             </CardContent>
           </Card>
         </aside>
@@ -1800,19 +2102,7 @@ function ProductCalculator({
 }
 
 type ProductEntry = { id: string; inputs: Inputs };
-const blankInputs: Inputs = {
-  ...initial,
-  product: "",
-  weightKg: "",
-  purchase: "",
-  processing: "0",
-  lossKg: "0",
-  packGrams: "",
-  packaging: "0",
-  sellingPrice: "",
-  targetPercent: "25",
-  discount: "0",
-};
+const blankInputs: Inputs = { ...initial };
 
 function validateDraftInputs(value: unknown): value is Inputs {
   if (!value || typeof value !== "object") return false;
@@ -2008,7 +2298,7 @@ function ConnectedCostingPage() {
       : null;
   const money = (value: number) => sheetMoney(currency, value);
   const visibleItems = items.filter((item) =>
-    `${item.inputs.product} ${productTypes.find((t) => t.value === item.inputs.productType)?.label || ""}`
+    `${item.inputs.product} ${costingTypeChoices.find((t) => t.value === selectedCostingType(item.inputs))?.label || ""}`
       .toLocaleLowerCase()
       .includes(search.trim().toLocaleLowerCase()),
   );
@@ -2805,6 +3095,8 @@ function ConnectedCostingPage() {
       </details>
       {active ? (
         <ProductCalculator
+          onSave={() => void saveDraft()}
+          saveDisabled={busy || blocked || finalized}
           key={active.id}
           inputs={active.inputs}
           setInputs={updateActive}

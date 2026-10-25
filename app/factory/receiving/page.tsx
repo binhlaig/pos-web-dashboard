@@ -76,7 +76,53 @@ type Pending = {
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(n);
 const money = (currency: string, n: number) =>
-  `${new Intl.NumberFormat("en-US", { maximumFractionDigits: ["JPY", "MMK"].includes(currency) ? 0 : 2 }).format(n)} ${currency}`;
+  `${new Intl.NumberFormat("en-US", { maximumFractionDigits: ["JPY", "MMK"].includes(currency) ? 0 : 2 }).format(n)} ${currency === "MMK" ? "ကျပ်" : currency}`;
+// Costing VISS uses exact whole kyattha under the existing named COUNT unit.
+function isVissBasis(bulk?: Source["bulk"]): boolean {
+  return !!bulk && bulk.packageUnit === "ပိဿာ" && bulk.baseUnit === "ကျပ်သား" &&
+    totalFor("1", bulk.quantityPerPackage) === "100";
+}
+function kyatthaAsViss(value: string): string | null {
+  if (!/^\d+(?:\.0{1,6})?$/.test(value)) return null;
+  const count = BigInt(value.split(".")[0]);
+  const viss = count / BigInt(100), loose = count % BigInt(100);
+  return `${viss.toLocaleString("en-US")} ပိဿာ${loose ? ` ${loose} ကျပ်သား` : ""}`;
+}
+function packageVissTotal(packages: string, eachViss: string) {
+  if (![packages, eachViss].every(v => /^[1-9]\d{0,11}$/.test(v)))
+    throw new Error("အထုပ်အရေအတွက်နှင့် တစ်ထုပ်ပါ ပိဿာကို အပေါင်းအပြည့်ကိန်းဖြည့်ပါ။");
+  const total = BigInt(packages) * BigInt(eachViss);
+  if (total > BigInt("999999999999")) throw new Error("စုစုပေါင်း ပိဿာ ကန့်သတ်ချက်ကျော်ပါသည်။");
+  return {viss:String(total),kyattha:String(total * BigInt(100))};
+}
+function withoutPackageNote(note: string): string {
+  return note.split("\n").filter(line => !line.startsWith("အထုပ်မှတ်ချက်:")).join("\n").trimEnd();
+}
+function VissPackageCalculator({disabled,onApply}: {
+  disabled:boolean;onApply:(viss:string,note:string)=>void;
+}) {
+  const id=React.useId();
+  const [packages,setPackages]=React.useState("");
+  const [each,setEach]=React.useState("");
+  const [unit,setUnit]=React.useState("အိတ်");
+  let preview:ReturnType<typeof packageVissTotal>|null=null,error="";
+  try {preview=packageVissTotal(packages,each);} catch(e){if(packages||each)error=e instanceof Error?e.message:"ပမာဏစစ်ပါ။";}
+  return <details className="rounded-xl border border-blue-200 p-3">
+    <summary className="cursor-pointer text-xs font-semibold leading-7">အိတ် / ပုံး / ဖာ အလိုက် ရောက်ရှိပမာဏတွက်ရန်</summary>
+    <fieldset disabled={disabled} className="mt-3 space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5"><Label htmlFor={`${id}-unit`}>အပြင်အထုပ်အမျိုးအစား</Label><select id={`${id}-unit`} value={unit} onChange={e=>setUnit(e.target.value)} className="h-11 w-full rounded-md border bg-background px-3">{["အိတ်","ပုံး","ကတ်","ဖာ","အထုပ်"].map(u=><option key={u}>{u}</option>)}</select></div>
+        <div className="space-y-1.5"><Label htmlFor={`${id}-count`}>ရောက်ရှိသောအထုပ်အရေအတွက်</Label><Input id={`${id}-count`} type="number" min="1" step="1" inputMode="numeric" value={packages} onChange={e=>setPackages(e.target.value)} placeholder="ဥပမာ 10" className="h-11"/></div>
+        <div className="space-y-1.5"><Label htmlFor={`${id}-each`}>တစ်အထုပ်ပါ ပိဿာ</Label><Input id={`${id}-each`} type="number" min="1" step="1" inputMode="numeric" value={each} onChange={e=>setEach(e.target.value)} placeholder="ဥပမာ 20" className="h-11"/></div>
+      </div>
+      {error && <p role="alert" className="text-xs leading-7 text-destructive">{error}</p>}
+      {preview && <p className="rounded-xl bg-blue-50 p-3 text-sm font-semibold leading-7 text-blue-900">{packages} {unit} × {each} ပိဿာ = {displayDecimal(preview.viss)} ပိဿာ / {displayDecimal(preview.kyattha)} ကျပ်သား</p>}
+      <Button type="button" variant="outline" disabled={disabled||!preview} onClick={()=>{if(preview)onApply(preview.viss,`အထုပ်မှတ်ချက်: ${packages} ${unit} × ${each} ပိဿာ = ${preview.viss} ပိဿာ (${preview.kyattha} ကျပ်သား)`);}}>စုစုပေါင်းပိဿာကို အသုံးပြုမည်</Button>
+      <p className="text-xs leading-7 text-muted-foreground">သိမ်းရာတွင် ပိဿာစုစုပေါင်းကို သုံးမည်။ အပြင်အထုပ်အသေးစိတ်ကို မှတ်ချက်တွင် ထည့်ပေးမည်။</p>
+    </fieldset>
+  </details>;
+}
+
 function today() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -169,6 +215,7 @@ function validate(s: Source | null, f: Fields) {
     (!validDate(f.expiryDate) || f.expiryDate < f.receivedDate)
   )
     e.expiryDate = "သက်တမ်းကုန်ရက်သည် လက်ခံရက်ထက် မစောရပါ။";
+  if (f.note.length > 2000) e.note = "မှတ်ချက် စာလုံး 2,000 ထက် မကျော်ရပါ။";
   return e;
 }
 function Section({
@@ -461,6 +508,7 @@ function Workspace({ identity }: { identity: string }) {
   // Package receipts and finished-output quantities are different units.
   const bulkReady = isBulkReady(source);
   const bulkMeta = source?.bulk;
+  const vissBasis = isVissBasis(bulkMeta);
   const bulkTotal = bulkMeta
     ? totalFor(form.actual, bulkMeta.quantityPerPackage)
     : null;
@@ -647,6 +695,7 @@ function Workspace({ identity }: { identity: string }) {
       ...f,
       [k]: v,
       ...(k === "warehouseId" ? { locationId: "" } : {}),
+      ...(k === "actual" && v !== f.actual ? {note: withoutPackageNote(f.note)} : {}),
     }));
     setErrors((e) => ({ ...e, [k]: undefined }));
   }
@@ -1272,23 +1321,23 @@ function Workspace({ identity }: { identity: string }) {
           </Section>
           <Section
             number="02"
-            title="Costing မှ မူလအထုပ်အချက်အလက်"
+            title={vissBasis ? "Costing မှ ပိဿာအခြေခံအချက်အလက်" : "Costing မှ မူလအထုပ်အချက်အလက်"}
             extra={<LockKeyhole className="size-4 text-muted-foreground" />}
           >
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {[
-                { label: "အထုပ်အမျိုးအစား", value: bulkMeta?.packageUnit },
+                { label: vissBasis ? "အခြေခံယူနစ်" : "အထုပ်အမျိုးအစား", value: bulkMeta?.packageUnit },
                 {
-                  label: "တစ်အထုပ်ပါဝင်မှု",
+                  label: vissBasis ? "တစ်ပိဿာပါဝင်မှု" : "တစ်အထုပ်ပါဝင်မှု",
                   value: bulkMeta
                     ? `${displayDecimal(bulkMeta.quantityPerPackage)} ${bulkMeta.baseUnit}`
                     : undefined,
                 },
                 {
-                  label: "တစ်အထုပ်ဝယ်ဈေး",
+                  label: vissBasis ? "တစ်ပိဿာ ဝယ်ဈေးကိုးကား" : "တစ်အထုပ်ဝယ်ဈေး",
                   value:
                     bulkMeta && source
-                      ? `${displayDecimal(bulkMeta.purchaseCostPerPackage)} ${source.currency}`
+                      ? `${displayDecimal(bulkMeta.purchaseCostPerPackage)} ${source.currency === "MMK" ? "ကျပ်" : source.currency}`
                       : undefined,
                 },
               ].map((i) => (
@@ -1338,7 +1387,7 @@ function Workspace({ identity }: { identity: string }) {
             >
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
-                  label={`ရောက်ရှိသော အထုပ်အရေအတွက် (${bulkMeta?.packageUnit || "အထုပ်"}) *`}
+                  label={vissBasis ? "စုစုပေါင်း လက်ခံရရှိသော ပိဿာ *" : `ရောက်ရှိသော အထုပ်အရေအတွက် (${bulkMeta?.packageUnit || "အထုပ်"}) *`}
                   error={errors.actual}
                 >
                   <Input
@@ -1358,6 +1407,18 @@ function Workspace({ identity }: { identity: string }) {
                     : "အထုပ်အရေအတွက် ဖြည့်ပါ။"}
                 </div>
               </div>
+              {vissBasis && <>
+                <p className="rounded-xl border bg-muted/40 p-3 text-xs leading-7">1 ပိဿာ = 100 ကျပ်သား။ ပိဿာအပြည့်ကိန်းကိုသာ လက်ရှိ API တွင် သိမ်းနိုင်ပါသည်။ ဥပမာ 1 ပိဿာ 25 ကျပ်သားကို 2 ပိဿာအဖြစ် ဝိုင်းမသိမ်းပါနှင့်။ kg / g သို့ အလိုအလျောက် မပြောင်းပါ။</p>
+                <VissPackageCalculator key={`${source?.costingSheetId}:${source?.costingItemId}:${source?.sourceVersion}:${record?.id ?? "new"}`} disabled={readOnly||disabled} onApply={(viss,note)=>{
+                  if (readOnly||disabled) return;
+                  const previousNote=withoutPackageNote(form.note);
+                  const nextNote=previousNote ? `${previousNote}\n${note}` : note;
+                  if(nextNote.length>2000){setNotice("အထုပ်မှတ်ချက် ထည့်ရန် မှတ်ချက်နေရာ မလုံလောက်ပါ။ မူလမှတ်ချက်ကို တိုအောင်ပြင်ပြီး ပြန်တွက်ပါ။");return;}
+                  setForm(current=>({...current,actual:viss,note:nextNote}));
+                  setErrors(current=>({...current,actual:undefined,note:undefined}));
+                  setNotice("ပိဿာစုစုပေါင်း ဖြည့်ပြီးပါပြီ။ ဂိုဒေါင်၊ Batch နှင့် ပမာဏကို စစ်ပြီးမှ သိမ်းပါ။");
+                }}/>
+              </>}
               <p className="text-xs leading-7 text-muted-foreground">
                 လက်ခံခြင်းတွင် ခွဲထုတ်မည့် အိတ်ငယ်အရေအတွက် သို့မဟုတ် Production
                 အလေအလွင့်ကို မဖြည့်ပါ။
@@ -1440,7 +1501,7 @@ function Workspace({ identity }: { identity: string }) {
                   />
                 </Field>
               </div>
-              <Field label="မှတ်ချက် (လိုအပ်လျှင်)">
+              <Field label="မှတ်ချက် (လိုအပ်လျှင်)" error={errors.note}>
                 <Input
                   className="h-11"
                   value={form.note}
@@ -1521,7 +1582,7 @@ function Workspace({ identity }: { identity: string }) {
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-xl bg-blue-50 p-3 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-                      <p className="text-xs leading-6">အထုပ်ကြီး</p>
+                      <p className="text-xs leading-6">{vissBasis ? "လက်ခံရရှိသော ပိဿာ" : "အထုပ်ကြီး"}</p>
                       <p className="mt-2 break-words text-2xl font-bold">
                         {actual !== null ? fmt(actual) : "—"}{" "}
                         <span className="text-sm">
@@ -1537,13 +1598,14 @@ function Workspace({ identity }: { identity: string }) {
                       </p>
                     </div>
                   </div>
+                  {bulkMeta?.baseUnit === "ကျပ်သား" && bulkTotal && <p className="rounded-xl border border-emerald-200 p-3 text-sm font-semibold leading-7 text-emerald-800 dark:text-emerald-300">ပိဿာဖြင့် — {kyatthaAsViss(bulkTotal) ?? "—"}</p>}
                   <div className="rounded-xl bg-muted/60 p-3">
                     <p className="text-xs text-muted-foreground">
                       ဝယ်ယူကိုးကားတန်ဖိုး
                     </p>
                     <p className="mt-1 break-words text-lg font-bold tabular-nums">
                       {bulkValue && source
-                        ? `${displayDecimal(bulkValue)} ${source.currency}`
+                        ? `${displayDecimal(bulkValue)} ${source.currency === "MMK" ? "ကျပ်" : source.currency}`
                         : "—"}
                     </p>
                     <p className="mt-1 text-[10px] leading-6 text-muted-foreground">

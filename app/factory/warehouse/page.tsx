@@ -1,150 +1,263 @@
 "use client";
 import * as React from "react";
 import { useSession } from "next-auth/react";
-import Link from "next/link";
 import { useZxing } from "react-zxing";
 import {
+  Barcode,
   Camera,
   Search,
-  MapPin,
-  Clock3,
-  Boxes,
-  Database,
-  Info,
-  Cog,
-  Warehouse,
+  ListFilter,
   Package,
-  RefreshCw,
-  ArrowDownLeft,
-  ArrowUpRight,
-  Link2,
-  Wifi,
+  LockKeyhole,
+  Warehouse,
+  History,
+  Save,
+  Check,
+  Plus,
+  AlertTriangle,
   Loader2,
+  ArrowLeft,
+  ArrowRight,
+  RefreshCw,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
+  Settings2,
+  MoreHorizontal,
+  ClipboardCheck,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  StockError,
-  requestJson as api,
+  receivingRequest as api,
+  ReceivingError,
+  decodeSource,
+  decodeReceipt,
   decodePlaces,
-  decodeBalances,
-  decodeMovements,
-  decodeProducts,
-  decodeReceiptOptions,
+  decodePage,
+  sourceOf,
+  photoCandidates,
+  type Source,
+  type Receipt,
   type Place,
-  type StockPage,
-  type PosProduct,
-  type ReceiptOption,
-} from "@/lib/factory-stock-api";
-import { receivingRequest, decodeSource, photoOf } from "@/lib/receiving-api";
+  type Save as SavePayload,
+  type Paged,
+  isBulkReady,
+  totalFor,
+  displayDecimal,
+} from "@/lib/receiving-bulk-api";
 
-import {
-  bulkBalances,
-  decimal,
-  bulkReceivingHistory,
-  confirmedBulkReceipts,
-  quantity,
-  isPositive,
-  packageRemainder,
-  rowKey,
-  stockKey,
-  type WarehouseBalance as BulkBalance,
-  type WarehouseMovement as Movement,
-} from "@/lib/factory-warehouse-bulk";
-
-import type { Receipt } from "@/lib/receiving-bulk-api";
-
-type Balance = BulkBalance & {
-  productionConsumedQuantity?: string | null;
-};
-// V46 Bulk balance totals are exact decimal strings. A missing total is unknown,
-// not zero; remaining stock has already been reduced by the backend.
-function stockTotal(row: Record<string, unknown>, field: string): string | null {
-  if (row[field] == null) return null;
-  const value = decimal(row[field]);
-  if (value.startsWith("-"))
-    throw new StockError(`Bulk Stock ${field} ပမာဏ အနုတ်ဖြစ်နေပါသည်။`, 502);
-  return value;
-}
-function warehouseBulkBalances(
-  raw: unknown,
-  receipts: Receipt[],
-  filters: Filters,
-  page: number,
-  size: number,
-): StockPage<Balance> {
-  if (!Array.isArray(raw))
-    throw new StockError("Bulk balance API မှ array response လိုအပ်ပါသည်။", 502);
-  const rows: Record<string, unknown>[] = raw.map((value: unknown) => {
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new StockError("Bulk Stock response ပုံစံ မမှန်ပါ။", 502);
-    const row = value as Record<string, unknown>;
-    return {
-      ...row,
-      // Prefer the explicit current balance; never subtract consumed quantity here.
-      base_quantity: stockTotal(row, "remaining_quantity") ?? row.base_quantity ?? row.quantity,
-    };
-  });
-  // The existing decoder validates every stock identity, conversion and balance.
-  const result = bulkBalances(rows, receipts, filters, page, size);
-  const byKey = new Map(rows.map(row => [stockKey({
-    itemId: row.item_id as number,
-    sourceVersion: row.source_version as number,
-    warehouseId: row.warehouse_id as number,
-    locationId: row.location_id as number,
-    batch: row.batch as string,
-  }), row]));
-  return { ...result, content: result.content.map(balance => {
-    const row = byKey.get(stockKey(balance))!;
-    return {
-      ...balance,
-      // Use audited server totals, keeping immutable Receiving sums as a legacy fallback.
-      receivedQuantity: stockTotal(row, "received_quantity") ?? balance.receivedQuantity,
-      productionConsumedQuantity: stockTotal(row, "production_consumed_quantity"),
-    };
-  }) };
-}
-
-type StockKind = "BULK" | "FINISHED";
-type Filters = {
-  search: string;
+type Fields = {
+  actual: string;
+  reason: string;
+  batch: string;
   warehouseId: string;
   locationId: string;
-  batch: string;
+  receivedDate: string;
+  expiryDate: string;
+  note: string;
 };
-type Result =
-  | { key: string; kind: "balances"; data: StockPage<Balance> }
-  | { key: string; kind: "history"; data: StockPage<Movement> };
-const emptyFilters: Filters = {
-  search: "",
-  warehouseId: "",
-  locationId: "",
-  batch: "",
+type Pending = {
+  path: string;
+  method: "POST" | "PUT";
+  body: SavePayload | { version: number; stockKind: "BULK" };
+  key?: string;
 };
-const SIZE = 10;
-const ACTIVITY_SIZE = 3;
-const fieldClass =
-  "h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm";
+const fmt = (n: number) =>
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(n);
+const money = (currency: string, n: number) =>
+  `${new Intl.NumberFormat("en-US", { maximumFractionDigits: ["JPY", "MMK"].includes(currency) ? 0 : 2 }).format(n)} ${currency === "MMK" ? "ကျပ်" : currency}`;
+// Costing VISS uses exact whole kyattha under the existing named COUNT unit.
+function isVissBasis(bulk?: Source["bulk"]): boolean {
+  return !!bulk && bulk.packageUnit === "ပိဿာ" && bulk.baseUnit === "ကျပ်သား" &&
+    totalFor("1", bulk.quantityPerPackage) === "100";
+}
+function kyatthaAsViss(value: string): string | null {
+  if (!/^\d+(?:\.0{1,6})?$/.test(value)) return null;
+  const count = BigInt(value.split(".")[0]);
+  const viss = count / BigInt(100), loose = count % BigInt(100);
+  return `${viss.toLocaleString("en-US")} ပိဿာ${loose ? ` ${loose} ကျပ်သား` : ""}`;
+}
+function packageVissTotal(packages: string, eachViss: string) {
+  if (![packages, eachViss].every(v => /^[1-9]\d{0,11}$/.test(v)))
+    throw new Error("အထုပ်အရေအတွက်နှင့် တစ်ထုပ်ပါ ပိဿာကို အပေါင်းအပြည့်ကိန်းဖြည့်ပါ။");
+  const total = BigInt(packages) * BigInt(eachViss);
+  if (total > BigInt("999999999999")) throw new Error("စုစုပေါင်း ပိဿာ ကန့်သတ်ချက်ကျော်ပါသည်။");
+  return {viss:String(total),kyattha:String(total * BigInt(100))};
+}
+function withoutPackageNote(note: string): string {
+  return note.split("\n").filter(line => !line.startsWith("အထုပ်မှတ်ချက်:")).join("\n").trimEnd();
+}
+function VissPackageCalculator({disabled,onApply}: {
+  disabled:boolean;onApply:(viss:string,note:string)=>void;
+}) {
+  const id=React.useId();
+  const [packages,setPackages]=React.useState("");
+  const [each,setEach]=React.useState("");
+  const [unit,setUnit]=React.useState("အိတ်");
+  let preview:ReturnType<typeof packageVissTotal>|null=null,error="";
+  try {preview=packageVissTotal(packages,each);} catch(e){if(packages||each)error=e instanceof Error?e.message:"ပမာဏစစ်ပါ။";}
+  return <details className="rounded-xl border border-blue-200 p-3">
+    <summary className="cursor-pointer text-xs font-semibold leading-7">အိတ် / ပုံး / ဖာ အလိုက် ရောက်ရှိပမာဏတွက်ရန်</summary>
+    <fieldset disabled={disabled} className="mt-3 space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5"><Label htmlFor={`${id}-unit`}>အပြင်အထုပ်အမျိုးအစား</Label><select id={`${id}-unit`} value={unit} onChange={e=>setUnit(e.target.value)} className="h-11 w-full rounded-md border bg-background px-3">{["အိတ်","ပုံး","ကတ်","ဖာ","အထုပ်"].map(u=><option key={u}>{u}</option>)}</select></div>
+        <div className="space-y-1.5"><Label htmlFor={`${id}-count`}>ရောက်ရှိသောအထုပ်အရေအတွက်</Label><Input id={`${id}-count`} type="number" min="1" step="1" inputMode="numeric" value={packages} onChange={e=>setPackages(e.target.value)} placeholder="ဥပမာ 10" className="h-11"/></div>
+        <div className="space-y-1.5"><Label htmlFor={`${id}-each`}>တစ်အထုပ်ပါ ပိဿာ</Label><Input id={`${id}-each`} type="number" min="1" step="1" inputMode="numeric" value={each} onChange={e=>setEach(e.target.value)} placeholder="ဥပမာ 20" className="h-11"/></div>
+      </div>
+      {error && <p role="alert" className="text-xs leading-7 text-destructive">{error}</p>}
+      {preview && <p className="rounded-xl bg-blue-50 p-3 text-sm font-semibold leading-7 text-blue-900">{packages} {unit} × {each} ပိဿာ = {displayDecimal(preview.viss)} ပိဿာ / {displayDecimal(preview.kyattha)} ကျပ်သား</p>}
+      <Button type="button" variant="outline" disabled={disabled||!preview} onClick={()=>{if(preview)onApply(preview.viss,`အထုပ်မှတ်ချက်: ${packages} ${unit} × ${each} ပိဿာ = ${preview.viss} ပိဿာ (${preview.kyattha} ကျပ်သား)`);}}>စုစုပေါင်းပိဿာကို အသုံးပြုမည်</Button>
+      <p className="text-xs leading-7 text-muted-foreground">သိမ်းရာတွင် ပိဿာစုစုပေါင်းကို သုံးမည်။ အပြင်အထုပ်အသေးစိတ်ကို မှတ်ချက်တွင် ထည့်ပေးမည်။</p>
+    </fieldset>
+  </details>;
+}
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function key() {
+  return crypto.randomUUID();
+}
+function blank(): Fields {
+  return {
+    actual: "",
+    reason: "",
+    batch: "",
+    warehouseId: "",
+    locationId: "",
+    receivedDate: today(),
+    expiryDate: "",
+    note: "",
+  };
+}
+function fromReceipt(r: Receipt): Fields {
+  return {
+    actual:
+      r.stockKind === "BULK"
+        ? String(r.bulkPackageCount)
+        : String(r.actualQuantity),
+    reason: r.varianceReason || "",
+    batch: r.batch,
+    warehouseId: String(r.warehouseId),
+    locationId: String(r.locationId),
+    receivedDate: r.receivedDate,
+    expiryDate: r.expiryDate || "",
+    note: r.note || "",
+  };
+}
+// Receiving history uses substring barcode search. Filter exact codes locally and
+// read every result page so older drafts/confirmed receipts are not missed.
+async function activeReceipts(
+  barcode?: string,
+  signal?: AbortSignal,
+): Promise<Receipt[]> {
+  const found = new Map<number, Receipt>();
+  for (let page = 0; ; page++) {
+    const q = new URLSearchParams({ page: String(page), size: "100" });
+    if (barcode) q.set("barcode", barcode);
+    const result = decodePage(await api(`?${q}`, { signal }), decodeReceipt);
+    if (result.number !== page)
+      throw new Error("Receiving history page မမှန်ပါ။");
+    for (const r of result.content)
+      if (r.status !== "CANCELLED" && (!barcode || r.barcode === barcode))
+        found.set(r.id, r);
+    if (page + 1 >= result.totalPages) return [...found.values()];
+    if (!result.content.length)
+      throw new Error("Receiving history မပြည့်စုံပါ။ ပြန်တင်ပြီး စစ်ပါ။");
+  }
+}
+
+function validDate(s: string) {
+  const d = new Date(`${s}T12:00:00`);
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    Number.isFinite(d.getTime()) &&
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` ===
+      s
+  );
+}
+function validate(s: Source | null, f: Fields) {
+  const e: Partial<Record<keyof Fields | "product", string>> = {};
+  const n = Number(f.actual);
+  if (!s) e.product = "ပစ္စည်းအရင်ရွေးပါ။";
+  if (!/^\d+$/.test(f.actual) || !Number.isSafeInteger(n) || n <= 0)
+    e.actual = "မှန်ကန်သော အပေါင်းအပြည့်ကိန်း ဖြည့်ပါ။";
+  if (s && !isBulkReady(s))
+    e.product =
+      "ဆာဗာဘက်တွင် အထုပ်ကြီးလက်ခံမှု မချိတ်ရသေးပါ။ Bulk Receiving API ချိတ်ပြီးမှ Server မူကြမ်းသိမ်းနိုင်ပါမည်။";
+  if (f.actual.length > 12) e.actual = "အထုပ်အရေအတွက် အလွန်များပါသည်။";
+  if (
+    s?.bulk &&
+    (!totalFor(f.actual, s.bulk.quantityPerPackage) ||
+      !totalFor(f.actual, s.bulk.purchaseCostPerPackage))
+  )
+    e.actual = "စုစုပေါင်းပမာဏ / တန်ဖိုး ကန့်သတ်ချက်ကို စစ်ပါ။";
+  if (!f.batch.trim() || f.batch.length > 100)
+    e.batch = "Batch 1–100 စာလုံး ဖြည့်ပါ။";
+  if (!f.warehouseId) e.warehouseId = "ဂိုဒေါင်ရွေးပါ။";
+  if (!f.locationId) e.locationId = "သိုလှောင်နေရာရွေးပါ။";
+  if (!validDate(f.receivedDate) || f.receivedDate < "1900-01-01")
+    e.receivedDate = "လက်ခံရက် စစ်ပါ။";
+  if (
+    f.expiryDate &&
+    (!validDate(f.expiryDate) || f.expiryDate < f.receivedDate)
+  )
+    e.expiryDate = "သက်တမ်းကုန်ရက်သည် လက်ခံရက်ထက် မစောရပါ။";
+  if (f.note.length > 2000) e.note = "မှတ်ချက် စာလုံး 2,000 ထက် မကျော်ရပါ။";
+  return e;
+}
+function Section({
+  number,
+  title,
+  children,
+  extra,
+}: {
+  number: string;
+  title: string;
+  children: React.ReactNode;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <Card className="gap-0 rounded-2xl py-0 shadow-none">
+      <CardContent className="space-y-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-3 text-sm font-semibold leading-7">
+            <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-blue-600 font-sans text-white">
+              {number}
+            </span>
+            {title}
+          </h2>
+          {extra}
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
 function Field({
   label,
+  error,
   children,
 }: {
   label: string;
-  children: React.ReactElement<{ id?: string }>;
+  error?: string;
+  children: React.ReactElement<{
+    id?: string;
+    "aria-invalid"?: boolean;
+    "aria-describedby"?: string;
+  }>;
 }) {
   const id = React.useId();
   return (
@@ -152,350 +265,59 @@ function Field({
       <Label htmlFor={id} className="text-xs leading-6">
         {label}
       </Label>
-      {React.cloneElement(children, { id })}
-    </div>
-  );
-}
-function ProductImage({
-  product,
-  imageUrl,
-  compact = false,
-  tile = false,
-}: {
-  product: Balance | Movement;
-  imageUrl?: string | null;
-  compact?: boolean;
-  tile?: boolean;
-}) {
-  const urls =
-    product.stockKind === "BULK"
-      ? (product.imageUrls ?? [])
-      : imageUrl
-        ? [imageUrl]
-        : [];
-  const urlsKey = JSON.stringify(urls);
-  const [attempt, setAttempt] = React.useState({ key: urlsKey, index: 0 });
-  const index = attempt.key === urlsKey ? attempt.index : 0;
-  const src = urls[index];
-  return (
-    <div
-      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-muted/50 ${compact ? "size-14" : tile ? "h-28 w-full bg-transparent" : "aspect-square w-full"}`}
-    >
-      {src ? (
-        // Native img supports API image hosts without Next.js remotePatterns configuration.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt={product.name}
-          loading="lazy"
-          onError={() => setAttempt({ key: urlsKey, index: index + 1 })}
-          className={`pointer-events-none absolute inset-0 h-full w-full select-none object-contain transition duration-300 group-hover:scale-105 ${compact ? "p-1" : tile ? "p-2" : "p-4"}`}
-        />
-      ) : (
-        <div className="flex flex-col items-center gap-2 text-muted-foreground">
-          <Package
-            className={compact ? "size-6 opacity-40" : "size-14 opacity-40"}
-          />
-          {!compact && <span className="text-xs">ပုံမရှိသေးပါ</span>}
-        </div>
+      {React.cloneElement(children, {
+        id,
+        "aria-invalid": !!error,
+        "aria-describedby": error ? `${id}-error` : undefined,
+      })}
+      {error && (
+        <p id={`${id}-error`} className="text-xs text-destructive">
+          {error}
+        </p>
       )}
     </div>
   );
 }
-
-function ProductDetail({
-  product,
-  imageUrl,
-  warehouse,
-  location,
-}: {
-  product: Balance | Movement;
-  imageUrl?: string | null;
-  warehouse: string;
-  location: string;
-}) {
-  const [section, setSection] = React.useState("overview");
-  const [fieldPage, setFieldPage] = React.useState(0);
-  const fields = Object.entries(product);
-  const fieldPages = Math.ceil(fields.length / 4);
-  const facts = [
-    ["Barcode", product.barcode],
-    ["ဂိုဒေါင်", warehouse],
-    ["နေရာ", location],
-    ["Batch", product.batch || "—"],
-    ["ပစ္စည်း ID", "itemId" in product ? String(product.itemId) : "—"],
-    ["ယူနစ်", product.unit],
-    ...(product.stockKind === "BULK"
-      ? [
-          [
-            "မူလအထုပ်တစ်ခု",
-            `${quantity(product.quantityPerPackage!)} ${product.unit} / ${product.packageUnit}`,
-          ],
-        ]
-      : []),
-  ];
+function Photo({ source }: { source: Source }) {
+  const urls = photoCandidates(source);
+  // A new source/URL list remounts the loader, including after History reopen.
   return (
-    <div className="grid min-w-0 grid-cols-1 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)] sm:gap-5">
-      <div className="min-w-0 space-y-3">
-        <div className="overflow-hidden rounded-xl border">
-          <ProductImage product={product} imageUrl={imageUrl} />
-        </div>
-        <div className="rounded-xl bg-emerald-50 p-3 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-          <p className="text-[11px] leading-6">
-            {"quantity" in product ? "လက်ရှိလက်ကျန်" : "ဝင် / ထွက်ပမာဏ"}
-          </p>
-          <p className="break-all text-lg font-bold tabular-nums sm:text-2xl">
-            {quantity("quantity" in product ? product.quantity : product.delta)}{" "}
-            <span className="text-xs font-normal">{product.unit}</span>
-          </p>
-        </div>
-      </div>
-      <div className="min-w-0 space-y-3">
-        <Tabs value={section} onValueChange={setSection}>
-          <TabsList className="h-auto w-full flex-wrap">
-            <TabsTrigger value="overview" className="min-h-9 text-xs">
-              အကျဉ်းချုပ်
-            </TabsTrigger>
-            <TabsTrigger value="all" className="min-h-9 text-xs">
-              အချက်အလက်အားလုံး
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        {section === "overview" ? (
-          <>
-            <dl className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
-              {facts.map(([label, value]) => (
-                <div
-                  key={label}
-                  className="min-w-0 rounded-lg bg-muted/50 px-3 py-2"
-                >
-                  <dt className="text-[10px] leading-5 text-muted-foreground">
-                    {label}
-                  </dt>
-                  <dd
-                    title={value}
-                    className="line-clamp-2 break-all text-xs font-medium leading-6"
-                  >
-                    {value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {"quantity" in product ? (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-lg bg-blue-50 p-2 leading-6 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
-                  မူလအဝင်
-                  <p className="break-all font-bold">
-                    {product.receivedQuantity == null
-                      ? "—"
-                      : quantity(product.receivedQuantity)}{" "}
-                    {product.unit}
-                  </p>
-                </div>
-                {product.stockKind === "BULK" && (
-                  <div className="rounded-lg bg-amber-50 p-2 leading-6 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    Production ထုတ်ယူပြီး
-                    <p className="break-all font-bold">
-                      {product.productionConsumedQuantity == null ? "—" : `${quantity(product.productionConsumedQuantity)} ${product.unit}`}
-                    </p>
-                  </div>
-                )}
-                {product.stockKind === "BULK" ? (
-                  <div className="rounded-lg bg-amber-50 p-2 leading-6 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    လက်ကျန်အထုပ်ညီမျှပမာဏ
-                    <p className="break-all font-bold">
-                      {packageRemainder(
-                        product.quantity,
-                        product.quantityPerPackage!,
-                        product.packageUnit!,
-                        product.unit,
-                      )}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="rounded-lg bg-amber-50 p-2 leading-6 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    ရောင်းပြီး
-                    <p className="break-all font-bold">
-                      {product.soldQuantity == null
-                        ? "—"
-                        : quantity(product.soldQuantity)}{" "}
-                      {product.unit}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-lg bg-muted/50 p-2 text-xs leading-6">
-                <p>
-                  {product.type === "STOCK_IN"
-                    ? "Receiving အဝင်"
-                    : "Checkout အထွက်"}
-                </p>
-                <Stamp value={product.createdAt} />
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            <dl className="space-y-2">
-              {fields
-                .slice(fieldPage * 4, fieldPage * 4 + 4)
-                .map(([key, value]) => {
-                  const display =
-                    value == null
-                      ? "—"
-                      : typeof value === "object"
-                        ? JSON.stringify(value)
-                        : String(value);
-                  return (
-                    <div
-                      key={key}
-                      className="min-w-0 rounded-lg bg-muted/50 px-3 py-2"
-                    >
-                      <dt
-                        className="truncate text-[10px] leading-5 text-muted-foreground"
-                        title={key}
-                      >
-                        {key}
-                      </dt>
-                      <dd
-                        className="line-clamp-2 break-all text-xs leading-6"
-                        title={display}
-                      >
-                        {display}
-                      </dd>
-                    </div>
-                  );
-                })}
-            </dl>
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label="ယခင်အချက်အလက်"
-                disabled={fieldPage === 0}
-                onClick={() => setFieldPage((v) => v - 1)}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <span>
-                {fieldPage + 1} / {fieldPages}
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label="နောက်အချက်အလက်"
-                disabled={fieldPage + 1 >= fieldPages}
-                onClick={() => setFieldPage((v) => v + 1)}
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
+    <OriginalPhoto
+      key={JSON.stringify(urls)}
+      urls={urls}
+      name={source.productName}
+    />
+  );
+}
+function OriginalPhoto({ urls, name }: { urls: string[]; name: string }) {
+  const [index, setIndex] = React.useState(0);
+  const url = urls[index];
+  return (
+    <div
+      className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl border bg-muted text-muted-foreground"
+      title={
+        url ? "မူလဝယ်ယူသောအထုပ်ပုံ" : "Costing တွင် မူလဝယ်ယူပုံ ရှိမရှိ စစ်ပါ။"
+      }
+    >
+      {url ? (
+        <img
+          src={url}
+          alt={name}
+          className="size-full object-contain"
+          onError={() => setIndex(index + 1)}
+        />
+      ) : (
+        <Package
+          className="size-8"
+          aria-label="မူလဝယ်ယူပုံ မရှိပါ သို့မဟုတ် ဖွင့်မရပါ။"
+        />
+      )}
     </div>
   );
 }
-
-function Stamp({ value }: { value: string }) {
-  return <time dateTime={value}>{new Date(value).toLocaleString()}</time>;
-}
-function useStockEvents(
-  enabled: boolean,
-  refresh: () => void,
-  pollingOnly = false,
-) {
-  const [status, setStatus] = React.useState<
-    "connecting" | "live" | "retrying" | "paused" | "polling"
-  >("connecting");
-  React.useEffect(() => {
-    if (!enabled) return;
-    let feed: EventSource | null = null,
-      debounce: ReturnType<typeof setTimeout> | undefined,
-      disposed = false;
-    const invalidate = () => {
-      if (debounce) return;
-      debounce = setTimeout(() => {
-        debounce = undefined;
-        if (!disposed && document.visibilityState !== "hidden") refresh();
-      }, 180);
-    };
-    const close = () => {
-      feed?.close();
-      feed = null;
-      if (debounce) {
-        clearTimeout(debounce);
-        debounce = undefined;
-      }
-    };
-    const start = () => {
-      close();
-      if (document.visibilityState === "hidden") {
-        setStatus("paused");
-        return;
-      }
-      if (pollingOnly || typeof EventSource === "undefined") {
-        setStatus("polling");
-        return;
-      }
-      setStatus("connecting");
-      const current = new EventSource("/api/factory/stock/events");
-      feed = current;
-      current.onopen = () => {
-        if (!disposed && feed === current) setStatus("live");
-      };
-      current.addEventListener("refresh", invalidate);
-      current.addEventListener("stock-change", invalidate);
-      current.onerror = () => {
-        if (!disposed && feed === current) {
-          setStatus("retrying");
-          invalidate();
-        }
-      };
-    };
-    const visibility = () => {
-      if (document.visibilityState === "hidden") {
-        close();
-        setStatus("paused");
-      } else {
-        refresh();
-        start();
-      }
-    };
-    const online = () => {
-      refresh();
-      start();
-    };
-    const offline = () => {
-      close();
-      setStatus("retrying");
-    };
-    const fallback = setInterval(() => {
-      if (
-        document.visibilityState !== "hidden" &&
-        (!feed || feed.readyState !== 1)
-      )
-        invalidate();
-    }, 5000);
-    document.addEventListener("visibilitychange", visibility);
-    window.addEventListener("online", online);
-    window.addEventListener("offline", offline);
-    start();
-    return () => {
-      disposed = true;
-      close();
-      clearInterval(fallback);
-      document.removeEventListener("visibilitychange", visibility);
-      window.removeEventListener("online", online);
-      window.removeEventListener("offline", offline);
-    };
-  }, [enabled, refresh, pollingOnly]);
-  return status;
-}
-function WarehouseCameraScanner({
+// Reuses the same react-zxing camera/decoder flow as Product Check / Product Bulk Edit.
+// Mount only while the Dialog is open so useZxing stops camera tracks on close.
+function CostingCameraScanner({
   onScan,
   onClose,
 }: {
@@ -559,7 +381,7 @@ function WarehouseCameraScanner({
           autoPlay
           muted
           playsInline
-          aria-label="Warehouse barcode camera"
+          aria-label="Costing barcode camera"
           className="size-full object-cover"
         />
         <div className="pointer-events-none absolute inset-x-[6%] top-1/2 h-[42%] -translate-y-1/2 rounded-xl border-2 border-emerald-400 shadow-[0_0_0_999px_rgba(0,0,0,0.4)]" />
@@ -584,7 +406,7 @@ function WarehouseCameraScanner({
   );
 }
 
-export default function WarehousePage() {
+export default function ReceivingPage() {
   const { data, status } = useSession();
   const user = data?.user as
     | {
@@ -601,219 +423,211 @@ export default function WarehousePage() {
       </p>
     );
   return (
-    <StockWorkspace
+    <Workspace
       key={`${user.id ?? user.username}:${user.shopId ?? user.shopCode}`}
+      identity={`${user.id ?? user.username}:${user.shopId ?? user.shopCode}`}
     />
   );
 }
-function StockWorkspace() {
-  const [filters, setFilters] = React.useState<Filters>(emptyFilters),
-    [draft, setDraft] = React.useState<Filters>(emptyFilters),
-    [stockKind, setStockKind] = React.useState<StockKind>("BULK"),
-    [page, setPage] = React.useState(0),
-    [revision, setRevision] = React.useState(0);
-  const [result, setResult] = React.useState<Result | null>(null),
-    [busy, setBusy] = React.useState(false),
-    [error, setError] = React.useState(""),
-    [updated, setUpdated] = React.useState(""),
-    [authExpired, setAuthExpired] = React.useState(false);
-  const [warehouses, setWarehouses] = React.useState<Place[]>([]),
-    [locations, setLocations] = React.useState<Place[]>([]),
-    [placeError, setPlaceError] = React.useState(""),
-    [placeRevision, setPlaceRevision] = React.useState(0),
-    [locationBusy, setLocationBusy] = React.useState(false);
-  const [locationNames, setLocationNames] = React.useState<
-    Record<number, string>
-  >({});
-  const [mappingOpen, setMappingOpen] = React.useState(false),
-    [detail, setDetail] = React.useState<Balance | Movement | null>(null);
-  const refresh = React.useCallback(() => setRevision((v) => v + 1), []);
-  const busyRef = React.useRef(false);
-  const refreshFromEvents = React.useCallback(() => {
-    if (!busyRef.current) refresh();
-  }, [refresh]);
-  const connection = useStockEvents(
-    !authExpired,
-    refreshFromEvents,
-    stockKind === "BULK",
-  );
-  const queryKey = JSON.stringify({ filters, page, stockKind });
-  const dataKey = JSON.stringify({ filters, stockKind });
-  const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
+function Workspace({ identity }: { identity: string }) {
   const [cameraOpen, setCameraOpen] = React.useState(false);
+  const [moreOpen, setMoreOpen] = React.useState(false);
   const [cameraAttempt, setCameraAttempt] = React.useState(0);
   const closeCamera = React.useCallback(() => setCameraOpen(false), []);
-  const searchRef = React.useRef<HTMLInputElement>(null);
-  const [activityPage, setActivityPage] = React.useState(0);
-  const [bulkHistory, setBulkHistory] = React.useState<{
-    key: string;
-    receipts: Receipt[];
-  } | null>(null);
-  const [finishedHistory, setFinishedHistory] = React.useState<{
-    key: string;
-    data: StockPage<Movement>;
-  } | null>(null);
-  const [historyBusy, setHistoryBusy] = React.useState(false);
-  const [historyError, setHistoryError] = React.useState("");
-  const historyKey = JSON.stringify({ dataKey, activityPage });
+  const [source, setSource] = React.useState<Source | null>(null),
+    [record, setRecord] = React.useState<Receipt | null>(null),
+    [form, setForm] = React.useState<Fields>(blank);
+  const [baseline, setBaseline] = React.useState(""),
+    [barcode, setBarcode] = React.useState(""),
+    [notice, setNotice] = React.useState(""),
+    [busy, setBusy] = React.useState(false),
+    [boot, setBoot] = React.useState(true);
+  const [warehouses, setWarehouses] = React.useState<Place[]>([]),
+    [locations, setLocations] = React.useState<Place[]>([]),
+    [locationsBusy, setLocationsBusy] = React.useState(false),
+    [placeError, setPlaceError] = React.useState("");
+  const [pending, setPending] = React.useState<Pending | null>(null),
+    [blocked, setBlocked] = React.useState(false),
+    [errors, setErrors] = React.useState<ReturnType<typeof validate>>({});
+  const [action, setAction] = React.useState<
+    "confirm" | "cancel" | "new" | null
+  >(null);
+  const [picker, setPicker] = React.useState(false),
+    [catalog, setCatalog] = React.useState<{
+      content: {
+        id: number;
+        title: string;
+        items: {
+          id: number;
+          inputs: { product?: string };
+          calculation?: { ready: boolean };
+        }[];
+      }[];
+      totalPages: number;
+    } | null>(null),
+    [catalogBusy, setCatalogBusy] = React.useState(false),
+    [catalogError, setCatalogError] = React.useState(""),
+    [catalogSearch, setCatalogSearch] = React.useState(""),
+    [catalogQuery, setCatalogQuery] = React.useState(""),
+    [catalogPage, setCatalogPage] = React.useState(0),
+    [catalogRevision, setCatalogRevision] = React.useState(0);
+  const [historyOpen, setHistoryOpen] = React.useState(false),
+    [history, setHistory] = React.useState<Paged<Receipt> | null>(null),
+    [historyBusy, setHistoryBusy] = React.useState(false),
+    [historyError, setHistoryError] = React.useState(""),
+    [historyPage, setHistoryPage] = React.useState(0),
+    [historyRevision, setHistoryRevision] = React.useState(0),
+    [historyQuery, setHistoryQuery] = React.useState({
+      status: "",
+      barcode: "",
+      batch: "",
+      from: "",
+      to: "",
+    }),
+    [historyFilters, setHistoryFilters] = React.useState(historyQuery);
+  const [setup, setSetup] = React.useState(false),
+    [placeKind, setPlaceKind] = React.useState<"warehouse" | "location">(
+      "warehouse",
+    ),
+    [placeName, setPlaceName] = React.useState(""),
+    [placeWarehouse, setPlaceWarehouse] = React.useState(""),
+    [placeNotice, setPlaceNotice] = React.useState("");
+  const [locationRevision, setLocationRevision] = React.useState(0);
+  const lock = React.useRef(false),
+    mounted = React.useRef(true),
+    barcodeRef = React.useRef<HTMLInputElement>(null);
+  const storageKey = `binhlaig:receiving:bulk:server:v1:${identity}`;
+  const dirty = !!source && JSON.stringify(form) !== baseline;
+  const readOnly =
+    !!record && (record.status !== "DRAFT" || record.stockKind !== "BULK");
+  const disabled = busy || boot || blocked || !!pending;
+  const actual =
+    /^\d+$/.test(form.actual) && Number.isSafeInteger(Number(form.actual))
+      ? Number(form.actual)
+      : null;
+  // Package receipts and finished-output quantities are different units.
+  const bulkReady = isBulkReady(source);
+  const bulkMeta = source?.bulk;
+  const vissBasis = isVissBasis(bulkMeta);
+  const bulkTotal = bulkMeta
+    ? totalFor(form.actual, bulkMeta.quantityPerPackage)
+    : null;
+  const bulkValue = bulkMeta
+    ? totalFor(form.actual, bulkMeta.purchaseCostPerPackage)
+    : null;
+  function putStorage(value: {
+    pending?: Pending | null;
+    recordId?: number | null;
+  }) {
+    localStorage.setItem(storageKey, JSON.stringify({ version: 1, ...value }));
+  }
+  function adopt(r: Receipt) {
+    setRecord(r);
+    setSource(sourceOf(r));
+    setForm(fromReceipt(r));
+    setBaseline(JSON.stringify(fromReceipt(r)));
+    setBarcode(r.barcode);
+    setErrors({});
+    setBlocked(false);
+  }
+  async function refreshWarehouses() {
+    setPlaceError("");
+    try {
+      const p = decodePlaces(await api("/warehouses"));
+      if (mounted.current) setWarehouses(p);
+    } catch (e) {
+      if (mounted.current)
+        setPlaceError(e instanceof Error ? e.message : "နေရာစာရင်းရယူမရပါ။");
+    }
+  }
   React.useEffect(() => {
-    const c = new AbortController();
-    let active = true;
-    busyRef.current = true;
-    setBusy(true);
-    setError("");
-    setResult((r) => (r?.key === queryKey ? r : null));
-    const q = new URLSearchParams({
-      page: String(page),
-      size: String(SIZE),
-      search: filters.search,
-    });
-    if (filters.warehouseId) q.set("warehouseId", filters.warehouseId);
-    if (filters.locationId) q.set("locationId", filters.locationId);
-    if (filters.batch) q.set("batch", filters.batch);
-    const load = async (): Promise<StockPage<Balance>> => {
-      if (stockKind === "BULK") {
-        const [raw, receipts] = await Promise.all([
-          api("/api/factory/warehouse/bulk-balances", { signal: c.signal }),
-          confirmedBulkReceipts(c.signal),
-        ]);
-        // Validate the history payload before using it in the synchronous table renderer.
-        bulkReceivingHistory(receipts, filters, 0, ACTIVITY_SIZE);
-        const balances = warehouseBulkBalances(raw, receipts, filters, page, SIZE);
-        if (active) setBulkHistory({ key: dataKey, receipts });
-        return balances;
-      }
-      return decodeBalances(
-        await api(`/api/factory/stock/balances?${q}`, { signal: c.signal }),
-      );
-    };
-    void load()
-      .then((data) => {
-        if (data.page !== page || data.size !== SIZE)
-          throw new StockError("Stock pagination response မမှန်ပါ။", 502);
-        const pages = Math.ceil(data.totalElements / SIZE);
-        if (page > 0 && page >= pages) {
-          if (active) setPage(Math.max(0, pages - 1));
-          return;
-        }
-        if (active) {
-          setResult({ key: queryKey, kind: "balances", data });
-          setUpdated(new Date().toISOString());
-        }
-      })
-      .catch((e) => {
-        if (active) {
-          setError(e instanceof Error ? e.message : "စတော့ရယူမရပါ။");
-          if (e instanceof StockError && e.status === 401) setAuthExpired(true);
-        }
-      })
-      .finally(() => {
-        if (active) {
-          busyRef.current = false;
-          setBusy(false);
-        }
-      });
-    return () => {
-      active = false;
-      c.abort();
-    };
-  }, [filters, page, revision, queryKey, stockKind, dataKey]);
-  React.useEffect(() => {
-    let active = true;
-    const c = new AbortController();
-    void api("/api/factory/receivings/warehouses", { signal: c.signal })
-      .then(decodePlaces)
-      .then(async (v) => {
-        if (!active) return;
-        setWarehouses(v);
-        setPlaceError("");
-        const results = await Promise.allSettled(
-          v.map((w) =>
-            api(`/api/factory/receivings/warehouses/${w.id}/locations`, {
-              signal: c.signal,
-            }).then(decodePlaces),
-          ),
-        );
-        if (!active) return;
-        const names: Record<number, string> = {};
-        for (const result of results)
-          if (result.status === "fulfilled")
-            for (const location of result.value)
-              names[location.id] = location.name;
-        setLocationNames(names);
-        if (results.some((r) => r.status === "rejected"))
-          setPlaceError(
-            "အချို့သိုလှောင်နေရာအမည်များ ရယူမရပါ။ နေရာစာရင်းကို ပြန်တင်ပါ။",
+    mounted.current = true;
+    void refreshWarehouses();
+    void (async () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+        if (saved?.version === 1 && saved.pending) {
+          const p = saved.pending as Pending;
+          if (
+            !["POST", "PUT"].includes(p.method) ||
+            !/^(?:|\/\d+(?:\/(?:confirm|cancel))?)$/.test(p.path) ||
+            !p.body ||
+            typeof p.body !== "object" ||
+            (p.key && !/^[-A-Za-z0-9._:]{8,128}$/.test(p.key))
+          )
+            throw new Error("Recovery data မမှန်ပါ။");
+          setPending(p);
+          setNotice(
+            "အပြီးသတ်ရလဒ် မသေချာသေးသော လုပ်ဆောင်မှု ရှိပါသည်။ လုပ်ဆောင်မှု ပြန်စစ်ရန်ကို နှိပ်ပါ။",
           );
-      })
-      .catch((e) => {
-        if (active) {
-          setPlaceError(e instanceof Error ? e.message : "ဂိုဒေါင်စာရင်းမရပါ။");
-          if (e instanceof StockError && e.status === 401) setAuthExpired(true);
+        } else if (
+          Number.isSafeInteger(saved?.recordId) &&
+          saved.recordId > 0
+        ) {
+          const r = decodeReceipt(await api(`/${saved.recordId}`));
+          if (mounted.current) adopt(r);
         }
-      });
+      } catch (e) {
+        if (mounted.current) {
+          setBlocked(true);
+          setNotice(e instanceof Error ? e.message : "Recovery ဖတ်မရပါ။");
+        }
+      } finally {
+        if (mounted.current) setBoot(false);
+      }
+    })();
     return () => {
-      active = false;
-      c.abort();
+      mounted.current = false;
     };
-  }, [placeRevision]);
+  }, [storageKey]);
   React.useEffect(() => {
-    setLocations([]);
-    setLocationBusy(false);
-    if (!draft.warehouseId) return;
+    if (!form.warehouseId) {
+      setLocations([]);
+      return;
+    }
     let active = true;
-    const c = new AbortController();
-    setLocationBusy(true);
-    void api(
-      `/api/factory/receivings/warehouses/${draft.warehouseId}/locations`,
-      { signal: c.signal },
-    )
+    const controller = new AbortController();
+    setLocationsBusy(true);
+    setLocations([]);
+    void api(`/warehouses/${form.warehouseId}/locations`, {
+      signal: controller.signal,
+    })
       .then(decodePlaces)
-      .then((v) => {
-        if (active) setLocations(v);
+      .then((p) => {
+        if (active) setLocations(p);
       })
       .catch((e) => {
         if (active)
           setPlaceError(e instanceof Error ? e.message : "နေရာစာရင်းမရပါ။");
       })
       .finally(() => {
-        if (active) setLocationBusy(false);
+        if (active) setLocationsBusy(false);
       });
     return () => {
       active = false;
-      c.abort();
+      controller.abort();
     };
-  }, [draft.warehouseId, placeRevision]);
+  }, [form.warehouseId, locationRevision]);
   React.useEffect(() => {
-    if (stockKind !== "FINISHED") {
-      setHistoryBusy(false);
-      setHistoryError("");
-      return;
-    }
-    const c = new AbortController();
+    if (!historyOpen) return;
     let active = true;
+    const c = new AbortController();
     setHistoryBusy(true);
     setHistoryError("");
-    const q = new URLSearchParams({
-      page: String(activityPage),
-      size: String(ACTIVITY_SIZE),
-      search: filters.search,
+    setHistory(null);
+    const q = new URLSearchParams({ page: String(historyPage), size: "10" });
+    Object.entries(historyFilters).forEach(([k, v]) => {
+      if (v) q.set(k, v);
     });
-    if (filters.warehouseId) q.set("warehouseId", filters.warehouseId);
-    if (filters.locationId) q.set("locationId", filters.locationId);
-    if (filters.batch) q.set("batch", filters.batch);
-    void api(`/api/factory/stock/history?${q}`, { signal: c.signal })
-      .then(decodeMovements)
-      .then((data) => {
-        if (data.page !== activityPage || data.size !== ACTIVITY_SIZE)
-          throw new StockError("မှတ်တမ်း pagination မမှန်ပါ။", 502);
-        if (active) setFinishedHistory({ key: historyKey, data });
+    void api(`?${q}`, { signal: c.signal })
+      .then((v) => decodePage(v, decodeReceipt))
+      .then((p) => {
+        if (p.number !== historyPage) throw new Error("History page မမှန်ပါ။");
+        if (active) setHistory(p);
       })
       .catch((e) => {
-        if (active) {
-          setHistoryError(e instanceof Error ? e.message : "မှတ်တမ်းရယူမရပါ။");
-          if (e instanceof StockError && e.status === 401) setAuthExpired(true);
-        }
+        if (active)
+          setHistoryError(e instanceof Error ? e.message : "History မရပါ။");
       })
       .finally(() => {
         if (active) setHistoryBusy(false);
@@ -822,1432 +636,1591 @@ function StockWorkspace() {
       active = false;
       c.abort();
     };
-  }, [stockKind, filters, activityPage, revision, historyKey]);
-  const activity = React.useMemo(
-    () =>
-      stockKind === "BULK"
-        ? bulkHistory?.key === dataKey
-          ? bulkReceivingHistory(
-              bulkHistory.receipts,
-              filters,
-              activityPage,
-              ACTIVITY_SIZE,
-            )
-          : null
-        : finishedHistory?.key === historyKey
-          ? finishedHistory.data
-          : null,
-    [
-      stockKind,
-      bulkHistory,
-      dataKey,
-      filters,
-      activityPage,
-      finishedHistory,
-      historyKey,
-    ],
-  );
-  const activityPages = activity
-    ? Math.ceil(activity.totalElements / ACTIVITY_SIZE)
-    : 0;
+  }, [historyOpen, historyPage, historyFilters, historyRevision]);
   React.useEffect(() => {
-    if (activity && activityPage > 0 && activityPage >= activityPages)
-      setActivityPage(Math.max(0, activityPages - 1));
-  }, [activity, activityPage, activityPages]);
-  const current = result?.key === queryKey ? result : null;
-  const [receivingPhotos, setReceivingPhotos] = React.useState<
-    Record<string, string | null>
-  >({});
-  const [photoError, setPhotoError] = React.useState("");
-  const photoBarcodes = JSON.stringify(
-    [
-      ...new Set([
-        ...(current?.data.content.map((row) => row.barcode) ?? []),
-        ...(detail ? [detail.barcode] : []),
-        ...(activity?.content.map((r) => r.barcode) ?? []),
-      ]),
-    ].sort(),
-  );
-  React.useEffect(() => {
-    const controller = new AbortController();
+    if (!picker) return;
     let active = true;
-    const barcodes = JSON.parse(photoBarcodes) as string[];
-    setPhotoError("");
-    if (stockKind === "BULK" || !barcodes.length) return;
-    void Promise.allSettled(
-      barcodes.map(async (barcode) => {
-        // Use the same Source decoder and photo resolver as the Receiving page.
-        const source = decodeSource(
-          await receivingRequest(
-            `/sources?${new URLSearchParams({ barcode })}`,
-            { signal: controller.signal },
-          ),
-        );
-        if (source.barcode !== barcode)
-          throw new Error("Receiving barcode မကိုက်ညီပါ။");
-        return [barcode, photoOf(source) || null] as const;
-      }),
-    ).then((results) => {
-      if (!active) return;
-      const photos: Record<string, string | null> = {};
-      for (const result of results) {
-        if (result.status === "fulfilled")
-          photos[result.value[0]] = result.value[1];
-      }
-      setReceivingPhotos((previous) => ({ ...previous, ...photos }));
-      if (results.some((result) => result.status === "rejected"))
-        setPhotoError(
-          "အချို့ပစ္စည်းပုံများကို Receiving မှ ရယူမရပါ။ ပြန်တင်ရန် နှိပ်ပြီး စမ်းပါ။",
-        );
+    const c = new AbortController();
+    setCatalogBusy(true);
+    setCatalogError("");
+    setCatalog(null);
+    const q = new URLSearchParams({
+      page: String(catalogPage),
+      size: "6",
+      status: "FINALIZED",
+      search: catalogQuery,
     });
+    void fetch(`/api/factory/costings?${q}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: c.signal,
+    })
+      .then(async (r) => {
+        const b = await r.json();
+        if (!r.ok) throw new Error(b?.message || "Costing စာရင်းမရပါ။");
+        if (
+          !Array.isArray(b.content) ||
+          !Number.isSafeInteger(b.totalPages) ||
+          b.totalPages < 0 ||
+          b.number !== catalogPage ||
+          b.content.some(
+            (s: { id: number; title: string; items: unknown[] }) =>
+              !Number.isSafeInteger(s.id) ||
+              typeof s.title !== "string" ||
+              !Array.isArray(s.items),
+          )
+        )
+          throw new Error("Costing response မမှန်ပါ။");
+        return b;
+      })
+      .then((p) => {
+        // A Costing product can be purchased repeatedly; do not hide confirmed sources.
+        if (active) setCatalog(p);
+      })
+      .catch((e) => {
+        if (active)
+          setCatalogError(e instanceof Error ? e.message : "စာရင်းရယူမရပါ။");
+      })
+      .finally(() => {
+        if (active) setCatalogBusy(false);
+      });
     return () => {
       active = false;
-      controller.abort();
+      c.abort();
     };
-  }, [photoBarcodes, revision, stockKind]);
-  React.useEffect(() => {
-    if (!current) return;
-    setDetail((previous) =>
-      previous && "quantity" in previous
-        ? (current.data.content.find((r) => rowKey(r) === rowKey(previous)) ??
-          null)
-        : previous,
+  }, [picker, catalogPage, catalogQuery, catalogRevision]);
+  function change<K extends keyof Fields>(k: K, v: Fields[K]) {
+    if (readOnly || disabled) return;
+    setForm((f) => ({
+      ...f,
+      [k]: v,
+      ...(k === "warehouseId" ? { locationId: "" } : {}),
+      ...(k === "actual" && v !== f.actual ? {note: withoutPackageNote(f.note)} : {}),
+    }));
+    setErrors((e) => ({ ...e, [k]: undefined }));
+  }
+  async function reopenExisting(
+    code: string,
+    matches: Receipt[],
+  ): Promise<boolean> {
+    if (!matches.length) return false;
+    if (matches.length > 1) {
+      setBlocked(true);
+      setPicker(false);
+      const filters = {
+        status: "",
+        barcode: code,
+        batch: "",
+        from: "",
+        to: "",
+      };
+      setHistoryQuery(filters);
+      setHistoryFilters(filters);
+      setHistoryPage(0);
+      setHistoryRevision((v) => v + 1);
+      setHistoryOpen(true);
+      setNotice(
+        "ဒီပစ္စည်းအတွက် ယခင်မှတ်တမ်း တစ်ခုထက်ပိုရှိပါသည်။ Record နံပါတ်အလိုက် စစ်ပြီး ရှိပြီးသားမှတ်တမ်းကို ဖွင့်ပါ။ အသစ်ထပ်မဖန်တီးပါ။",
+      );
+      return true;
+    }
+    const existing = decodeReceipt(await api(`/${matches[0].id}`));
+    if (existing.status === "CANCELLED") return false;
+    if (!mounted.current) return true;
+    adopt(existing);
+    putStorage({ recordId: existing.id });
+    setPicker(false);
+    setHistoryOpen(false);
+    setNotice(
+      existing.status === "DRAFT"
+        ? "သိမ်းပြီးသား မူကြမ်းကို ပြန်ဖွင့်ထားပါသည်။ ပြင်ဆင်သိမ်းလျှင် ဒီ Record ကိုပဲ update လုပ်မည်။"
+        : "ဒီပစ္စည်းကို လက်ခံအတည်ပြုပြီးဖြစ်ပါသည်။ ရှိပြီးသားမှတ်တမ်းကို ကြည့်ရန်သာ ပြထားပါသည်။ စတော့ထပ်မတိုးပါ။",
     );
-  }, [current]);
-  const total = current?.data.totalElements;
-  const totalPages = total === undefined ? 0 : Math.ceil(total / SIZE);
-  const warehouseName = (id: number) =>
-    warehouses.find((w) => w.id === id)?.name || `Warehouse #${id}`;
-  const locationName = (id: number) =>
-    locationNames[id] ||
-    locations.find((l) => l.id === id)?.name ||
-    `Location #${id}`;
-  const skuCount = current
-    ? new Set(current.data.content.map((r) => r.barcode)).size
-    : null;
-  const connectionText = authExpired
-    ? "Login ပြန်ဝင်ရန်"
-    : connection === "live"
-      ? "တိုက်ရိုက်ချိတ်ဆက်ထား"
-      : connection === "paused"
-        ? "ယာယီရပ်ထား"
-        : connection === "polling"
-          ? "၅ စက္ကန့်တစ်ကြိမ် စစ်နေသည်"
-          : connection === "retrying"
-            ? "ပြန်ချိတ်နေသည် · ၅ စက္ကန့်တစ်ကြိမ် စစ်မည်"
-            : "ချိတ်ဆက်နေသည်…";
-  const balances = current?.kind === "balances" ? current.data.content : [];
-  const selected =
-    balances.find((r) => rowKey(r) === selectedKey) ?? balances[0] ?? null;
-  const sourceReceipts =
-    selected?.stockKind === "BULK" && bulkHistory?.key === dataKey
-      ? bulkHistory.receipts.filter(
-          (r) =>
-            stockKey({
-              itemId: r.costingItemId,
-              sourceVersion: r.sourceVersion,
-              warehouseId: r.warehouseId,
-              locationId: r.locationId,
-              batch: r.batch,
-            }) === rowKey(selected),
-        )
-      : [];
-  const sourceText = sourceReceipts.length
-    ? sourceReceipts.map((r) => r.receivingNumber).join(", ")
-    : "—";
-  function applyFilters(next: Filters) {
-    setDraft(next);
-    setFilters({
-      ...next,
-      search: next.search.trim(),
-      batch: next.batch.trim(),
+    return true;
+  }
+  async function lookup(code: string) {
+    if (lock.current || disabled) return;
+    if (record || dirty) {
+      setNotice(
+        "လက်ရှိစာရင်းကို အရင်သိမ်းပါ။ ပစ္စည်းပြောင်းရန် အသစ်ခလုတ်မှ စာရင်းအသစ် စပါ။",
+      );
+      return;
+    }
+    const normalized = code.trim().toUpperCase();
+    if (!/^FC-[1-9]\d*-[1-9]\d*$/.test(normalized)) {
+      setNotice("FC-12-34 ပုံစံ barcode ထည့်ပါ။");
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setNotice("");
+    try {
+      const saved = (await activeReceipts(normalized)).filter(
+        (r) => r.stockKind === "BULK" && r.status === "DRAFT",
+      );
+      if (await reopenExisting(normalized, saved)) return;
+      const s = decodeSource(
+        await api(`/sources?${new URLSearchParams({ barcode: normalized })}`),
+      );
+      if (!mounted.current) return;
+      setSource(s);
+      setBarcode(s.barcode);
+      const f = {
+        ...blank(),
+        actual: "",
+        batch: `IN-${today().replaceAll("-", "")}-${s.costingItemId}-${key().slice(0, 8)}`,
+      };
+      setForm(f);
+      setBaseline(JSON.stringify(f));
+      setPicker(false);
+      setErrors({});
+      setNotice(
+        "Costing အချက်အလက် ရယူပြီးပါပြီ။ လက်ခံပမာဏနှင့် နေရာကို စစ်ပါ။",
+      );
+    } catch (e) {
+      if (mounted.current)
+        setNotice(e instanceof Error ? e.message : "ရှာမရပါ။");
+    } finally {
+      lock.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+  function payload(): SavePayload {
+    if (!source) throw new Error("ပစ္စည်းရွေးပါ။");
+    return {
+      costingSheetId: source.costingSheetId,
+      costingItemId: source.costingItemId,
+      sourceVersion: source.sourceVersion,
+      ...(record ? { version: record.version } : {}),
+      stockKind: "BULK",
+      bulkPackageCount: form.actual,
+      batch: form.batch.trim(),
+      warehouseId: Number(form.warehouseId),
+      locationId: Number(form.locationId),
+      receivedDate: form.receivedDate,
+      expiryDate: form.expiryDate || null,
+      note: form.note.trim() || null,
+    };
+  }
+  async function perform(p: Pending, recovery = false) {
+    if (lock.current) return;
+    if (!("stockKind" in p.body) || p.body.stockKind !== "BULK") {
+      setNotice("မူလ Finished Goods လုပ်ဆောင်မှုကို Bulk အဖြစ် မပို့နိုင်ပါ။");
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setNotice("Server သို့ လုပ်ဆောင်နေသည်…");
+    let journaled = false;
+    let acknowledged = false;
+    try {
+      putStorage({ pending: p, recordId: record?.id });
+      journaled = true;
+      setPending(p);
+      let r: Receipt;
+      if (recovery && !p.key) {
+        const id = p.path.split("/")[1];
+        r = decodeReceipt(await api(`/${id}`));
+      } else {
+        let response: unknown;
+        try {
+          response = await api(p.path, {
+            method: p.method,
+            body: JSON.stringify(p.body),
+            headers: p.key ? { "Idempotency-Key": p.key } : undefined,
+          });
+        } catch (e) {
+          throw e;
+        }
+        acknowledged = true;
+        try {
+          r = decodeReceipt(response);
+        } catch {
+          throw new ReceivingError(
+            "Server လုပ်ဆောင်ပြီးသော်လည်း response ဖတ်မရပါ။ ပြန်စစ်ပါ။",
+            502,
+            true,
+          );
+        }
+        r = decodeReceipt(await api(`/${r.id}`));
+      }
+      if (!mounted.current) return;
+      adopt(r);
+      putStorage({ recordId: r.id });
+      setPending(null);
+      setHistoryRevision((v) => v + 1);
+      setNotice(
+        recovery && !p.key
+          ? "Server လက်ရှိစာရင်းကို ပြန်ယူပြီးပါပြီ။ မသိမ်းရသေးသောပြင်ဆင်မှုများကို ပြန်စစ်ပါ။"
+          : r.status === "CONFIRMED"
+            ? "လက်ခံမှုအတည်ပြုပြီး စတော့ဝင်ပြီးပါပြီ။"
+            : r.status === "CANCELLED"
+              ? "မူကြမ်း ပယ်ဖျက်ပြီးပါပြီ။"
+              : "Server တွင် မူကြမ်းသိမ်းပြီးပါပြီ။",
+      );
+    } catch (e) {
+      if (!mounted.current) return;
+      const uncertain =
+        !(e instanceof ReceivingError) ||
+        e.uncertain ||
+        recovery ||
+        acknowledged;
+      setNotice(e instanceof Error ? e.message : "လုပ်ဆောင်မှု မအောင်မြင်ပါ။");
+      if (journaled && !uncertain) {
+        try {
+          putStorage({ recordId: record?.id });
+          setPending(null);
+        } catch {
+          setBlocked(true);
+        }
+        if (e instanceof ReceivingError && e.status === 409) setBlocked(true);
+      } else if (!journaled) {
+        setPending(null);
+        setNotice(
+          "Browser recovery သိမ်းမရပါ။ လုပ်ဆောင်မှု မပို့ရသေးပါ။ Storage ကိုစစ်ပါ။",
+        );
+      } else setPending(p);
+    } finally {
+      lock.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+  async function save() {
+    if (busy || boot || readOnly) return;
+    if (pending || blocked || locationsBusy) {
+      setNotice(saveProblems.join("\n") || "လက်ရှိလုပ်ဆောင်မှုကို အရင်စစ်ပါ။");
+      return;
+    }
+    const e = validate(source, form);
+    if (!warehouses.some((w) => w.active && String(w.id) === form.warehouseId))
+      e.warehouseId = "အသုံးပြုနိုင်သော ဂိုဒေါင်ရွေးပါ။";
+    if (!locations.some((l) => l.active && String(l.id) === form.locationId))
+      e.locationId = "အသုံးပြုနိုင်သော သိုလှောင်နေရာရွေးပါ။";
+    setErrors(e);
+    if (Object.keys(e).length) {
+      setNotice(Object.values(e).filter(Boolean).join("\n"));
+      return;
+    }
+    if (!record && source) {
+      // A different tab/user may have saved this source since it was selected.
+      if (lock.current) return;
+      lock.current = true;
+      setBusy(true);
+      try {
+        const saved = (await activeReceipts(source.barcode)).filter(
+          (r) => r.stockKind === "BULK" && r.status === "DRAFT",
+        );
+        if (await reopenExisting(source.barcode, saved)) return;
+      } catch (error) {
+        setNotice(
+          error instanceof Error
+            ? error.message
+            : "ယခင်မှတ်တမ်း စစ်မရပါ။ မူကြမ်းအသစ် မပို့ရသေးပါ။",
+        );
+        return;
+      } finally {
+        lock.current = false;
+        if (mounted.current) setBusy(false);
+      }
+      if (!mounted.current) return;
+    }
+    void perform({
+      path: record ? `/${record.id}` : "",
+      method: record ? "PUT" : "POST",
+      body: payload(),
+      ...(!record ? { key: key() } : {}),
     });
-    setPage(0);
-    setActivityPage(0);
-    setSelectedKey(null);
   }
-  function changeStockKind(value: string) {
-    if (value !== "BULK" && value !== "FINISHED") return;
-    setStockKind(value);
-    setPage(0);
-    setActivityPage(0);
-    setSelectedKey(null);
-    setDetail(null);
-    setMappingOpen(false);
+  async function openRecord(id: number, discard = false) {
+    if (lock.current || pending) return;
+    if (dirty && !discard) {
+      setNotice("လက်ရှိမူကြမ်းကို အရင်သိမ်းပါ။");
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    try {
+      const r = decodeReceipt(await api(`/${id}`));
+      if (!mounted.current) return;
+      adopt(r);
+      putStorage({ recordId: r.id });
+      setHistoryOpen(false);
+      setNotice("Server မှ စာရင်းပြန်ဖွင့်ပြီးပါပြီ။");
+    } catch (e) {
+      if (mounted.current)
+        setNotice(e instanceof Error ? e.message : "ဖွင့်မရပါ။");
+    } finally {
+      lock.current = false;
+      if (mounted.current) setBusy(false);
+    }
   }
-  const stockTabs = (
-    <Tabs value={stockKind} onValueChange={changeStockKind}>
-      <TabsList
-        className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border bg-muted/30 p-1"
-        aria-label="စတော့အမျိုးအစား"
-      >
-        <TabsTrigger
-          value="BULK"
-          className="min-h-10 gap-2 rounded-lg border border-transparent px-2 py-2 text-xs data-[state=active]:border-blue-500 data-[state=active]:bg-background data-[state=active]:text-blue-600"
-        >
-          <Boxes className="size-4" />
-          အထုပ်ကြီး Stock
-        </TabsTrigger>
-        <TabsTrigger
-          value="FINISHED"
-          className="min-h-10 gap-2 rounded-lg border border-transparent px-2 py-2 text-xs data-[state=active]:border-blue-500 data-[state=active]:bg-background data-[state=active]:text-blue-600"
-        >
-          <Package className="size-4" />
-          Finished Stock
-        </TabsTrigger>
-      </TabsList>
-    </Tabs>
-  );
+  function reset() {
+    if (pending) return;
+    try {
+      putStorage({ recordId: null });
+      setSource(null);
+      setRecord(null);
+      setForm(blank());
+      setBaseline("");
+      setErrors({});
+      setBlocked(false);
+      setNotice("");
+      setBarcode("");
+      barcodeRef.current?.focus();
+    } catch {
+      setNotice("Recovery သိမ်းမရပါ။ Storage ကိုစစ်ပါ။");
+    }
+  }
+  function resolveAction() {
+    const next = action;
+    setAction(null);
+    if (next === "new") {
+      reset();
+      return;
+    }
+    if (
+      !record ||
+      disabled ||
+      dirty ||
+      record.status !== "DRAFT" ||
+      record.stockKind !== "BULK" ||
+      !bulkReady
+    )
+      return;
+    void perform({
+      path: `/${record.id}/${next}`,
+      method: "POST",
+      body: { version: record.version, stockKind: "BULK" },
+      ...(next === "confirm" ? { key: key() } : {}),
+    });
+  }
+  async function createPlace() {
+    if (lock.current || !placeName.trim() || placeName.length > 200) return;
+    const warehouse = Number(placeWarehouse);
+    if (
+      placeKind === "location" &&
+      (!Number.isSafeInteger(warehouse) || warehouse <= 0)
+    ) {
+      setPlaceNotice("ဂိုဒေါင်အရင်ရွေးပါ။");
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setPlaceNotice("");
+    try {
+      const p = await api(
+        placeKind === "warehouse"
+          ? "/warehouses"
+          : `/warehouses/${warehouse}/locations`,
+        {
+          method: "POST",
+          body: JSON.stringify({ name: placeName.trim(), active: true }),
+        },
+      );
+      decodePlaces([p]);
+      setPlaceName("");
+      setPlaceNotice("ဖန်တီးပြီးပါပြီ။ နေရာစာရင်းကို ပြန်တင်ပါ။");
+      await refreshWarehouses();
+      if (form.warehouseId === placeWarehouse && placeKind === "location") {
+        const list = decodePlaces(
+          await api(`/warehouses/${warehouse}/locations`),
+        );
+        if (mounted.current) setLocations(list);
+      }
+    } catch (e) {
+      setPlaceNotice(
+        `${e instanceof Error ? e.message : "ဖန်တီးမရပါ။"} ရလဒ်မသေချာလျှင် အမည်တူ ထပ်မဖန်တီးမီ နေရာစာရင်းကို ပြန်တင်စစ်ပါ။`,
+      );
+    } finally {
+      lock.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+  const selectedWarehouse = warehouses.find(
+      (w) => String(w.id) === form.warehouseId,
+    ),
+    selectedLocation = locations.find((l) => String(l.id) === form.locationId);
+  const saveProblems = [
+    ...new Set([
+      ...(boot ? ["ယခင်မူကြမ်းနှင့် recovery အခြေအနေ စစ်နေသည်။"] : []),
+      ...(pending
+        ? ["အပြီးသတ်ရလဒ်မသေချာသေးသော လုပ်ဆောင်မှုကို အရင်ပြန်စစ်ပါ။"]
+        : []),
+      ...(blocked
+        ? [
+            "Server စာရင်းပြောင်းထားနိုင်ပါသည်။ ရှိပြီးသားမှတ်တမ်းကို ပြန်ဖွင့်စစ်ပါ။",
+          ]
+        : []),
+      ...(locationsBusy ? ["သိုလှောင်နေရာစာရင်း ရယူနေသည်။"] : []),
+      ...Object.values(validate(source, form)).filter((v): v is string => !!v),
+      ...(!warehouses.some((w) => w.active && String(w.id) === form.warehouseId)
+        ? ["အသုံးပြုနိုင်သော ဂိုဒေါင်ရွေးပါ။"]
+        : []),
+      ...(!locations.some((l) => l.active && String(l.id) === form.locationId)
+        ? ["အသုံးပြုနိုင်သော သိုလှောင်နေရာရွေးပါ။"]
+        : []),
+    ]),
+  ];
   return (
     <main
       lang="my"
-      className="mx-auto min-h-[calc(100dvh-4rem)] min-w-0 max-w-[1480px] space-y-5 bg-gradient-to-br from-blue-50/60 via-background to-slate-50/60 p-3 text-foreground dark:from-blue-950/20 dark:to-background sm:p-5 lg:p-6"
-      style={{
-        fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif',
-      }}
+      className="mx-auto min-w-0 max-w-[1500px] space-y-4 px-3 py-4 text-foreground sm:px-5 sm:py-6"
+      style={{ fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif' }}
     >
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold leading-relaxed tracking-tight sm:text-3xl">
-            ဂိုဒေါင်ပစ္စည်းစာရင်း
-          </h1>
-          <p className="mt-1 text-sm leading-7 text-muted-foreground">
-            Warehouse <span className="px-2">•</span>
-            {stockKind === "BULK"
-              ? "အထုပ်ကြီး လက်ကျန်"
-              : "ထုတ်လုပ်ပြီး လက်ကျန်"}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-4 print:border-0">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">
+            BINHLAIG / FACTORY
           </p>
+          <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">
+            Receiving
+          </h1>
+          <p className="mt-1 text-xs leading-6 text-muted-foreground">
+            အထုပ်ကြီး လက်ခံသွင်းခြင်း · Costing → Warehouse
+          </p>
+          {record && (
+            <p className="mt-1 text-[11px] font-mono text-muted-foreground">
+              {record.receivingNumber}
+            </p>
+          )}
         </div>
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <Badge
+            variant="outline"
+            className={`h-9 rounded-lg px-3 text-[11px] ${record?.status === "CONFIRMED" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" : dirty ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300" : ""}`}
+          >
+            {record?.status === "CONFIRMED"
+              ? "Confirmed"
+              : record?.status === "CANCELLED"
+                ? "Cancelled"
+                : dirty
+                  ? "Unsaved"
+                  : record
+                    ? "Draft"
+                    : "New"}
+          </Badge>
+          <Button
+            variant="outline"
+            className="h-10 rounded-xl"
+            disabled={busy}
+            onClick={() => {
+              setHistoryPage(0);
+              setHistoryOpen(true);
+              setHistoryRevision((v) => v + 1);
+            }}
+          >
+            <History className="size-4" />{" "}
+            <span className="hidden sm:inline">History</span>
+          </Button>
+          <Button
+            className="h-10 rounded-xl bg-blue-600 px-4 text-white hover:bg-blue-700"
+            disabled={busy || boot || !!pending}
+            onClick={() => setAction("new")}
+          >
+            <Plus className="size-4" /> New Receiving
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Receiving options"
+            className="size-10 rounded-xl"
+            disabled={busy}
+            onClick={() => setMoreOpen(true)}
+          >
+            <MoreHorizontal className="size-5" />
+          </Button>
+        </div>
+      </header>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/5 dark:text-blue-200">
+        <span className="inline-flex items-center gap-2">
+          <ClipboardCheck className="size-4" /> Bulk Package Receiving
+        </span>
+        <span className="text-muted-foreground">
+          ရွေးချယ် → ပမာဏစစ် → ဂိုဒေါင်ရွေး → Confirm
+        </span>
+      </div>
+      {source && !bulkReady && !record && (
+        <p
+          role="alert"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-7 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100"
+        >
+          Costing အချက်အလက်ကို ကြည့်နိုင်ပါသည်။ လက်ရှိ Backend က Bulk Receiving
+          contract မပြန်သေးသဖြင့် သိမ်း/အတည်ပြုခြင်း ပိတ်ထားပါသည်။ အထုပ်ကြီး
+          Stock ကို Finished Goods Stock အဖြစ် မသွင်းပါ။
+        </p>
+      )}
+      {record && record.stockKind !== "BULK" && (
         <p
           role="status"
-          className={`flex items-center gap-1.5 text-[11px] leading-6 ${authExpired ? "text-destructive" : "text-muted-foreground"}`}
+          className="rounded-xl border border-amber-300 p-3 text-xs leading-7"
         >
-          {connection === "live" && !authExpired ? (
-            <Wifi className="size-3.5 text-emerald-600" />
-          ) : (
-            <Clock3 className="size-3.5" />
-          )}
-          {connectionText}
-        </p>
-      </header>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          applyFilters(draft);
-        }}
-        className="grid min-w-0 grid-cols-2 gap-3 min-[1100px]:grid-cols-[minmax(180px,1.8fr)_auto_minmax(140px,1fr)_minmax(150px,1fr)_auto]"
-      >
-        <div className="relative col-span-2 min-w-0 min-[1100px]:col-span-1">
-          <Button
-            type="submit"
-            variant="ghost"
-            aria-label="ရှာရန်"
-            className="absolute inset-y-0 left-0 z-10 h-full w-11 px-0 text-muted-foreground"
-          >
-            <Search className="size-5" />
-          </Button>
-          <Input
-            ref={searchRef}
-            aria-label="ပစ္စည်းအမည် / Barcode"
-            value={draft.search}
-            maxLength={200}
-            placeholder="ဘားကုဒ် သို့မဟုတ် ပစ္စည်းအမည် ရှာရန်…"
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) =>
-              setDraft((f) => ({ ...f, search: e.target.value }))
-            }
-            className="h-12 bg-card pl-11 text-sm"
-          />
-        </div>
-        <Button
-          type="button"
-          onClick={() => {
-            setCameraAttempt((v) => v + 1);
-            setCameraOpen(true);
-          }}
-          disabled={authExpired}
-          className="h-12 gap-2 bg-blue-600 px-5 text-white hover:bg-blue-700"
-          aria-label="Tablet camera ဖြင့် barcode scan ဖတ်ရန်"
-        >
-          <Camera className="size-5" />
-          Scan
-        </Button>
-        <div className="relative min-w-0">
-          <Warehouse className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-          <select
-            aria-label="Warehouse"
-            className={`${fieldClass} h-12 bg-card pl-10`}
-            value={draft.warehouseId}
-            onChange={(e) =>
-              applyFilters({
-                ...draft,
-                warehouseId: e.target.value,
-                locationId: "",
-              })
-            }
-          >
-            <option value="">ဂိုဒေါင်အားလုံး</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-                {!w.active ? " (ပိတ်ထားသည်)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="relative min-w-0">
-          <MapPin className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-          <select
-            aria-label="Location / Rack"
-            className={`${fieldClass} h-12 bg-card pl-10`}
-            value={draft.locationId}
-            disabled={!draft.warehouseId || locationBusy}
-            onChange={(e) =>
-              applyFilters({ ...draft, locationId: e.target.value })
-            }
-          >
-            <option value="">
-              {locationBusy ? "ရယူနေသည်…" : "နေရာအားလုံး"}
-            </option>
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-                {!l.active ? " (ပိတ်ထားသည်)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={authExpired}
-          onClick={() => {
-            setPlaceRevision((v) => v + 1);
-            refresh();
-          }}
-          className="h-12 border-blue-500 bg-card px-4 text-blue-600"
-        >
-          <RefreshCw className={`size-5 ${busy ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </form>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-wrap gap-2 sm:gap-3">
-          <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 text-xs leading-6 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">
-            <Package className="size-5" />
-            ဤစာမျက်နှာ: <strong>{skuCount ?? "—"}</strong> မျိုး
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs leading-6 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
-            <Database className="size-5" />
-            {stockKind === "BULK" ? "အထုပ်ကြီး Stock" : "Finished Stock"}
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs leading-6 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-            <Clock3 className="size-5" />
-            နောက်ဆုံးရယူချိန်{" "}
-            <strong>
-              {updated ? (
-                <time dateTime={updated}>
-                  {new Date(updated).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </time>
-              ) : (
-                "—"
-              )}
-            </strong>
-          </div>
-        </div>
-        <details className="min-w-0 text-xs text-muted-foreground">
-          <summary className="cursor-pointer py-2 leading-6">
-            Batch ဖြင့်စစ်ရန် / Filter ရှင်းရန်
-          </summary>
-          <div className="mt-2 flex max-w-full flex-wrap items-end gap-2 rounded-xl border bg-card p-3">
-            <Field label="Batch (အတိအကျ)">
-              <Input
-                value={draft.batch}
-                maxLength={100}
-                onChange={(e) =>
-                  setDraft((f) => ({ ...f, batch: e.target.value }))
-                }
-                className="w-40"
-              />
-            </Field>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => applyFilters(draft)}
-              disabled={authExpired}
-            >
-              စစ်ရန်
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => applyFilters(emptyFilters)}
-            >
-              ရှင်းရန်
-            </Button>
-          </div>
-        </details>
-      </div>
-      {placeError && (
-        <p role="alert" className="text-xs leading-6 text-destructive">
-          {placeError}
+          မူလ Finished Goods မှတ်တမ်းဖြစ်ပါသည်။ အထုပ်ကြီးအဖြစ် ပြောင်းမတွက်ဘဲ
+          ယူနစ်အဟောင်းအတိုင်း ကြည့်ရန်သာ ပြထားပါသည်။
         </p>
       )}
-      {error && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm leading-7 text-destructive"
+      {notice && (
+        <p
+          role="status"
+          className="rounded-xl border bg-muted/40 p-3 text-sm leading-7"
         >
+          {notice}
+        </p>
+      )}
+      {pending && (
+        <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-7 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
           <p>
-            {error}
-            {current
-              ? " ပြထားသော data သည် နောက်ဆုံးရယူထားသည့်အခြေအနေ ဖြစ်ပါသည်။"
-              : ""}
+            အပြီးသတ်ရလဒ် မသေချာသေးပါ။ ထပ်ဖန်တီးခြင်းကို ပိတ်ထားပါသည်။ မူလ
+            request အတိုင်းသာ ပြန်စစ်မည်။
           </p>
-          {!authExpired && (
-            <Button variant="outline" onClick={refresh}>
-              ပြန်စမ်းရန်
+          <Button
+            disabled={busy}
+            variant="outline"
+            onClick={() => void perform(pending, true)}
+          >
+            <RefreshCw className="size-4" />
+            လုပ်ဆောင်မှု ပြန်စစ်ရန်
+          </Button>
+        </div>
+      )}
+      {blocked && !pending && (
+        <div className="rounded-xl border border-amber-300 p-3 text-xs leading-7">
+          <p>
+            စာရင်းပြောင်းထားနိုင်ပါသည်။ ဆက်မလုပ်မီ Server လက်ရှိအခြေအနေကို
+            ပြန်ဖွင့်ပါ။
+          </p>
+          {record ? (
+            <Button
+              disabled={busy}
+              variant="outline"
+              onClick={() => void openRecord(record.id, true)}
+            >
+              Server စာရင်းပြန်ဖွင့်ရန်
+            </Button>
+          ) : (
+            <Button
+              disabled={busy}
+              variant="outline"
+              onClick={() => setHistoryOpen(true)}
+            >
+              History စစ်ရန်
             </Button>
           )}
         </div>
       )}
-      {photoError && (
-        <p role="status" className="text-xs leading-6 text-amber-700">
-          {photoError}
-        </p>
-      )}
-      <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_330px] xl:grid-cols-[minmax(0,1fr)_350px]">
-        <div className="min-w-0 space-y-5">
-          {busy && !current && (
-            <div
-              role="status"
-              className="flex items-center gap-2 rounded-xl border bg-card p-6 text-sm text-muted-foreground"
+      <div className="grid min-w-0 items-start gap-4 min-[1050px]:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-4">
+          <Section
+            number="01"
+            title="ပစ္စည်းရွေးချယ်ရန်"
+            extra={
+              <Badge variant="secondary" className="text-[10px]">
+                Costing Source
+              </Badge>
+            }
+          >
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void lookup(barcode);
+              }}
+              className="flex flex-wrap gap-2"
             >
-              <Loader2 className="size-4 animate-spin" />
-              စတော့စာရင်း ရယူနေသည်…
-            </div>
-          )}
-          {!busy && !error && current && !balances.length && (
-            <div className="rounded-2xl border border-dashed bg-card p-10 text-center">
-              <Package className="mx-auto mb-3 size-10 text-muted-foreground" />
-              <p className="text-sm leading-7">
-                ဒီစစ်ထုတ်မှုအတွက် လက်ကျန်စာရင်း မရှိသေးပါ။
-              </p>
-              <p className="mt-2 text-xs leading-7 text-muted-foreground">
-                Stock ဝင်ရန် Receiving ကို အတည်ပြုပါ။
-              </p>
-            </div>
-          )}
-          <div
-            className="grid min-w-0 gap-2.5"
-            style={{
-              gridTemplateColumns:
-                "repeat(auto-fit,minmax(min(100%,150px),1fr))",
-            }}
-            aria-label="ဂိုဒေါင်ပစ္စည်းများ"
-            aria-busy={busy}
-          >
-            {balances.map((r) => {
-              const active = selected && rowKey(selected) === rowKey(r);
-              return (
-                <button
-                  type="button"
-                  key={rowKey(r)}
-                  aria-label={`${r.name} အသေးစိတ်ကြည့်ရန်`}
-                  aria-pressed={!!active}
-                  onClick={() => {
-                    setSelectedKey(rowKey(r));
-                    if (window.matchMedia("(max-width: 1023px)").matches)
-                      requestAnimationFrame(() =>
-                        document
-                          .getElementById("warehouse-product-detail")
-                          ?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          }),
-                      );
-                  }}
-                  className={`group w-full max-w-[200px] min-w-0 overflow-hidden rounded-xl border bg-card p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "border-blue-600 bg-blue-50/70 ring-1 ring-blue-500 dark:bg-blue-950/30" : "hover:border-blue-300 hover:shadow-sm"}`}
-                >
-                  <ProductImage
-                    product={r}
-                    imageUrl={receivingPhotos[r.barcode]}
-                    tile
-                  />
-                  <h2 className="mt-2 line-clamp-2 min-h-8 break-words text-sm font-semibold leading-6">
-                    {r.name}
-                  </h2>
-                  <p
-                    className={`mt-1 break-words text-sm font-semibold leading-6 ${active ? "text-blue-600 dark:text-blue-300" : "text-foreground"}`}
-                  >
-                    {r.stockKind === "BULK"
-                      ? packageRemainder(
-                          r.quantity,
-                          r.quantityPerPackage!,
-                          r.packageUnit!,
-                          r.unit,
-                        )
-                      : `${quantity(r.quantity)} ${r.unit}`}
-                  </p>
-                  {r.stockKind === "BULK" && (
-                    <p className="text-xs font-medium leading-6 text-muted-foreground">
-                      {quantity(r.quantity)} {r.unit}
-                    </p>
-                  )}
-                  <p
-                    className="mt-1 truncate text-[10px] leading-5 text-muted-foreground"
-                    title={`${r.batch} · ${locationName(r.locationId)}`}
-                  >
-                    {r.batch} · {locationName(r.locationId)}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-          {total !== undefined && (
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>
-                {total.toLocaleString()} စာရင်း · {totalPages ? page + 1 : 0} /{" "}
-                {totalPages}
-              </span>
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label="ပစ္စည်း ယခင်စာမျက်နှာ"
-                  disabled={page === 0 || busy || authExpired}
-                  onClick={() => setPage((v) => v - 1)}
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label="ပစ္စည်း နောက်စာမျက်နှာ"
-                  disabled={
-                    !totalPages || page + 1 >= totalPages || busy || authExpired
-                  }
-                  onClick={() => setPage((v) => v + 1)}
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-          <section
-            className="min-w-0 overflow-hidden rounded-2xl border bg-card p-3 sm:p-4"
-            aria-label="Stock မှတ်တမ်း"
-          >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold leading-8">
-                {stockKind === "BULK"
-                  ? "လတ်တလော လက်ခံမှုမှတ်တမ်းများ"
-                  : "လတ်တလော Stock လှုပ်ရှားမှုများ"}
-              </h2>
-              {(historyBusy || busy) && (
-                <Loader2
-                  aria-label="မှတ်တမ်း ပြန်ယူနေသည်"
-                  className="size-4 animate-spin text-muted-foreground"
+              <div className="relative min-w-0 flex-1 basis-44">
+                <Barcode className="absolute left-3 top-3 size-5 text-muted-foreground" />
+                <Input
+                  ref={barcodeRef}
+                  aria-label="Costing barcode"
+                  className="h-11 pl-10 font-mono"
+                  value={barcode}
+                  onChange={(e) => setBarcode(e.target.value)}
+                  placeholder="FC-12-34"
+                  disabled={disabled || !!record}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
                 />
-              )}
-            </div>
-            {historyError && (
-              <p
-                role="alert"
-                className="mb-3 text-xs leading-6 text-destructive"
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11"
+                disabled={disabled || !!record}
+                onClick={() => {
+                  setCatalogPage(0);
+                  setPicker(true);
+                }}
               >
-                {historyError}
+                <ListFilter className="size-4" />
+                စာရင်းမှရွေးရန်
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11"
+                disabled={disabled || !!record}
+                aria-label="Tablet camera ဖြင့် Costing barcode scan ဖတ်ရန်"
+                onClick={() => {
+                  if (dirty) {
+                    setNotice(
+                      "လက်ရှိအချက်များကို အရင်သိမ်းပါ။ ပစ္စည်းပြောင်းရန် အသစ်ခလုတ်မှ စပါ။",
+                    );
+                    return;
+                  }
+                  setCameraAttempt((n) => n + 1);
+                  setCameraOpen(true);
+                }}
+              >
+                <Camera className="size-4" />
+                Camera Scan
+              </Button>
+              <Button
+                type="submit"
+                className="min-h-11 bg-blue-600 text-white hover:bg-blue-700"
+                disabled={disabled || !!record || !barcode.trim()}
+              >
+                {busy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Search className="size-4" />
+                )}
+                ရှာရန်
+              </Button>
+            </form>
+            <p className="text-xs leading-6 text-muted-foreground">
+              Scanner ဖြင့်ဖတ်လျှင် Enter နှိပ်ပါ။ Tablet camera သုံးရန် Camera
+              Scan ကို နှိပ်ပါ။
+            </p>
+            {source ? (
+              <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
+                <Photo source={source} />
+                <div className="min-w-0 flex-1">
+                  <h3 className="break-words text-sm font-semibold leading-7">
+                    {source.productName}
+                  </h3>
+                  <p className="font-mono text-xs">{source.barcode}</p>
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    Source version {source.sourceVersion}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="text-emerald-700 dark:text-emerald-400"
+                >
+                  အတည်ပြုပြီး
+                </Badge>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                <Package className="mx-auto mb-2 size-8" />
+                ပစ္စည်းရွေးပြီး စတင်ပါ။
+              </div>
+            )}
+            {errors.product && (
+              <p className="text-xs text-destructive">{errors.product}</p>
+            )}
+          </Section>
+          <Section
+            number="02"
+            title={vissBasis ? "Costing မှ ပိဿာအခြေခံအချက်အလက်" : "Costing မှ မူလအထုပ်အချက်အလက်"}
+            extra={<LockKeyhole className="size-4 text-muted-foreground" />}
+          >
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {[
+                { label: vissBasis ? "အခြေခံယူနစ်" : "အထုပ်အမျိုးအစား", value: bulkMeta?.packageUnit },
+                {
+                  label: vissBasis ? "တစ်ပိဿာပါဝင်မှု" : "တစ်အထုပ်ပါဝင်မှု",
+                  value: bulkMeta
+                    ? `${displayDecimal(bulkMeta.quantityPerPackage)} ${bulkMeta.baseUnit}`
+                    : undefined,
+                },
+                {
+                  label: vissBasis ? "တစ်ပိဿာ ဝယ်ဈေးကိုးကား" : "တစ်အထုပ်ဝယ်ဈေး",
+                  value:
+                    bulkMeta && source
+                      ? `${displayDecimal(bulkMeta.purchaseCostPerPackage)} ${source.currency === "MMK" ? "ကျပ်" : source.currency}`
+                      : undefined,
+                },
+              ].map((i) => (
+                <div
+                  key={i.label}
+                  className="min-w-0 rounded-xl bg-muted/60 p-3"
+                >
+                  <p className="text-[11px] leading-6 text-muted-foreground">
+                    {i.label}
+                  </p>
+                  <p className="break-words text-sm font-semibold tabular-nums">
+                    {i.value || "—"}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {source && (
+              <p className="rounded-xl bg-blue-50 p-3 text-xs leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                Production အတွက်သာ ကိုးကားရန် — {fmt(source.packageSize)}{" "}
+                {source.packageSizeUnit} / {source.saleUnit} · Costing ခန့်မှန်း{" "}
+                {fmt(source.expectedQuantity)} {source.saleUnit} / Costing
+                မူလတစ်စု။ ဒီအရေအတွက်ကို Receiving Stock အဖြစ် မတိုးပါ။
               </p>
             )}
-            <div className="max-w-full overflow-x-auto">
-              <table className="w-full min-w-[520px] border-collapse text-left text-xs">
-                <thead className="bg-muted/60 text-muted-foreground">
-                  <tr>
-                    <th className="rounded-l-lg p-3 font-medium">Date</th>
-                    <th className="p-3 font-medium">Item</th>
-                    <th className="p-3 font-medium">Activity</th>
-                    <th className="rounded-r-lg p-3 text-right font-medium">
-                      Quantity
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activity?.content.map((r) => (
-                    <tr key={r.id} className="border-b last:border-0">
-                      <td className="whitespace-nowrap p-3 text-muted-foreground">
-                        <time dateTime={r.createdAt}>
-                          {new Date(r.createdAt).toLocaleDateString([], {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </time>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => setDetail(r)}
-                          className="flex items-center gap-2 text-left hover:text-blue-600"
-                          aria-label={`${r.name} မှတ်တမ်းအသေးစိတ်`}
-                        >
-                          <ProductImage
-                            product={r}
-                            imageUrl={receivingPhotos[r.barcode]}
-                            compact
-                          />
-                          <span className="max-w-36 break-words leading-6">
-                            {r.name}
-                            <span className="block text-[10px] text-muted-foreground">
-                              {r.batch}
-                            </span>
-                          </span>
-                        </button>
-                      </td>
-                      <td className="p-3">
-                        <Badge
-                          variant="outline"
-                          className={`whitespace-nowrap border-0 px-2.5 py-1.5 font-normal ${r.type === "STOCK_IN" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"}`}
-                        >
-                          {r.type === "STOCK_IN" ? "Receiving" : "Checkout"}
-                        </Badge>
-                      </td>
-                      <td
-                        className={`whitespace-nowrap p-3 text-right text-sm font-semibold tabular-nums ${r.type === "STOCK_IN" ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}`}
-                      >
-                        {isPositive(r.delta) ? "+" : ""}
-                        {quantity(r.delta)} {r.unit}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {activity && !activity.content.length && (
-                <p className="p-6 text-center text-xs leading-7 text-muted-foreground">
-                  ဤစစ်ထုတ်မှုအတွက် မှတ်တမ်းမရှိသေးပါ။
-                </p>
-              )}
-              {!activity && !historyError && (
-                <p className="p-6 text-center text-xs leading-7 text-muted-foreground">
-                  မှတ်တမ်း ရယူနေသည်…
-                </p>
-              )}
-            </div>
-            <footer className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[11px] leading-6 text-muted-foreground">
-              <p className="max-w-md">
-                {stockKind === "BULK"
-                  ? "အတည်ပြုပြီးသော Receiving အဝင်များကို ပြထားပါသည်။ လက်ကျန်ကို Server မှ တိုက်ရိုက်ရယူပါသည်။"
-                  : "လက်ကျန်မှ ရောင်းပြီးပမာဏကို ထပ်မနုတ်ပါ။"}
+            {source?.bulkPreview && (
+              <p className="text-xs leading-7 text-amber-700 dark:text-amber-300">
+                လက်ရှိ Costing မှ ကိုးကားပြထားခြင်းသာ ဖြစ်သည်။ Weight/Volume ၏
+                မူလတစ်စုကို တစ်အိတ်ဟု အလိုအလျောက် မယူဆထားပါ။
+                မှန်ကန်သောအထုပ်အမည်နှင့် အရွယ်ကို Backend bulk snapshot မှ
+                သတ်မှတ်ရမည်။
               </p>
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label="မှတ်တမ်း ယခင်စာမျက်နှာ"
-                  disabled={
-                    activityPage === 0 || busy || historyBusy || authExpired
-                  }
-                  onClick={() => setActivityPage((v) => v - 1)}
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <span className="grid size-8 place-items-center rounded-md bg-blue-600 font-semibold text-white">
-                  {activityPages ? activityPage + 1 : 0}
+            )}
+          </Section>
+
+          <fieldset
+            disabled={!source || readOnly || disabled}
+            className="min-w-0 space-y-4 disabled:opacity-70"
+          >
+            <Section
+              number="03"
+              title="တကယ်လက်ခံရရှိမှု"
+              extra={
+                <span className="text-[10px] text-muted-foreground">
+                  Bulk Packages
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label="မှတ်တမ်း နောက်စာမျက်နှာ"
-                  disabled={
-                    !activityPages ||
-                    activityPage + 1 >= activityPages ||
-                    busy ||
-                    historyBusy ||
-                    authExpired
-                  }
-                  onClick={() => setActivityPage((v) => v + 1)}
+              }
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  label={vissBasis ? "စုစုပေါင်း လက်ခံရရှိသော ပိဿာ *" : `ရောက်ရှိသော အထုပ်အရေအတွက် (${bulkMeta?.packageUnit || "အထုပ်"}) *`}
+                  error={errors.actual}
                 >
-                  <ChevronRight className="size-4" />
-                </Button>
-                <span className="ml-2">
-                  {activity?.totalElements ?? "—"} စာရင်း
-                </span>
-              </div>
-            </footer>
-          </section>
-        </div>
-        <aside
-          id="warehouse-product-detail"
-          aria-label="ပစ္စည်းအသေးစိတ်"
-          className="min-w-0 scroll-mt-4 rounded-2xl border bg-card p-3 shadow-sm lg:sticky lg:top-4"
-        >
-          {stockTabs}
-          <h2 className="mt-4 text-lg font-semibold leading-8">
-            ပစ္စည်းအသေးစိတ်
-          </h2>
-          {selected ? (
-            <>
-              <div className="my-3 flex items-center gap-3">
-                <div className="w-20 shrink-0">
-                  <ProductImage
-                    product={selected}
-                    imageUrl={receivingPhotos[selected.barcode]}
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    className="h-12 text-lg font-semibold"
+                    placeholder="ဥပမာ 5"
+                    value={form.actual}
+                    onChange={(e) => change("actual", e.target.value)}
                   />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="break-words text-lg font-semibold leading-8">
-                    {selected.name}
-                  </h3>
-                  <p className="break-all text-xs leading-6 text-muted-foreground">
-                    Barcode: {selected.barcode}
-                  </p>
+                </Field>
+                <div className="flex items-center justify-center rounded-xl bg-blue-50 p-3 text-sm font-semibold leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                  {bulkMeta && bulkTotal
+                    ? `${form.actual} ${bulkMeta.packageUnit} × ${displayDecimal(bulkMeta.quantityPerPackage)} ${bulkMeta.baseUnit} = ${displayDecimal(bulkTotal)} ${bulkMeta.baseUnit}`
+                    : "အထုပ်အရေအတွက် ဖြည့်ပါ။"}
                 </div>
               </div>
-              <div className="space-y-2">
-                <StockMetric
-                  icon={<ArrowDownLeft className="size-5" />}
-                  label="မူလလက်ခံဝင်"
-                  value={
-                    selected.receivedQuantity == null
-                      ? "—"
-                      : `${quantity(selected.receivedQuantity)} ${selected.unit}`
-                  }
-                  description={
-                    selected.stockKind === "BULK" &&
-                    selected.receivedQuantity != null
-                      ? packageRemainder(
-                          selected.receivedQuantity,
-                          selected.quantityPerPackage!,
-                          selected.packageUnit!,
-                          selected.unit,
-                        )
-                      : undefined
-                  }
-                  color="blue"
-                />
-                {selected.stockKind === "BULK" ? (
-                  <StockMetric
-                    icon={<Cog className="size-5" />}
-                    label="Production ထုတ်ယူပြီး"
-                    value={selected.productionConsumedQuantity == null
-                      ? "—"
-                      : `${quantity(selected.productionConsumedQuantity)} ${selected.unit}`}
-                    description={selected.productionConsumedQuantity == null
-                      ? "API မှ production_consumed_quantity မပါသေးပါ"
-                      : selected.productionConsumedQuantity === "0"
-                        ? "ထုတ်ယူအတည်ပြုမှု မရှိသေးပါ"
-                        : packageRemainder(selected.productionConsumedQuantity, selected.quantityPerPackage!, selected.packageUnit!, selected.unit)}
-                    color="amber"
+              {vissBasis && <>
+                <p className="rounded-xl border bg-muted/40 p-3 text-xs leading-7">1 ပိဿာ = 100 ကျပ်သား။ ပိဿာအပြည့်ကိန်းကိုသာ လက်ရှိ API တွင် သိမ်းနိုင်ပါသည်။ ဥပမာ 1 ပိဿာ 25 ကျပ်သားကို 2 ပိဿာအဖြစ် ဝိုင်းမသိမ်းပါနှင့်။ kg / g သို့ အလိုအလျောက် မပြောင်းပါ။</p>
+                <VissPackageCalculator key={`${source?.costingSheetId}:${source?.costingItemId}:${source?.sourceVersion}:${record?.id ?? "new"}`} disabled={readOnly||disabled} onApply={(viss,note)=>{
+                  if (readOnly||disabled) return;
+                  const previousNote=withoutPackageNote(form.note);
+                  const nextNote=previousNote ? `${previousNote}\n${note}` : note;
+                  if(nextNote.length>2000){setNotice("အထုပ်မှတ်ချက် ထည့်ရန် မှတ်ချက်နေရာ မလုံလောက်ပါ။ မူလမှတ်ချက်ကို တိုအောင်ပြင်ပြီး ပြန်တွက်ပါ။");return;}
+                  setForm(current=>({...current,actual:viss,note:nextNote}));
+                  setErrors(current=>({...current,actual:undefined,note:undefined}));
+                  setNotice("ပိဿာစုစုပေါင်း ဖြည့်ပြီးပါပြီ။ ဂိုဒေါင်၊ Batch နှင့် ပမာဏကို စစ်ပြီးမှ သိမ်းပါ။");
+                }}/>
+              </>}
+              <p className="text-xs leading-7 text-muted-foreground">
+                လက်ခံခြင်းတွင် ခွဲထုတ်မည့် အိတ်ငယ်အရေအတွက် သို့မဟုတ် Production
+                အလေအလွင့်ကို မဖြည့်ပါ။
+              </p>
+            </Section>
+            <Section number="04" title="သိုလှောင်နေရာနှင့် Batch">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Batch နံပါတ် *" error={errors.batch}>
+                  <Input
+                    className="h-11 font-mono"
+                    maxLength={100}
+                    value={form.batch}
+                    onChange={(e) => change("batch", e.target.value)}
                   />
-                ) : (
-                  <StockMetric
-                    icon={<ArrowUpRight className="size-5" />}
-                    label="ရောင်းပြီး"
-                    value={
-                      selected.soldQuantity == null
-                        ? "—"
-                        : `${quantity(selected.soldQuantity)} ${selected.unit}`
+                </Field>
+                <Field label="Warehouse *" error={errors.warehouseId}>
+                  <select
+                    className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={form.warehouseId}
+                    onChange={(e) => change("warehouseId", e.target.value)}
+                  >
+                    <option value="">ဂိုဒေါင်ရွေးပါ</option>
+                    {warehouses
+                      .filter(
+                        (w) => w.active || String(w.id) === form.warehouseId,
+                      )
+                      .map((w) => (
+                        <option key={w.id} value={w.id} disabled={!w.active}>
+                          {w.name}
+                          {!w.active ? " (ပိတ်ထားသည်)" : ""}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+                <Field
+                  label="Storage Location / Rack *"
+                  error={errors.locationId}
+                >
+                  <select
+                    className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={form.locationId}
+                    onChange={(e) => change("locationId", e.target.value)}
+                    disabled={
+                      !form.warehouseId || locationsBusy || disabled || readOnly
                     }
-                    color="amber"
+                  >
+                    <option value="">
+                      {locationsBusy ? "ရယူနေသည်…" : "နေရာရွေးပါ"}
+                    </option>
+                    {locations
+                      .filter(
+                        (l) => l.active || String(l.id) === form.locationId,
+                      )
+                      .map((l) => (
+                        <option key={l.id} value={l.id} disabled={!l.active}>
+                          {l.name}
+                          {!l.active ? " (ပိတ်ထားသည်)" : ""}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+                <Field label="လက်ခံရက် *" error={errors.receivedDate}>
+                  <Input
+                    type="date"
+                    className="h-11"
+                    value={form.receivedDate}
+                    onChange={(e) => change("receivedDate", e.target.value)}
                   />
-                )}
-                <StockMetric
-                  icon={<Package className="size-6" />}
-                  label="လက်ရှိလက်ကျန်"
-                  value={`${quantity(selected.quantity)} ${selected.unit}`}
-                  description={
-                    selected.stockKind === "BULK"
-                      ? packageRemainder(
-                          selected.quantity,
-                          selected.quantityPerPackage!,
-                          selected.packageUnit!,
-                          selected.unit,
-                        )
-                      : undefined
-                  }
-                  color="green"
+                </Field>
+                <Field
+                  label="သက်တမ်းကုန်ရက် (လိုအပ်လျှင်)"
+                  error={errors.expiryDate}
+                >
+                  <Input
+                    type="date"
+                    className="h-11"
+                    min={form.receivedDate || undefined}
+                    value={form.expiryDate}
+                    onChange={(e) => change("expiryDate", e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field label="မှတ်ချက် (လိုအပ်လျှင်)" error={errors.note}>
+                <Input
+                  className="h-11"
+                  value={form.note}
+                  maxLength={2000}
+                  onChange={(e) => change("note", e.target.value)}
                 />
-              </div>
-              <dl className="mt-3 overflow-hidden rounded-xl border text-xs">
-                {[
-                  ["Batch No.", selected.batch],
-                  ["Warehouse", warehouseName(selected.warehouseId)],
-                  ["Location", locationName(selected.locationId)],
-                  [
-                    "Unit",
-                    selected.stockKind === "BULK"
-                      ? `${quantity(selected.quantityPerPackage!)} ${selected.unit} / ${selected.packageUnit}`
-                      : selected.unit,
-                  ],
-                  ["Source", sourceText],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="grid grid-cols-[90px_minmax(0,1fr)] border-b last:border-0"
-                  >
-                    <dt className="bg-muted/40 px-3 py-1.5 leading-5 text-muted-foreground">
-                      {label}
-                    </dt>
-                    <dd
-                      className="min-w-0 break-words px-3 py-1.5 leading-5"
-                      title={value}
-                    >
-                      {value}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <div className="mt-3 flex gap-2 rounded-xl bg-blue-50 p-3 text-xs leading-6 text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
-                <Info className="mt-1 size-4 shrink-0" />
-                <p>
-                  {selected.stockKind === "BULK"
-                    ? "လက်ကျန်သည် Production ထုတ်ယူမှု နုတ်ပြီးသားဖြစ်၍ ထပ်မနုတ်ပါ။ အထုပ်နှင့် kg / L / ခု သည် Stock တစ်ခုတည်း၏ ဖော်ပြချက်နှစ်မျိုးဖြစ်ပါသည်။"
-                    : "ရောင်းပြီးပမာဏကို လက်ကျန်မှ ထပ်မနုတ်ပါ။"}
-                </p>
-              </div>
-              {selected.stockKind === "BULK" ? (
-                <Button
-                  asChild
-                  className="mt-3 min-h-12 w-full whitespace-normal bg-blue-600 text-sm leading-6 text-white hover:bg-blue-700"
-                >
-                  <Link
-                    href={`/factory/production?${new URLSearchParams({ itemId: String(selected.itemId), sourceVersion: String(selected.sourceVersion), warehouseId: String(selected.warehouseId), locationId: String(selected.locationId), batch: selected.batch })}`}
-                  >
-                    <Cog className="size-5 shrink-0" />
-                    Production သို့သွားရန်
-                  </Link>
-                </Button>
-              ) : (
-                <Button
-                  className="mt-3 min-h-12 w-full"
-                  disabled={authExpired}
-                  onClick={() => setMappingOpen(true)}
-                >
-                  <Link2 className="size-4" />
-                  POS ပစ္စည်းချိတ်ရန်
-                </Button>
-              )}
+              </Field>
+            </Section>
+          </fieldset>
+          <details className="group rounded-xl border border-dashed bg-muted/20 px-3 print:hidden">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium [&::-webkit-details-marker]:hidden">
+              <span className="inline-flex items-center gap-2">
+                <Settings2 className="size-4 text-muted-foreground" /> Warehouse
+                / Location Settings
+              </span>
+              <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="flex flex-wrap items-center gap-2 border-t py-3">
+              <Button
+                variant="outline"
+                disabled={busy || !!pending}
+                onClick={() => {
+                  setPlaceWarehouse(form.warehouseId);
+                  setPlaceNotice("");
+                  setSetup(true);
+                }}
+              >
+                <Settings2 className="size-4" />
+                ဂိုဒေါင် / နေရာ ထည့်ရန်
+              </Button>
               <Button
                 variant="ghost"
-                className="mt-1 w-full text-xs text-muted-foreground"
-                onClick={() => setDetail(selected)}
+                disabled={busy}
+                onClick={() => {
+                  void refreshWarehouses();
+                  setLocationRevision((v) => v + 1);
+                }}
               >
-                အသေးစိတ် ထပ်ကြည့်ရန်
+                <RefreshCw className="size-4" />
+                နေရာစာရင်းပြန်တင်ရန်
               </Button>
-            </>
-          ) : (
-            <div className="py-12 text-center text-xs leading-7 text-muted-foreground">
-              <Package className="mx-auto mb-3 size-10 opacity-40" />
-              {busy
-                ? "ပစ္စည်းစာရင်း ရယူနေသည်…"
-                : "ပစ္စည်းရွေးရန် စာရင်းမရှိသေးပါ။"}
+              {placeError && (
+                <p className="text-xs text-destructive">{placeError}</p>
+              )}
+              {!warehouses.length && !boot && (
+                <p className="text-xs text-muted-foreground">
+                  ဂိုဒေါင်မရှိသေးလျှင် အရင်ဖန်တီးပါ။
+                </p>
+              )}
             </div>
-          )}
+          </details>
+        </div>
+        <aside className="min-w-0 min-[1050px]:sticky min-[1050px]:top-20">
+          <Card className="gap-0 rounded-2xl py-0 shadow-none">
+            <CardContent className="space-y-4 p-4 sm:p-5">
+              <h2 className="text-base font-semibold leading-8">
+                Receiving Summary
+              </h2>
+              {source && (
+                <div className="flex items-center gap-3 rounded-xl border p-3">
+                  <Photo source={source} />
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold leading-7">
+                      {source.productName}
+                    </p>
+                    <p className="font-mono text-xs">{source.barcode}</p>
+                  </div>
+                </div>
+              )}
+              {record && record.stockKind !== "BULK" ? (
+                <div className="rounded-xl bg-muted/60 p-3">
+                  <p className="text-xs leading-7">မူလ Finished Goods ပမာဏ</p>
+                  <p className="text-2xl font-bold">
+                    {fmt(record.actualQuantity)} {record.saleUnit}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-blue-50 p-3 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                      <p className="text-xs leading-6">{vissBasis ? "လက်ခံရရှိသော ပိဿာ" : "အထုပ်ကြီး"}</p>
+                      <p className="mt-2 break-words text-2xl font-bold">
+                        {actual !== null ? fmt(actual) : "—"}{" "}
+                        <span className="text-sm">
+                          {bulkMeta?.packageUnit || "အထုပ်"}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-emerald-50 p-3 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                      <p className="text-xs leading-6">စုစုပေါင်းပါဝင်ပမာဏ</p>
+                      <p className="mt-2 break-words text-2xl font-bold">
+                        {bulkTotal ? displayDecimal(bulkTotal) : "—"}{" "}
+                        <span className="text-sm">{bulkMeta?.baseUnit}</span>
+                      </p>
+                    </div>
+                  </div>
+                  {bulkMeta?.baseUnit === "ကျပ်သား" && bulkTotal && <p className="rounded-xl border border-emerald-200 p-3 text-sm font-semibold leading-7 text-emerald-800 dark:text-emerald-300">ပိဿာဖြင့် — {kyatthaAsViss(bulkTotal) ?? "—"}</p>}
+                  <div className="rounded-xl bg-muted/60 p-3">
+                    <p className="text-xs text-muted-foreground">
+                      ဝယ်ယူကိုးကားတန်ဖိုး
+                    </p>
+                    <p className="mt-1 break-words text-lg font-bold tabular-nums">
+                      {bulkValue && source
+                        ? `${displayDecimal(bulkValue)} ${source.currency === "MMK" ? "ကျပ်" : source.currency}`
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-[10px] leading-6 text-muted-foreground">
+                      လက်ခံအထုပ်အရေအတွက် × တစ်အထုပ်ဝယ်ဈေး။ အပြီးသတ်ကို Server က
+                      snapshot အတိုင်း တွက်မည်။
+                    </p>
+                  </div>
+                  <p className="rounded-xl bg-blue-50 p-3 text-xs leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                    {bulkReady && bulkTotal
+                      ? `${record?.status === "CONFIRMED" ? "Warehouse သို့ လက်ခံဝင်ပြီး" : "အတည်ပြုလျှင် Warehouse သို့ ဝင်မည့်ပမာဏ"} — ${form.actual} ${bulkMeta?.packageUnit} / ${displayDecimal(bulkTotal)} ${bulkMeta?.baseUnit}။`
+                      : "Bulk Backend ချိတ်ပြီးမှ အထုပ်ကြီး Stock သိမ်းနိုင်ပါမည်။"}{" "}
+                    အထုပ်နှင့် ပါဝင်ပမာဏသည် Stock တစ်ခုတည်းကို
+                    ယူနစ်နှစ်မျိုးဖြင့် ပြထားခြင်း ဖြစ်သည်။ ခွဲထုတ်ခြင်းကို
+                    Production မှ လုပ်ပါ။
+                  </p>
+                </>
+              )}
+              <div className="space-y-1 text-xs leading-6">
+                <p>
+                  ဂိုဒေါင် —{" "}
+                  {selectedWarehouse?.name || form.warehouseId || "—"}
+                </p>
+                <p>နေရာ — {selectedLocation?.name || form.locationId || "—"}</p>
+                <p className="break-all">Batch — {form.batch || "—"}</p>
+              </div>
+              {record?.status === "CONFIRMED" ? (
+                <div className="rounded-xl border border-emerald-300 p-3 text-xs leading-7">
+                  <CheckCircle2 className="size-5 text-emerald-600" />
+                  လက်ခံမှု အတည်ပြုပြီး စတော့ဝင်ပြီးပါပြီ။
+                  <p className="break-all font-mono">
+                    {record.receivingNumber}
+                  </p>
+                </div>
+              ) : record?.status === "CANCELLED" ? (
+                <p className="rounded-xl bg-muted p-3 text-xs">
+                  ဒီမူကြမ်းကို ပယ်ဖျက်ပြီးပါပြီ။ စတော့မတိုးပါ။
+                </p>
+              ) : (
+                <>
+                  <div className="flex gap-2 rounded-xl bg-amber-50 p-3 text-xs leading-6 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    <AlertTriangle className="mt-1 size-4 shrink-0" />
+                    <p>
+                      မူကြမ်းသိမ်းခြင်းဖြင့် စတော့မတိုးပါ။ လက်ခံမှုအတည်ပြုမှ
+                      စတော့တိုးမည်။
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Button
+                      className="min-h-12 bg-blue-600 text-xs text-white hover:bg-blue-700"
+                      disabled={
+                        disabled || !record || dirty || !bulkReady || readOnly
+                      }
+                      onClick={() => setAction("confirm")}
+                    >
+                      <Check className="size-4" />
+                      လက်ခံမှုအတည်ပြုမည်
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="min-h-11"
+                      type="button"
+                      disabled={busy || boot || !!pending || readOnly}
+                      aria-describedby="receiving-save-reasons"
+                      onClick={save}
+                    >
+                      {busy ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Save className="size-4" />
+                      )}
+                      မူကြမ်းသိမ်းရန်
+                    </Button>
+                    <div
+                      id="receiving-save-reasons"
+                      role="status"
+                      aria-live="polite"
+                      className="rounded-xl border p-3 text-xs leading-7"
+                    >
+                      {saveProblems.length ? (
+                        <>
+                          <p className="font-semibold">
+                            Server တွင် သိမ်းနိုင်ရန် လိုအပ်ချက်
+                          </p>
+                          <ul className="list-inside list-disc">
+                            {saveProblems.map((reason) => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : (
+                        <p className="text-emerald-700 dark:text-emerald-300">
+                          လိုအပ်သောအချက်များ ပြည့်စုံပါပြီ။ မူကြမ်းသိမ်းရန်
+                          နှိပ်ပါ။
+                        </p>
+                      )}
+                    </div>
+                    {record && (
+                      <Button
+                        variant="ghost"
+                        disabled={disabled || dirty || readOnly || !bulkReady}
+                        onClick={() => setAction("cancel")}
+                      >
+                        မူကြမ်းပယ်ဖျက်ရန်
+                      </Button>
+                    )}
+                  </div>
+                  {(!record || dirty) && (
+                    <p className="text-[11px] leading-6 text-muted-foreground">
+                      အတည်မပြုမီ မူကြမ်းကို အရင်သိမ်းပါ။
+                    </p>
+                  )}
+                </>
+              )}
+              <p className="text-center text-[10px] text-muted-foreground">
+                Costing → အရေအတွက်စစ် → ဂိုဒေါင်လက်ခံ
+              </p>
+            </CardContent>
+          </Card>
         </aside>
       </div>
-      <Dialog
-        open={!!detail}
-        onOpenChange={(open) => {
-          if (!open) setDetail(null);
-        }}
-      >
-        <DialogContent
-          style={{
-            fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif',
-          }}
-          className="max-h-[90dvh] w-[calc(100vw-1.5rem)] max-w-4xl gap-3 overflow-y-auto rounded-2xl p-4 sm:max-w-4xl sm:p-5"
-        >
+      <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="pr-7 text-base leading-7">
-              {detail?.name || "ပစ္စည်းအသေးစိတ်"}
-            </DialogTitle>
+            <DialogTitle>Receiving Actions</DialogTitle>
             <DialogDescription>
-              ဂိုဒေါင်၊ Batch နှင့် စတော့မှတ်တမ်း
+              နေရာသတ်မှတ်ခြင်း၊ မှတ်တမ်းများနှင့် စာရင်းလုပ်ဆောင်ချက်များ
             </DialogDescription>
           </DialogHeader>
-          {detail && (
-            <ProductDetail
-              key={rowKey(detail)}
-              product={detail}
-              imageUrl={receivingPhotos[detail.barcode]}
-              warehouse={warehouseName(detail.warehouseId)}
-              location={locationName(detail.locationId)}
-            />
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDetail(null)}>
-              ပိတ်မည်
+          <div className="grid gap-2">
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy}
+              onClick={() => {
+                setMoreOpen(false);
+                setHistoryPage(0);
+                setHistoryOpen(true);
+                setHistoryRevision((v) => v + 1);
+              }}
+            >
+              <History className="size-4" /> Receiving History
             </Button>
-          </DialogFooter>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy || !!pending}
+              onClick={() => {
+                setMoreOpen(false);
+                setPlaceWarehouse(form.warehouseId);
+                setPlaceNotice("");
+                setSetup(true);
+              }}
+            >
+              <Settings2 className="size-4" /> Warehouse / Location ထည့်ရန်
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy}
+              onClick={() => {
+                setMoreOpen(false);
+                void refreshWarehouses();
+                setLocationRevision((v) => v + 1);
+              }}
+            >
+              <RefreshCw className="size-4" /> Warehouse နေရာစာရင်း Refresh
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11 justify-start"
+              disabled={busy || boot || !!pending}
+              onClick={() => {
+                setMoreOpen(false);
+                setAction("new");
+              }}
+            >
+              <Plus className="size-4" /> Receiving အသစ်
+            </Button>
+            {record?.status === "DRAFT" && (
+              <Button
+                variant="ghost"
+                className="min-h-11 justify-start text-destructive"
+                disabled={disabled || dirty}
+                onClick={() => {
+                  setMoreOpen(false);
+                  setAction("cancel");
+                }}
+              >
+                မူကြမ်းပယ်ဖျက်ရန်
+              </Button>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
       <Dialog open={cameraOpen} onOpenChange={setCameraOpen}>
         <DialogContent
-          style={{
-            fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif',
-          }}
           className="max-h-[90dvh] overflow-y-auto rounded-2xl sm:max-w-2xl"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            searchRef.current?.focus();
+            barcodeRef.current?.focus();
           }}
         >
           <DialogHeader>
-            <DialogTitle>Warehouse Barcode Scan</DialogTitle>
+            <DialogTitle>Costing Barcode Camera Scan</DialogTitle>
             <DialogDescription>
-              Tablet နောက်ကင်မရာဖြင့် FC barcode ဖတ်ပါ။ ဖတ်မိလျှင် လက်ရှိ filter
-              များနှင့် ပစ္စည်းကို ရှာပါမည်။
+              Tablet နောက်ကင်မရာကို သုံးပြီး FC barcode ကို ဖတ်ပါ။ ဖတ်မိလျှင်
+              ပစ္စည်းကို အလိုအလျောက်ရှာပါမည်။
             </DialogDescription>
           </DialogHeader>
           {cameraOpen && (
-            <WarehouseCameraScanner
+            <CostingCameraScanner
               key={cameraAttempt}
               onClose={closeCamera}
               onScan={(code) => {
-                closeCamera();
-                applyFilters({ ...draft, search: code });
+                setCameraOpen(false);
+                setBarcode(code);
+                void lookup(code);
               }}
             />
           )}
           <DialogFooter className="gap-2">
             <Button
+              type="button"
               variant="outline"
-              onClick={() => setCameraAttempt((v) => v + 1)}
+              onClick={() => setCameraAttempt((n) => n + 1)}
             >
               Camera ပြန်ဖွင့်ရန်
             </Button>
-            <Button variant="outline" onClick={closeCamera}>
+            <Button type="button" variant="outline" onClick={closeCamera}>
               ပိတ်မည်
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {mappingOpen && (
-        <MappingDialog
-          warehouses={warehouses}
-          onClose={() => setMappingOpen(false)}
-          onSaved={refresh}
-        />
-      )}
-    </main>
-  );
-}
-function StockMetric({
-  icon,
-  label,
-  value,
-  description,
-  color,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  description?: string;
-  color: "blue" | "amber" | "green";
-}) {
-  const colors = {
-    blue: "border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-    amber:
-      "border-amber-100 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-    green:
-      "border-emerald-100 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
-  };
-  return (
-    <div
-      className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-3 ${colors[color]}`}
-    >
-      <span className="flex items-center gap-2 text-xs leading-6">
-        {icon}
-        {label}
-      </span>
-      <div className="min-w-0 text-right">
-        <strong className="break-all text-lg font-bold leading-7 tabular-nums">
-          {value}
-        </strong>
-        {description && (
-          <p className="break-words text-[10px] leading-5">{description}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-function MappingDialog({
-  warehouses,
-  onClose,
-  onSaved,
-}: {
-  warehouses: Place[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [productSearch, setProductSearch] = React.useState(""),
-    [productQuery, setProductQuery] = React.useState(""),
-    [products, setProducts] = React.useState<PosProduct[]>([]),
-    [productsBusy, setProductsBusy] = React.useState(false),
-    [productError, setProductError] = React.useState(""),
-    [productRevision, setProductRevision] = React.useState(0),
-    [product, setProduct] = React.useState<PosProduct | null>(null);
-  const [receiptSearch, setReceiptSearch] = React.useState(""),
-    [receiptQuery, setReceiptQuery] = React.useState(""),
-    [receiptPage, setReceiptPage] = React.useState(0),
-    [receiptPages, setReceiptPages] = React.useState(0),
-    [receipts, setReceipts] = React.useState<ReceiptOption[]>([]),
-    [receiptsBusy, setReceiptsBusy] = React.useState(false),
-    [receiptError, setReceiptError] = React.useState(""),
-    [receiptRevision, setReceiptRevision] = React.useState(0),
-    [receipt, setReceipt] = React.useState<ReceiptOption | null>(null);
-  const [ratio, setRatio] = React.useState("1"),
-    [unit, setUnit] = React.useState(""),
-    [confirm, setConfirm] = React.useState(false),
-    [saving, setSaving] = React.useState(false),
-    [saved, setSaved] = React.useState(false),
-    [uncertain, setUncertain] = React.useState(false),
-    [error, setError] = React.useState("");
-  const lock = React.useRef(false),
-    mounted = React.useRef(true);
-  React.useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  React.useEffect(() => {
-    let active = true;
-    const c = new AbortController();
-    setProductsBusy(true);
-    setProductError("");
-    setProducts([]);
-    void api(
-      `/api/factory/stock/products?${new URLSearchParams({ q: productQuery })}`,
-      { signal: c.signal },
-    )
-      .then(decodeProducts)
-      .then((v) => {
-        if (active) setProducts(v);
-      })
-      .catch((e) => {
-        if (active)
-          setProductError(
-            e instanceof Error ? e.message : "POS ပစ္စည်းစာရင်းမရပါ။",
-          );
-      })
-      .finally(() => {
-        if (active) setProductsBusy(false);
-      });
-    return () => {
-      active = false;
-      c.abort();
-    };
-  }, [productQuery, productRevision]);
-  React.useEffect(() => {
-    let active = true;
-    const c = new AbortController();
-    setReceiptsBusy(true);
-    setReceiptError("");
-    setReceipts([]);
-    const q = new URLSearchParams({
-      status: "CONFIRMED",
-      page: String(receiptPage),
-      size: "6",
-    });
-    if (receiptQuery) q.set("barcode", receiptQuery);
-    void api(`/api/factory/receivings?${q}`, { signal: c.signal })
-      .then((v) => {
-        if (
-          !v ||
-          typeof v !== "object" ||
-          !Array.isArray((v as { content?: unknown }).content)
-        )
-          throw new StockError("Receiving response မမှန်ပါ။", 502);
-        const response = v as { content: unknown[] };
-        return decodeReceiptOptions({
-          ...response,
-          content: response.content.filter(
-            (r) =>
-              !!r &&
-              typeof r === "object" &&
-              (r as { stockKind?: string }).stockKind !== "BULK",
-          ),
-        });
-      })
-      .then((p) => {
-        if (p.page !== receiptPage) throw new Error("Receiving page မမှန်ပါ။");
-        if (active) {
-          setReceipts(p.content);
-          setReceiptPages(p.totalPages);
-        }
-      })
-      .catch((e) => {
-        if (active)
-          setReceiptError(
-            e instanceof Error ? e.message : "Receiving စာရင်းမရပါ။",
-          );
-      })
-      .finally(() => {
-        if (active) setReceiptsBusy(false);
-      });
-    return () => {
-      active = false;
-      c.abort();
-    };
-  }, [receiptQuery, receiptPage, receiptRevision]);
-  function ready() {
-    if (!product || !receipt) {
-      setError("POS ပစ္စည်းနှင့် အတည်ပြုပြီး Receiving ကို ရွေးပါ။");
-      return;
-    }
-    if (
-      !/^(0|[1-9]\d{0,17})(\.\d{1,12})?$/.test(ratio) ||
-      BigInt(ratio.replace(".", "")) === BigInt(0)
-    ) {
-      setError(
-        "Stock units per POS sale ကို အပေါင်းကိန်းဖြည့်ပါ။ ဒဿမ 12 နေရာအထိ သုံးနိုင်ပါသည်။",
-      );
-      return;
-    }
-    if (!unit.trim() || unit.trim().length > 200) {
-      setError("POS ရောင်းယူနစ် 1–200 စာလုံး ဖြည့်ပါ။");
-      return;
-    }
-    setError("");
-    setConfirm(true);
-  }
-  async function save() {
-    if (lock.current || !product || !receipt || uncertain || saved) return;
-    lock.current = true;
-    setSaving(true);
-    setConfirm(false);
-    setError("");
-    try {
-      const v = (await api(`/api/factory/stock/mappings/${product.id}`, {
-        method: "POST",
-        body: JSON.stringify({
-          receivingId: receipt.id,
-          stockUnitsPerSale: ratio,
-          posUnit: unit.trim(),
-        }),
-      })) as { productId?: number; receivingId?: number };
-      if (v?.productId !== product.id || v?.receivingId !== receipt.id)
-        throw new StockError(
-          "ချိတ်ဆက်ပြီးဖြစ်နိုင်သော်လည်း response ဖတ်မရပါ။",
-          502,
-          true,
-        );
-      if (mounted.current) {
-        setSaved(true);
-        onSaved();
-      }
-    } catch (e) {
-      if (mounted.current) {
-        setError(e instanceof Error ? e.message : "ချိတ်ဆက်မရပါ။");
-        if (!(e instanceof StockError) || e.uncertain) setUncertain(true);
-      }
-    } finally {
-      lock.current = false;
-      if (mounted.current) setSaving(false);
-    }
-  }
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !saving) onClose();
-      }}
-    >
-      <DialogContent
-        style={{
-          fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif',
-        }}
-        className="max-h-[90dvh] overflow-y-auto rounded-2xl sm:max-w-4xl"
-        onEscapeKeyDown={(e) => {
-          if (saving) e.preventDefault();
-        }}
-        onInteractOutside={(e) => {
-          if (saving) e.preventDefault();
+      <Dialog open={picker} onOpenChange={setPicker}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Costing ပစ္စည်းစာရင်း</DialogTitle>
+            <DialogDescription>
+              အတည်ပြုပြီးသော စာရင်းများမှ ပစ္စည်းရွေးပါ။ Search သည်
+              စာရင်းအမည်ဖြင့် ရှာပါသည်။
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setCatalogQuery(catalogSearch.trim());
+              setCatalogPage(0);
+              setCatalogRevision((v) => v + 1);
+            }}
+          >
+            <Input
+              aria-label="Costing စာရင်းရှာရန်"
+              value={catalogSearch}
+              onChange={(e) => setCatalogSearch(e.target.value)}
+              maxLength={200}
+              placeholder="Costing စာရင်းအမည်"
+            />
+            <Button variant="outline" type="submit">
+              ရှာရန်
+            </Button>
+          </form>
+          {catalogBusy && (
+            <p role="status" className="p-3 text-sm">
+              ရယူနေသည်…
+            </p>
+          )}
+          {catalogError && (
+            <p role="alert" className="text-sm text-destructive">
+              {catalogError}
+            </p>
+          )}
+          <div className="grid gap-2">
+            {catalog?.content.map((s) => (
+              <div key={s.id} className="space-y-2">
+                <p className="text-xs font-semibold">{s.title}</p>
+                {s.items
+                  .filter((i) => i.calculation?.ready)
+                  .map((i) => (
+                    <Button
+                      key={i.id}
+                      variant="outline"
+                      disabled={disabled}
+                      className="h-auto min-h-16 justify-start whitespace-normal p-3 text-left"
+                      onClick={() => void lookup(`FC-${s.id}-${i.id}`)}
+                    >
+                      <Package className="size-5 shrink-0" />
+                      <span>
+                        <span className="block text-sm leading-7">
+                          {i.inputs.product || "အမည်မဖြည့်ရသေးပါ"}
+                        </span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          FC-{s.id}-{i.id}
+                        </span>
+                      </span>
+                    </Button>
+                  ))}
+              </div>
+            ))}
+          </div>
+          {catalog && !catalog.content.length && (
+            <p className="text-sm text-muted-foreground">
+              ဤစာမျက်နှာတွင် လက်ခံရန်အသစ် မရှိပါ။ သိမ်းပြီးသားပစ္စည်းကို
+              မှတ်တမ်းမှ ဖွင့်ပါ သို့မဟုတ် နောက်စာမျက်နှာကို ကြည့်ပါ။
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              disabled={catalogBusy || catalogPage === 0}
+              onClick={() => setCatalogPage((p) => p - 1)}
+            >
+              <ArrowLeft className="size-4" />
+              ရှေ့
+            </Button>
+            <span className="text-xs">
+              {catalog?.totalPages
+                ? `${catalogPage + 1} / ${catalog.totalPages}`
+                : "—"}
+            </span>
+            <Button
+              variant="outline"
+              disabled={
+                catalogBusy || !catalog || catalogPage + 1 >= catalog.totalPages
+              }
+              onClick={() => setCatalogPage((p) => p + 1)}
+            >
+              နောက်
+              <ArrowRight className="size-4" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!action}
+        onOpenChange={(open) => {
+          if (!open) setAction(null);
         }}
       >
-        <DialogHeader>
-          <DialogTitle>
-            POS ပစ္စည်းနှင့် Warehouse stock ချိတ်ဆက်ရန်
-          </DialogTitle>
-          <DialogDescription className="leading-7">
-            Checkout အောင်မြင်သောအခါ ရွေးထားသော Receiving ၏ Warehouse / Batch မှ
-            စတော့နုတ်ပါမည်။ ချိတ်ပြီးသား POS product ကို ဒီ API ဖြင့်
-            ပြန်ပြောင်းမရပါ။
-          </DialogDescription>
-        </DialogHeader>
-        {saved ? (
-          <div
-            role="status"
-            className="space-y-3 rounded-xl bg-emerald-50 p-5 text-sm leading-7 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200"
-          >
-            <CheckCircle2 className="size-7" />
-            <p>POS product နှင့် Warehouse stock ချိတ်ဆက်ပြီးပါပြီ။</p>
-            <p>
-              {product?.name} → {receipt?.receivingNumber} / {receipt?.batch}
-            </p>
-            <p>
-              1 {unit} ရောင်းလျှင် {ratio} {receipt?.unit} နုတ်မည်။
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="grid gap-4 md:grid-cols-2">
-              <section className="space-y-3 rounded-xl border p-3">
-                <h3 className="text-sm font-semibold">
-                  01 · POS ရောင်းကုန်ရွေးရန်
-                </h3>
-                <form
-                  className="flex gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setProductQuery(productSearch.trim());
-                    setProduct(null);
-                    setProductRevision((v) => v + 1);
-                  }}
-                >
-                  <Input
-                    aria-label="POS ပစ္စည်းရှာရန်"
-                    value={productSearch}
-                    maxLength={200}
-                    placeholder="အမည် / Barcode"
-                    onChange={(e) => setProductSearch(e.target.value)}
-                  />
-                  <Button variant="outline" type="submit" disabled={saving}>
-                    ရှာရန်
-                  </Button>
-                </form>
-                {productsBusy && <p className="text-xs">ရယူနေသည်…</p>}
-                {productError && (
-                  <p role="alert" className="text-xs text-destructive">
-                    {productError}
-                  </p>
-                )}
-                <div className="max-h-64 space-y-2 overflow-y-auto">
-                  {products.slice(0, 50).map((p) => (
-                    <Button
-                      key={p.id}
-                      variant="outline"
-                      disabled={saving || uncertain}
-                      aria-pressed={product?.id === p.id}
-                      className={`h-auto w-full justify-start whitespace-normal p-3 text-left ${product?.id === p.id ? "border-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-950/30 dark:text-blue-100" : ""}`}
-                      onClick={() => setProduct(p)}
-                    >
-                      <span>
-                        <span className="block text-sm leading-7">
-                          {p.name}
-                        </span>
-                        <span className="block break-all font-mono text-[10px] leading-6">
-                          ID {p.id} · {p.barcode || p.sku || "—"}
-                        </span>
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-                {!productsBusy && !productError && !products.length && (
-                  <p className="text-xs text-muted-foreground">
-                    POS ပစ္စည်းမရှိသေးပါ။
-                  </p>
-                )}
-                {products.length > 50 && (
-                  <p className="text-xs text-muted-foreground">
-                    ပထမ 50 ခုသာ ပြထားပါသည်။ Search ဖြင့် ထပ်စစ်ပါ။
-                  </p>
-                )}
-              </section>
-              <section className="space-y-3 rounded-xl border p-3">
-                <h3 className="text-sm font-semibold">
-                  02 · Receiving / Batch ရွေးရန်
-                </h3>
-                <form
-                  className="flex gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setReceiptQuery(receiptSearch.trim());
-                    setReceiptPage(0);
-                    setReceipt(null);
-                    setReceiptRevision((v) => v + 1);
-                  }}
-                >
-                  <Input
-                    aria-label="Receiving barcode ရှာရန်"
-                    value={receiptSearch}
-                    maxLength={100}
-                    placeholder="FC Barcode"
-                    onChange={(e) => setReceiptSearch(e.target.value)}
-                  />
-                  <Button variant="outline" type="submit" disabled={saving}>
-                    ရှာရန်
-                  </Button>
-                </form>
-                {receiptsBusy && <p className="text-xs">ရယူနေသည်…</p>}
-                {receiptError && (
-                  <p role="alert" className="text-xs text-destructive">
-                    {receiptError}
-                  </p>
-                )}
-                <div className="max-h-64 space-y-2 overflow-y-auto">
-                  {receipts.map((r) => (
-                    <Button
-                      key={r.id}
-                      variant="outline"
-                      disabled={saving || uncertain}
-                      aria-pressed={receipt?.id === r.id}
-                      className={`h-auto w-full justify-start whitespace-normal p-3 text-left ${receipt?.id === r.id ? "border-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-950/30 dark:text-blue-100" : ""}`}
-                      onClick={() => {
-                        setReceipt(r);
-                        setUnit(r.unit);
-                      }}
-                    >
-                      <span>
-                        <span className="block text-sm leading-7">
-                          {r.name}
-                        </span>
-                        <span className="block break-all text-[10px] leading-6">
-                          {r.receivingNumber} · {r.batch}
-                        </span>
-                        <span className="block text-[10px] leading-6 text-muted-foreground">
-                          {warehouses.find((w) => w.id === r.warehouseId)
-                            ?.name || `Warehouse #${r.warehouseId}`}{" "}
-                          · Location #{r.locationId}
-                        </span>
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-                {!receiptsBusy && !receiptError && !receipts.length && (
-                  <p className="text-xs text-muted-foreground">
-                    အတည်ပြုပြီး Receiving မရှိသေးပါ။
-                  </p>
-                )}
-                <div className="flex items-center justify-between">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={saving || receiptsBusy || receiptPage === 0}
-                    onClick={() => setReceiptPage((p) => p - 1)}
-                  >
-                    ရှေ့
-                  </Button>
-                  <span className="text-[10px]">
-                    {receiptPages
-                      ? `${receiptPage + 1} / ${receiptPages}`
-                      : "—"}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={
-                      saving ||
-                      receiptsBusy ||
-                      !receiptPages ||
-                      receiptPage + 1 >= receiptPages
-                    }
-                    onClick={() => setReceiptPage((p) => p + 1)}
-                  >
-                    နောက်
-                  </Button>
-                </div>
-              </section>
-            </div>
-            <div className="grid gap-3 rounded-xl bg-muted/40 p-3 sm:grid-cols-2">
-              <Field label="POS ရောင်းယူနစ်">
-                <Input
-                  value={unit}
-                  maxLength={200}
-                  disabled={saving || uncertain}
-                  placeholder="ဥပမာ — ထုပ် / တွဲ"
-                  onChange={(e) => setUnit(e.target.value)}
-                />
-              </Field>
-              <Field label="POS 1 ယူနစ်အတွက် နုတ်မည့် Stock ပမာဏ">
-                <Input
-                  value={ratio}
-                  disabled={saving || uncertain}
-                  inputMode="decimal"
-                  onChange={(e) => setRatio(e.target.value)}
-                />
-              </Field>
-              <p className="text-xs leading-7 text-muted-foreground sm:col-span-2">
-                ဥပမာ POS မှ 1 တွဲရောင်းပြီး stock 6 ထုပ်နုတ်လိုလျှင် ပမာဏ 6
-                ထည့်ပါ။ Checkout မှာ ပြောင်းပြီးသော Stock ပမာဏသည်
-                အပြည့်ကိန်းဖြစ်ရပါမည်။
+        <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {action === "confirm"
+                ? "လက်ခံမှုအတည်ပြုရန်"
+                : action === "cancel"
+                  ? "မူကြမ်းပယ်ဖျက်မလား။"
+                  : "စာရင်းအသစ် စမလား။"}
+            </DialogTitle>
+            <DialogDescription className="leading-7">
+              {action === "confirm"
+                ? "အတည်ပြုပြီးလျှင် စတော့တိုးပြီး ဒီမှတ်တမ်းကို ပြင်မရတော့ပါ။"
+                : action === "cancel"
+                  ? "မူကြမ်းကို ပယ်ဖျက်ပါမည်။ စတော့ မပြောင်းပါ။"
+                  : "မသိမ်းရသေးသော ပြင်ဆင်မှုများ ပျောက်ပါမည်။ Server တွင် သိမ်းပြီးစာရင်းကို History မှ ပြန်ဖွင့်နိုင်ပါသည်။"}
+            </DialogDescription>
+          </DialogHeader>
+          {action === "confirm" && source && (
+            <div className="space-y-2 rounded-xl bg-muted/50 p-4 text-sm leading-7">
+              <p>{source.productName}</p>
+              <p>
+                လက်ခံအထုပ် — {form.actual} {bulkMeta?.packageUnit}
               </p>
+              <p>
+                စုစုပေါင်း — {bulkTotal ? displayDecimal(bulkTotal) : "—"}{" "}
+                {bulkMeta?.baseUnit}
+              </p>
+              <p>
+                {selectedWarehouse?.name} / {selectedLocation?.name}
+              </p>
+              <p className="break-all">Batch — {form.batch}</p>
             </div>
-            {(product || receipt) && (
-              <p className="rounded-xl border p-3 text-xs leading-7">
-                ရွေးထားသည် — {product?.name || "POS မရွေးရသေး"} →{" "}
-                {receipt
-                  ? `${receipt.receivingNumber} / ${receipt.batch}`
-                  : "Receiving မရွေးရသေး"}
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setAction(null)}>
+              မလုပ်တော့ပါ
+            </Button>
+            <Button onClick={resolveAction} disabled={busy}>
+              {action === "confirm" ? "အတည်ပြုမည်" : "ဆက်လုပ်မည်"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Server လက်ခံမှတ်တမ်း</DialogTitle>
+            <DialogDescription>
+              စာရင်းကို နှိပ်ပြီး မူကြမ်းဆက်ပြင်နိုင်သည်။ အတည်ပြုပြီးနှင့်
+              ပယ်ဖျက်ပြီးစာရင်းများသည် ကြည့်ရန်သာ ဖြစ်ပါသည်။
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-2 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (
+                historyQuery.from &&
+                historyQuery.to &&
+                historyQuery.from > historyQuery.to
+              ) {
+                setHistoryError("ရက်အပိုင်းအခြား စစ်ပါ။");
+                return;
+              }
+              setHistoryFilters(historyQuery);
+              setHistoryPage(0);
+              setHistoryRevision((v) => v + 1);
+            }}
+          >
+            <Input
+              aria-label="History barcode"
+              placeholder="Barcode"
+              value={historyQuery.barcode}
+              maxLength={100}
+              onChange={(e) =>
+                setHistoryQuery((q) => ({ ...q, barcode: e.target.value }))
+              }
+            />
+            <Input
+              aria-label="History batch"
+              placeholder="Batch"
+              value={historyQuery.batch}
+              maxLength={100}
+              onChange={(e) =>
+                setHistoryQuery((q) => ({ ...q, batch: e.target.value }))
+              }
+            />
+            <Field label="စတင်ရက်">
+              <Input
+                type="date"
+                value={historyQuery.from}
+                onChange={(e) =>
+                  setHistoryQuery((q) => ({ ...q, from: e.target.value }))
+                }
+              />
+            </Field>
+            <Field label="ဆုံးရက်">
+              <Input
+                type="date"
+                value={historyQuery.to}
+                onChange={(e) =>
+                  setHistoryQuery((q) => ({ ...q, to: e.target.value }))
+                }
+              />
+            </Field>
+            <select
+              aria-label="History status"
+              className="h-10 rounded-md border bg-background px-3 text-sm"
+              value={historyQuery.status}
+              onChange={(e) =>
+                setHistoryQuery((q) => ({ ...q, status: e.target.value }))
+              }
+            >
+              <option value="">အခြေအနေအားလုံး</option>
+              <option value="DRAFT">DRAFT</option>
+              <option value="CONFIRMED">CONFIRMED</option>
+              <option value="CANCELLED">CANCELLED</option>
+            </select>
+            <Button type="submit" variant="outline">
+              မှတ်တမ်းရှာရန်
+            </Button>
+          </form>
+          {historyBusy && <p role="status">ရယူနေသည်…</p>}
+          {historyError && (
+            <p role="alert" className="text-sm text-destructive">
+              {historyError}
+            </p>
+          )}
+          <div className="grid gap-2">
+            {history?.content.map((r) => (
+              <Button
+                key={r.id}
+                variant="outline"
+                disabled={busy || !!pending}
+                onClick={() => void openRecord(r.id, blocked)}
+                className="h-auto justify-between gap-3 whitespace-normal p-3 text-left"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm leading-7">
+                    {r.snapshot.productName}
+                  </span>
+                  <span className="block break-all font-mono text-[10px] leading-6">
+                    {r.receivingNumber} · {r.batch}
+                  </span>
+                  <span className="block text-[10px] text-muted-foreground">
+                    {r.receivedDate} · {r.status}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs">
+                  {r.stockKind === "BULK" && r.snapshot.bulk
+                    ? `${r.bulkPackageCount} ${r.snapshot.bulk.packageUnit} · ${displayDecimal(r.bulkBaseQuantity!)} ${r.snapshot.bulk.baseUnit}`
+                    : `${fmt(r.actualQuantity)} ${r.saleUnit} · Finished Goods အဟောင်း`}
+                </span>
+              </Button>
+            ))}
+            {history && !history.content.length && (
+              <p className="p-4 text-center text-sm text-muted-foreground">
+                မှတ်တမ်း မရှိသေးပါ။
               </p>
             )}
-          </>
-        )}
-        {error && (
-          <p
-            role="alert"
-            className="rounded-xl border border-destructive/30 p-3 text-xs leading-7 text-destructive"
-          >
-            {error}
-          </p>
-        )}
-        {uncertain && (
-          <p className="text-xs leading-7 text-amber-700 dark:text-amber-300">
-            ရလဒ်မသေချာသဖြင့် ထပ်ပို့ခြင်း ပိတ်ထားပါသည်။ ဒီ backend တွင် Mapping
-            ပြန်ကြည့်သည့် API မပါသေးပါ။
-          </p>
-        )}
-        <DialogFooter className="gap-2">
-          <Button variant="outline" disabled={saving} onClick={onClose}>
-            ပိတ်မည်
-          </Button>
-          {!saved && (
+          </div>
+          <div className="flex items-center justify-between">
             <Button
-              disabled={saving || uncertain || !product || !receipt}
-              onClick={ready}
+              variant="outline"
+              disabled={historyBusy || historyPage === 0}
+              onClick={() => setHistoryPage((p) => p - 1)}
             >
-              {saving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Link2 className="size-4" />
-              )}
-              ချိတ်ဆက်မည်
+              ရှေ့
             </Button>
+            <span className="text-xs">
+              {history?.totalPages
+                ? `${historyPage + 1} / ${history.totalPages}`
+                : "—"}
+            </span>
+            <Button
+              variant="outline"
+              disabled={
+                historyBusy || !history || historyPage + 1 >= history.totalPages
+              }
+              onClick={() => setHistoryPage((p) => p + 1)}
+            >
+              နောက်
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={setup} onOpenChange={setSetup}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>ဂိုဒေါင်နှင့် သိုလှောင်နေရာ</DialogTitle>
+            <DialogDescription>
+              ဒီဆိုင်အတွက် နေရာအသစ် ဖန်တီးနိုင်ပါသည်။ အရင်ရှိပြီးသား
+              နာမည်များကို စစ်ပြီးမှ ထည့်ပါ။
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-xl bg-muted p-3 text-xs leading-7">
+            ရှိပြီးသားဂိုဒေါင်များ —{" "}
+            {warehouses
+              .map((w) => `${w.name}${w.active ? "" : " (ပိတ်ထားသည်)"}`)
+              .join("၊ ") || "မရှိသေးပါ"}
+          </div>
+          <Field label="ဖန်တီးမည့်အမျိုးအစား">
+            <select
+              className="h-11 w-full rounded-md border bg-background px-3 text-sm"
+              value={placeKind}
+              disabled={busy}
+              onChange={(e) =>
+                setPlaceKind(e.target.value as "warehouse" | "location")
+              }
+            >
+              <option value="warehouse">Warehouse</option>
+              <option value="location">Storage Location / Rack</option>
+            </select>
+          </Field>
+          {placeKind === "location" && (
+            <Field label="ဂိုဒေါင်ရွေးရန်">
+              <select
+                className="h-11 w-full rounded-md border bg-background px-3 text-sm"
+                value={placeWarehouse}
+                disabled={busy}
+                onChange={(e) => setPlaceWarehouse(e.target.value)}
+              >
+                <option value="">ရွေးပါ</option>
+                {warehouses
+                  .filter((w) => w.active)
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
           )}
-        </DialogFooter>
-        <Dialog open={confirm} onOpenChange={setConfirm}>
-          <DialogContent className="rounded-2xl">
-            <DialogHeader>
-              <DialogTitle>Stock ချိတ်ဆက်မှု အတည်ပြုရန်</DialogTitle>
-              <DialogDescription className="leading-7">
-                POS product ကို ဒီ Finished Receiving stock နှင့် ချိတ်ပါမည်။
-                ရွေးထားသောပစ္စည်း၊ Batch နှင့် နုတ်မည့်ပမာဏကို စစ်ပါ။
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2 rounded-xl bg-muted p-3 text-sm leading-7">
-              <p>
-                {product?.name} → {receipt?.name}
-              </p>
-              <p>
-                {receipt?.receivingNumber} · Batch {receipt?.batch}
-              </p>
-              <p>
-                POS 1 {unit} = Stock {ratio} {receipt?.unit}
-              </p>
-            </div>
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setConfirm(false)}>
-                မလုပ်တော့ပါ
-              </Button>
-              <Button onClick={() => void save()}>အတည်ပြုချိတ်ဆက်မည်</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </DialogContent>
-    </Dialog>
+          <Field label="အမည်">
+            <Input
+              value={placeName}
+              maxLength={200}
+              disabled={busy}
+              onChange={(e) => setPlaceName(e.target.value)}
+              placeholder={
+                placeKind === "warehouse"
+                  ? "Main Warehouse"
+                  : "Cold Room A / Rack 02"
+              }
+            />
+          </Field>
+          {placeNotice && (
+            <p role="status" className="text-xs leading-7">
+              {placeNotice}
+            </p>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                void refreshWarehouses();
+                setLocationRevision((v) => v + 1);
+              }}
+            >
+              စာရင်းပြန်တင်ရန်
+            </Button>
+            <Button
+              disabled={
+                busy ||
+                !placeName.trim() ||
+                (placeKind === "location" && !placeWarehouse)
+              }
+              onClick={() => void createPlace()}
+            >
+              နေရာဖန်တီးရန်
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </main>
   );
 }

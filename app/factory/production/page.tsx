@@ -44,7 +44,6 @@ import {
   confirmedBulkReceipts,
   stockKey,
   quantity,
-  packageRemainder,
   isPositive,
 } from "@/lib/factory-warehouse-bulk";
 import {
@@ -70,6 +69,30 @@ import {
   decodeOperation,
 } from "@/lib/factory-production-api";
 import { StockError } from "@/lib/factory-stock-api";
+// Render named base quantities only. Confirm still sends the original canonical units.
+function productionBase(value: bigint | null | undefined, unit: string): string {
+  if (value == null) return "—";
+  if (unit !== "ကျပ်သား") return `${fmt(value)} ${unit}`;
+  const scale=BigInt(1000000),abs=value < BigInt(0) ? -value : value;
+  const viss=abs/(BigInt(100)*scale),remainder=abs%(BigInt(100)*scale);
+  const kyattha=plain(remainder),sign=value<BigInt(0)?"−":"";
+  if (!abs) return "0 ပိဿာ (0 ကျပ်သား)";
+  if (!viss) return `${sign}${kyattha} ကျပ်သား`;
+  return `${sign}${viss.toLocaleString("en-US")} ပိဿာ${remainder ? ` ${kyattha} ကျပ်သား` : ""} (${fmt(value)} ကျပ်သား)`;
+}
+function productionPackageSize(receipt: Source["receipt"] | undefined): string {
+  if (!receipt) return "—";
+  const snapshot=receipt.snapshot;
+  // COUNT's backend packageSizeUnit is "unit"; retain the actual named unit in the UI.
+  const unit=snapshot.packageSizeUnit === "unit" && ["COUNT", "BOTTLED_DRINK", "PACKAGED_SNACK"].includes(snapshot.productType) && snapshot.bulk?.baseUnit
+    ? snapshot.bulk.baseUnit : snapshot.packageSizeUnit;
+  return `${String(snapshot.packageSize)} ${unit}`;
+}
+function isVissProduction(source: Source | null): boolean {
+  const bulk=source?.receipt.snapshot.bulk;
+  return !!bulk && bulk.packageUnit === "ပိဿာ" && bulk.baseUnit === "ကျပ်သား" &&
+    decimal(bulk.quantityPerPackage) === BigInt(100000000);
+}
 const FONT = { fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif' };
 const emptyFilters = { search: "", warehouseId: "", locationId: "", batch: "" };
 function Section({
@@ -438,9 +461,9 @@ function Workspace({
     v == null ? "—" : v.toLocaleString("en-US");
   const unit = b?.unit ?? "ယူနစ်",
     outUnit = r?.snapshot.saleUnit ?? "ထုပ်";
-  const outputSize = r
-    ? `${String(r.snapshot.packageSize)} ${r.snapshot.packageSizeUnit}`
-    : "—";
+  const outputSize = productionPackageSize(r);
+  const vissSource = isVissProduction(source);
+  const base = (value: bigint | null | undefined) => productionBase(value, unit);
   React.useEffect(() => {
     try {
       const raw = journalKey ? localStorage.getItem(journalKey) : null;
@@ -1038,7 +1061,7 @@ function Workspace({
                       ],
                       [
                         "လက်ရှိဂိုဒေါင်",
-                        `${packageRemainder(b!.quantity, b!.quantityPerPackage!, b!.packageUnit!, unit)} / ${quantity(b!.quantity)} ${unit}`,
+                        productionBase(decimal(b!.quantity), unit),
                       ],
                     ].map(([k, v]) => (
                       <div
@@ -1062,11 +1085,14 @@ function Workspace({
           <Section number="02" title="ထုတ်ယူမည့်ပမာဏ">
             <div className="grid gap-3 sm:grid-cols-3">
               <Field
-                label={`ထုတ်ယူမည့်အထုပ်အရေအတွက် (${b?.packageUnit ?? "အထုပ်"})`}
+                label={vissSource ? "ထုတ်ယူမည့် ပိဿာ (အပြည့်ကိန်း)" : `ထုတ်ယူမည့်အထုပ်အရေအတွက် (${b?.packageUnit ?? "အထုပ်"})`}
               >
                 <Input
                   aria-label={undefined}
-                  inputMode="decimal"
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
                   value={form?.packages ?? ""}
                   disabled={!form || readOnly || working || !!operation}
                   onChange={(e) => patch("packages", e.target.value)}
@@ -1080,7 +1106,7 @@ function Workspace({
                 </p>
                 <p className="break-words text-sm font-semibold leading-7">
                   {form && b
-                    ? `${form.packages || "—"} × ${quantity(b.quantityPerPackage!)} ${unit} = ${fmt(p?.used)} ${unit}`
+                    ? `${form.packages || "—"} ${b.packageUnit ?? "အထုပ်"} × ${quantity(b.quantityPerPackage!)} ${unit} = ${base(p?.used)}`
                     : "—"}
                 </p>
               </div>
@@ -1088,13 +1114,14 @@ function Workspace({
                 className={`rounded-xl border p-3 ${p && p.remaining < BigInt(0) ? "border-destructive/30 bg-destructive/5 text-destructive" : "border-blue-100 bg-blue-50 text-emerald-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-emerald-300"}`}
               >
                 <p className="text-[11px] leading-6">
-                  ထုတ်ယူပြီး လက်ကျန် (ကြိုတွက်)
+                  {readOnly ? "လက်ရှိဂိုဒေါင်လက်ကျန်" : "ထုတ်ယူပြီး လက်ကျန် (ကြိုတွက်)"}
                 </p>
                 <p className="break-words text-base font-bold leading-7">
-                  {fmt(p?.remaining)} {unit}
+                  {base(p?.remaining)}
                 </p>
               </div>
             </div>
+            {vissSource && <p className="rounded-xl border bg-muted/40 p-3 text-xs leading-7 text-muted-foreground">1 ပိဿာ = 100 ကျပ်သား။ ထုတ်ယူပမာဏကို လက်ရှိ API အတိုင်း ပိဿာအပြည့်ကိန်းဖြင့် ဖြည့်ပါ။ အလေအလွင့်ကို ကျပ်သားဖြင့် ဖြည့်ပါ။ ပိဿာနှင့် ကျပ်သားသည် ပမာဏတစ်ခုတည်း၏ ဖော်ပြချက်နှစ်မျိုးဖြစ်ပြီး ထပ်မပေါင်းရပါ။</p>}
             {calculationError && (
               <p role="alert" className="text-xs leading-6 text-destructive">
                 {calculationError}
@@ -1118,8 +1145,8 @@ function Workspace({
           >
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
               {[
-                ["မူလတွက်ချက်ပမာဏ", `${fmt(p?.basis)} ${unit}`],
-                ["စံကျန် / အလေအလွင့်", `${fmt(p?.standardResidual)} ${unit}`],
+                ["မူလတွက်ချက်ပမာဏ", base(p?.basis)],
+                ["စံကျန် / အလေအလွင့်", base(p?.standardResidual)],
                 ["တစ်ထုပ်ပါပမာဏ", outputSize],
                 ["ခန့်မှန်းရရှိမှု", `${count(p?.expected)} ${outUnit}`],
               ].map(([label, value]) => (
@@ -1219,10 +1246,11 @@ function Workspace({
                 />
               </Field>
             </div>
+            {unit === "ကျပ်သား" && p?.actual != null && p.waste != null && <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-7 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">ပမာဏစစ်ဆေးရန် — ထုတ်ယူ {base(p.used)} = ကုန်ချော {count(p.actual)} {outUnit} × {outputSize} + အလေအလွင့် {base(p.waste)} ဖြစ်ရပါမည်။</p>}
             {p?.residual != null && p.residual !== BigInt(0) && (
               <p className="rounded-lg bg-amber-50 p-3 text-xs leading-7 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                 ပမာဏစစ်ဆေးရန် — ထုတ်ယူမှုနှင့် ထုတ်ကုန် + အလေအလွင့် ကွာခြားချက်{" "}
-                {fmt(p.residual)} {unit}
+                {base(p.residual)}
               </p>
             )}
           </Section>
@@ -1239,7 +1267,7 @@ function Workspace({
               <Photo source={source} />
               <p className="mt-1 break-words text-center text-[10px] leading-6">
                 {b
-                  ? `${b.name} (${quantity(b.quantityPerPackage!)} ${unit} / ${b.packageUnit})`
+                  ? `${b.name} (${productionBase(decimal(b.quantityPerPackage!), unit)} / ${b.packageUnit})`
                   : "Warehouse ပစ္စည်း"}
               </p>
             </div>
@@ -1259,7 +1287,7 @@ function Workspace({
               [
                 <Package className="size-5" />,
                 "အသုံးပြုမည့် ကုန်ကြမ်း",
-                `${fmt(p?.used)} ${unit}`,
+                base(p?.used),
               ],
               [
                 <Target className="size-5" />,
@@ -1274,7 +1302,7 @@ function Workspace({
               [
                 <Trash2 className="size-5" />,
                 "တကယ်အလေအလွင့်",
-                `${fmt(p?.waste)} ${unit}`,
+                base(p?.waste),
               ],
             ].map(([icon, label, value], i) => (
               <div
@@ -1315,7 +1343,7 @@ function Workspace({
             <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
               <p className="text-[11px] leading-6">အထုပ်ကြီး Stock</p>
               <p className="break-words text-base font-bold">
-                − {fmt(p?.used)} {unit}
+                − {base(p?.used)}
               </p>
             </div>
             <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
@@ -1420,7 +1448,7 @@ function Workspace({
                   <p className="text-xs leading-6">
                     {warehouseName(s.balance.warehouseId)} /{" "}
                     {locationName(s.balance.locationId)} ·{" "}
-                    {quantity(s.balance.quantity)} {s.balance.unit}
+                    {productionBase(decimal(s.balance.quantity), s.balance.unit)}
                   </p>
                 </div>
               </button>
@@ -1690,11 +1718,11 @@ function Workspace({
                 {b?.name} · {form?.batch}
               </p>
               <p>
-                Bulk − {fmt(p?.used)} {unit} / Finished + {count(p?.actual)}{" "}
+                Bulk − {base(p?.used)} / Finished + {count(p?.actual)}{" "}
                 {outUnit}
               </p>
               <p>
-                ထုတ်ယူပြီး လက်ကျန် {fmt(p?.remaining)} {unit}
+                ထုတ်ယူပြီး လက်ကျန် {base(p?.remaining)}
               </p>
             </div>
           )}
