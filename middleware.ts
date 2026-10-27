@@ -40,16 +40,18 @@ function isExpired(exp: unknown) {
 }
 
 function isTokenInvalid(token: any) {
+  // getToken validates the NextAuth JWT. Spring access expiry is recoverable in
+  // the JWT callback; AccessTokenExpired means refresh was definitively rejected.
   return (
     !token ||
-    !token.accessToken ||
     token.error === "AccessTokenExpired" ||
-    isExpired(token.accessTokenExpires)
+    isExpired(token.exp)
   );
 }
 
 function isSafeNextPath(next: string | null) {
-  return !!next && next.startsWith("/") && !next.startsWith("//");
+  return !!next && next.startsWith("/") && !next.startsWith("//") &&
+    !/[\\\x00-\x20\x7f]/.test(next);
 }
 
 function redirectToSignIn(req: NextRequest) {
@@ -70,7 +72,14 @@ function redirectToSignIn(req: NextRequest) {
 
 function redirectToDashboardOrNext(req: NextRequest) {
   const nextParam = req.nextUrl.searchParams.get("next");
-  const target = isSafeNextPath(nextParam) ? nextParam! : "/dashboard";
+  let target = "/dashboard";
+  if (isSafeNextPath(nextParam)) {
+    const candidate = new URL(nextParam!, req.url);
+    if (
+      candidate.origin === new URL(req.url).origin &&
+      candidate.pathname !== "/Sign_in" && candidate.pathname !== "/sign-in"
+    ) target = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+  }
 
   return NextResponse.redirect(new URL(target, req.url));
 }

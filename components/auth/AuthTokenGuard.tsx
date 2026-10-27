@@ -9,7 +9,8 @@ export default function AuthTokenGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [ready, setReady] = useState(false);
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const sessionRejected = (session as any)?.error === "AccessTokenExpired";
   const queryString = searchParams.toString();
 
   useEffect(() => {
@@ -18,14 +19,15 @@ export default function AuthTokenGuard({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (status === "unauthenticated") {
+    if (status === "unauthenticated" || sessionRejected) {
+      setReady(false);
       const current = `${pathname}${queryString ? `?${queryString}` : ""}`;
       router.replace(`/Sign_in?next=${encodeURIComponent(current)}`);
       return;
     }
 
     setReady(true);
-  }, [pathname, queryString, router, status]);
+  }, [pathname, queryString, router, status, sessionRejected]);
 
   if (!ready) {
     return (

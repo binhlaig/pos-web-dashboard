@@ -9,6 +9,9 @@ export class SessionRefreshError extends Error {
     super(message);
   }
 }
+// Only use before any backend refresh can have been sent. Such failures are safe
+// to retry after configuration is repaired; all uncertain outcomes stay cached.
+class RefreshPreflightError extends SessionRefreshError {}
 export type RefreshedSession = {
   data: Record<string, unknown> & { token: string };
   refreshToken: string;
@@ -72,6 +75,8 @@ export async function refreshSpringSession(raw: string): Promise<RefreshedSessio
       entry.until = Math.min(entry.until, Date.now() + Number(maxAge[1]) * 1000);
     return result;
   } catch (error) {
+    if (error instanceof RefreshPreflightError && cache.get(key) === entry)
+      cache.delete(key);
     // Do not automatically repeat failed refresh POSTs. A timeout may have occurred
     // after upstream rotation; backend idempotency/grace is needed to recover it.
     // Preserve failures too: an uncertain refresh must never replay a consumed token.
@@ -165,17 +170,32 @@ async function redis(command: (string | number)[]): Promise<unknown> {
 }
 
 async function coordinatedRefresh(raw: string, hash: string): Promise<RefreshedSession> {
+  // Validate before claiming a credential in Redis. A configuration failure must
+  // not leave a permanent pending claim for a request that was never sent.
+  const configuredOrigin = process.env.APP_FRONTEND_ORIGIN?.trim();
+  try {
+    if (!configuredOrigin || !["http:", "https:"].includes(new URL(configuredOrigin).protocol))
+      throw new Error();
+  } catch {
+    throw new RefreshPreflightError(503, "Auth origin is missing or invalid.");
+  }
   const shared = Boolean(
     process.env.SESSION_REDIS_REST_URL && process.env.SESSION_REDIS_REST_TOKEN,
   );
   if (!shared) {
     if (process.env.VERCEL || process.env.SESSION_REQUIRE_SHARED_STORE === "true") {
-      throw new SessionRefreshError(
+      throw new RefreshPreflightError(
         503,
         "Configure shared session storage before using this deployment.",
       );
     }
     return performRefresh(raw);
+  }
+  try {
+    if (new URL(process.env.SESSION_REDIS_REST_URL!).protocol !== "https:")
+      throw new Error();
+  } catch {
+    throw new RefreshPreflightError(503, "Shared session store requires a valid HTTPS URL.");
   }
   const key = `pos:refresh:v1:${hash}`;
   // Atomic permanent claim prevents competing workers from ever replaying this
