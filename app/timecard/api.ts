@@ -1,6 +1,7 @@
 // /lib/timecard/api.ts
 import axios, { AxiosRequestConfig } from "axios";
-import { clearAuthTokens, getStoredToken, redirectToSignIn } from "@/lib/auth";
+import { getStoredToken } from "@/lib/auth";
+import { renewAccessToken } from "@/lib/api";
 
 
 const API_BASE =
@@ -24,10 +25,13 @@ api.interceptors.request.use((cfg) => {
 
 api.interceptors.response.use(
   (res) => res,
-  (error) => {
-    if (error?.response?.status === 401) {
-      clearAuthTokens();
-      redirectToSignIn();
+  async (error) => {
+    const config = error?.config;
+    if (error?.response?.status === 401 && config && !config.sessionRetried) {
+      config.sessionRetried = true;
+      const previous = String(config.headers?.Authorization || "").replace(/^Bearer\s+/i, "");
+      config.headers.Authorization = `Bearer ${await renewAccessToken(previous)}`;
+      return api.request(config);
     }
 
     return Promise.reject(error);

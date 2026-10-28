@@ -9,6 +9,7 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     const auth = session as (typeof session & { accessToken?: string; error?: string });
+    if (auth?.error && auth.error !== "AccessTokenExpired") return reply({ error: "Session refresh temporarily unavailable" }, 503);
     if (!auth?.accessToken || auth.error === "AccessTokenExpired") return reply({ error: "Login required" }, 401);
     const base = (process.env.REMOTE_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080").replace(/[/]+$/, "");
     // Do not authorize using cached localStorage or stale business type claims.

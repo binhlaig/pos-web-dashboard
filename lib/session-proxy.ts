@@ -76,7 +76,7 @@ export async function proxySessionRequest(
     const cookie = request.cookies.get("pos_refresh")?.value;
     if (!cookie)
       return Response.json(
-        { error: "Session expired. Please sign in again." },
+        { error: "Session expired. Please sign in again.", reason: "MISSING_REFRESH_CREDENTIAL" },
         { status: 401 },
       );
     try {
@@ -90,6 +90,7 @@ export async function proxySessionRequest(
       const status = error instanceof SessionRefreshError ? error.status : 503;
       return Response.json(
         {
+          reason: error instanceof SessionRefreshError ? error.reason : "TEMPORARY_REFRESH_FAILURE",
           error:
             status === 401
               ? "Session expired. Please sign in again."

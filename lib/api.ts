@@ -1,3 +1,4 @@
+import { requireMatchingIdentity } from "@/lib/session-identity";
 import { getSession } from "next-auth/react";
 import { clearAuthTokens, getStoredToken, redirectToSignIn, saveToken } from "@/lib/auth";
 
@@ -80,30 +81,12 @@ function buildUrl(path: string) {
 type BrowserSession = { accessToken?: string | null; error?: string | null };
 let pendingRefresh: Promise<string> | null = null;
 
-function sessionIdentity(raw: string): string {
-  try {
-    const encoded = raw.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    const claims = JSON.parse(atob(encoded));
-    return String(claims.sid || "");
-  } catch {
-    return "";
-  }
-}
-function requireMatchingIdentity(previous: string, next: string) {
-  // Only routing validation, not signature verification; the backend authenticates.
-  if (
-    previous &&
-    (!sessionIdentity(previous) || sessionIdentity(previous) !== sessionIdentity(next))
-  ) {
-    throw new Error("Session changed. Reload the page before continuing.");
-  }
-}
 function endExpiredSession(): never {
   clearAuthTokens();
   redirectToSignIn();
   throw new Error("Login session expired. Please login again.");
 }
-async function renewAccessToken(previous: string): Promise<string> {
+export async function renewAccessToken(previous: string): Promise<string> {
   if (pendingRefresh) {
     const next = await pendingRefresh;
     requireMatchingIdentity(previous, next);
@@ -125,19 +108,15 @@ async function renewAccessToken(previous: string): Promise<string> {
       saveToken(session.accessToken);
       return session.accessToken;
     }
-    let response: Response;
-    try {
-      response = await fetch("/api/auth/refresh", {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-      });
-    } catch {
-      throw new Error("Session service unavailable. Try again shortly.");
-    }
+    if (!session?.accessToken) throw new Error("Unable to renew session now. Try again shortly.");
+    // An otherwise fresh access token was rejected: force one coordinated
+    // refresh using the encrypted NextAuth credential, preserving both cookies.
+    const response = await fetch("/api/auth/refresh", {
+      method: "POST", credentials: "include", cache: "no-store",
+    });
     if (response.status === 401) return endExpiredSession();
     if (!response.ok) throw new Error("Unable to renew session now. Try again shortly.");
-    const data = await response.json().catch(() => null);
+    const data = await response.json();
     if (typeof data?.token !== "string") throw new Error("Invalid session response.");
     requireMatchingIdentity(previous, data.token);
     saveToken(data.token);
@@ -148,6 +127,18 @@ async function renewAccessToken(previous: string): Promise<string> {
   } finally {
     pendingRefresh = null;
   }
+}
+
+/** Retry only an explicit authentication rejection, once. Network outcomes are never replayed. */
+export async function sessionFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const previous = headers.get("Authorization")?.replace(/^Bearer\s+/i, "") || getStoredToken() || "";
+  if (previous) headers.set("Authorization", `Bearer ${previous}`);
+  const response = await fetch(url, { ...init, headers });
+  if (response.status !== 401) return response;
+  const next = await renewAccessToken(previous);
+  headers.set("Authorization", `Bearer ${next}`);
+  return fetch(url, { ...init, headers });
 }
 
 export async function apiRequest<T>(

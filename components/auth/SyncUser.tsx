@@ -10,7 +10,7 @@ export default function SyncUser({ user, session: providedSession }: { user?: an
   const session = providedSession ?? hookSession;
 
   useEffect(() => {
-    if (status === "loading") return;
+    if (status !== "authenticated" || session?.error || !session?.accessToken) return;
 
     const sessionUser = session?.user || {};
     const source = user || sessionUser;
@@ -32,7 +32,7 @@ export default function SyncUser({ user, session: providedSession }: { user?: an
 
     localStorage.setItem("sync-user", JSON.stringify(normalized));
     savePosSession({
-      accessToken: session?.accessToken || localStorage.getItem("pos_access_token"),
+      accessToken: session.accessToken,
       user: {
         ...normalized,
         shopStatus: session?.shopStatus || normalized.shopStatus,

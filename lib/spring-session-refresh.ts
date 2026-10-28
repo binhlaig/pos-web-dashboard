@@ -1,10 +1,12 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { sessionIdentity, SessionIdentityError } from "@/lib/session-identity";
 
 export class SessionRefreshError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly reason: string = status === 401 ? "BACKEND_REFRESH_REJECTED" : "TEMPORARY_REFRESH_FAILURE",
   ) {
     super(message);
   }
@@ -36,7 +38,11 @@ export function refreshCookieFromResponse(response: Response): string | null {
 // The in-process fallback is only for local development / one persistent process.
 // Keep aliases for the session lifetime: server components cannot always persist
 // a rotated NextAuth cookie, so a later request may still carry an older alias.
-const cache = new Map<string, { until: number; promise: Promise<RefreshedSession> }>();
+// Survive development module reloads; production workers coordinate through Redis.
+const processState = globalThis as typeof globalThis & {
+  __posRefreshCache?: Map<string, { until: number; promise: Promise<RefreshedSession> }>;
+};
+const cache = processState.__posRefreshCache ??= new Map<string, { until: number; promise: Promise<RefreshedSession> }>();
 const MAX_ENTRIES = 20000;
 function tokenExpiration(raw: string): number {
   try {
@@ -50,7 +56,7 @@ function tokenExpiration(raw: string): number {
 }
 
 export async function refreshSpringSession(raw: string): Promise<RefreshedSession> {
-  if (!raw) throw new SessionRefreshError(401, "Please sign in again.");
+  if (!raw) throw new SessionRefreshError(401, "Please sign in again.", "MISSING_REFRESH_CREDENTIAL");
   const key = createHash("sha256").update(raw).digest("hex");
   const now = Date.now();
   for (const [hash, entry] of cache) if (entry.until <= now) cache.delete(hash);
@@ -131,6 +137,11 @@ async function performRefresh(raw: string): Promise<RefreshedSession> {
   ) {
     throw new SessionRefreshError(502, "Invalid authentication response.");
   }
+  try { sessionIdentity(data.token); }
+  catch (error) {
+    throw new SessionRefreshError(502, "Invalid authentication identity.",
+      error instanceof SessionIdentityError ? error.reason : "MISSING_IDENTITY_CLAIM");
+  }
   return {
     data,
     refreshToken: next,
@@ -207,13 +218,21 @@ async function coordinatedRefresh(raw: string, hash: string): Promise<RefreshedS
     "NX",
     "EX",
     64800,
-  ]);
+  ]).catch(() => {
+    // No upstream POST was sent by this worker. A later Redis read is safe,
+    // even if SET succeeded but its acknowledgement was lost.
+    throw new RefreshPreflightError(503, "Shared session store unavailable.");
+  });
   if (claimed === "OK") {
     try {
       const result = await performRefresh(raw);
       const age = /;\s*Max-Age=(\d+)/i.exec(result.cookies[0] || "");
       const ttl = Math.max(1, Math.min(64800, Number(age?.[1] || 64800)));
-      await redis(["SET", key, JSON.stringify({ state: "done", result }), "EX", ttl]);
+      // Keep the successful credentials locally even if publishing fails. Other
+      // workers retain the pending claim and must never replay the consumed token.
+      await redis(["SET", key, JSON.stringify({ state: "done", result }), "EX", ttl]).catch(() => {
+        console.error("[Session refresh]", { reason: "TEMPORARY_REFRESH_FAILURE", stage: "publish" });
+      });
       return result;
     } catch (error) {
       const status = error instanceof SessionRefreshError ? error.status : 503;
@@ -237,9 +256,9 @@ async function coordinatedRefresh(raw: string, hash: string): Promise<RefreshedS
   }
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
-    const value = await redis(["GET", key]);
+    const value = await redis(["GET", key]).catch(() => { throw new RefreshPreflightError(503, "Shared session store unavailable."); });
     if (typeof value !== "string")
-      throw new SessionRefreshError(
+      throw new RefreshPreflightError(
         503,
         "Session state is unavailable. Please sign in again if it persists.",
       );
@@ -253,7 +272,8 @@ async function coordinatedRefresh(raw: string, hash: string): Promise<RefreshedS
       throw new SessionRefreshError(entry.status, entry.message);
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  throw new SessionRefreshError(
+  // This worker sent no refresh POST. Re-reading shared state later is safe.
+  throw new RefreshPreflightError(
     503,
     "Refresh is pending or its outcome is uncertain. Try again; sign in again if it persists.",
   );

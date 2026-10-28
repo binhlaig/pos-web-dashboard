@@ -110,7 +110,7 @@ export async function middleware(req: NextRequest) {
   // Sign_in page
   // Token မှန်နေရင် /Sign_in မှာမနေစေဘဲ dashboard သို့မဟုတ် next ကိုပို့မယ်
   if (pathname === "/Sign_in" || pathname === "/sign-in") {
-    if (!invalid) {
+    if (!invalid && !isExpired(token?.accessTokenExpires) && !token?.error) {
       return redirectToDashboardOrNext(req);
     }
 

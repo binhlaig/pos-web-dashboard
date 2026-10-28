@@ -1,4 +1,5 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
 
 import { clearAuthTokens, getStoredToken, redirectToSignIn } from "@/lib/auth";
 
@@ -96,7 +97,7 @@ export async function backendRequest<T>(path: string, init: RequestInit = {}): P
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(backendApiUrl(path), {
+  const res = await sessionFetch(backendApiUrl(path), {
     ...init,
     headers,
     cache: init.cache ?? "no-store",
@@ -104,8 +105,6 @@ export async function backendRequest<T>(path: string, init: RequestInit = {}): P
   const body = await parseResponse(res);
 
   if (res.status === 401) {
-    clearStoredAuth();
-    redirectToSignIn();
     throw new BackendApiError("Your login session expired. Please sign in again.", 401, "UNAUTHORIZED", body);
   }
 

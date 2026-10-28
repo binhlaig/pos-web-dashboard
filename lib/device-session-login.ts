@@ -16,7 +16,9 @@ export async function loginStaff(input: { shopCode: string; staffId: number; pas
 /** Silent refresh never requests geolocation or exposes the HttpOnly refresh credential. */
 export async function refreshDeviceSession(): Promise<Record<string, unknown>> {
   const response = await fetch("/api/auth/refresh", { method: "POST", credentials: "include", cache: "no-store" });
-  if (!response.ok) throw new Error("Session expired. Please sign in again.");
+  if (!response.ok) throw new Error(response.status === 401
+    ? "Session expired. Please sign in again."
+    : "Session refresh temporarily unavailable. Please retry shortly.");
   return response.json();
 }
 

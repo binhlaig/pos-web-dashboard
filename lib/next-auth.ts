@@ -1,3 +1,4 @@
+import { requireMatchingIdentity, sessionIdentity, SessionIdentityError } from "@/lib/session-identity";
 import {
   refreshSpringSession,
   refreshCookieFromResponse,
@@ -149,6 +150,7 @@ function normalizeBusinessType(value: unknown): string | null {
 import {
   captureRefreshCookie,
   browserMetadataHeaders,
+  isSessionRefreshRequested,
 } from "@/lib/session-cookie-bridge";
 export const authOptions: NextAuthOptions = {
   debug: false,
@@ -288,6 +290,7 @@ export const authOptions: NextAuthOptions = {
            */
           const payload = decodeJwtPayload(data.token);
           const exp = getTokenExpiry(data.token);
+          sessionIdentity(data.token);
           /**
            * Username
            */
@@ -416,7 +419,9 @@ export const authOptions: NextAuthOptions = {
           });
           return resultUser;
         } catch (error) {
-          console.error("[NextAuth] authorize error:", error);
+          console.error("[NextAuth] authorize failed", {
+            reason: error instanceof SessionIdentityError ? error.reason : "LOGIN_FAILED",
+          });
           return null;
         }
       },
@@ -466,18 +471,17 @@ export const authOptions: NextAuthOptions = {
         console.log("[NextAuth JWT] business_type:", token.business_type);
       }
       const expires = Number(token.accessTokenExpires || 0);
-      if (!user && expires && Date.now() / 1000 >= expires - 60) {
+      if (!user && expires && (Date.now() / 1000 >= expires - 60 || isSessionRefreshRequested())) {
         if (token.error === "AccessTokenExpired") return token;
         // Back off on temporary failures; never turn a 503 into a logout.
         if (Number(token.refreshRetryAfter || 0) > Date.now()) return token;
         try {
+          // Validate the login contract before consuming a single-use credential.
+          sessionIdentity(String(token.accessToken || ""));
           const refreshed = await refreshSpringSession(
             String(token.refreshCredential || ""),
           );
-          const previous = decodeJwtPayload(String(token.accessToken || ""));
-          const next = decodeJwtPayload(refreshed.data.token);
-          if (!previous?.sid || next?.sid !== previous.sid)
-            throw new SessionRefreshError(401, "Session identity mismatch.");
+          requireMatchingIdentity(String(token.accessToken || ""), refreshed.data.token);
           token.accessToken = refreshed.data.token;
           token.accessTokenExpires = getTokenExpiry(refreshed.data.token);
           token.refreshCredential = refreshed.refreshToken;
@@ -489,8 +493,13 @@ export const authOptions: NextAuthOptions = {
               new Response(null, { headers: { "Set-Cookie": cookie } }),
             );
           delete token.error;
+          delete token.refreshReason;
         } catch (error) {
-          if (error instanceof SessionRefreshError && error.status === 401) {
+          token.refreshReason = error instanceof SessionIdentityError ? error.reason
+            : error instanceof SessionRefreshError ? error.reason : "TEMPORARY_REFRESH_FAILURE";
+          console.error("[Session refresh]", { reason: token.refreshReason });
+          if ((error instanceof SessionRefreshError && error.status === 401) ||
+              (error instanceof SessionIdentityError && error.reason === "IDENTITY_MISMATCH")) {
             token.error = "AccessTokenExpired";
             token.accessToken = null;
             token.refreshCredential = null;
@@ -571,6 +580,7 @@ export const authOptions: NextAuthOptions = {
         (session as any).error = expired
           ? (token.error ?? "RefreshTemporarilyUnavailable")
           : (token.error ?? null);
+        (session as any).refreshReason = token.refreshReason ?? null;
         (session as any).accessTokenExpires =
           (token.accessTokenExpires as number | null) ?? null;
         (session as any).shopStatus = expired ? null : (token.shopStatus ?? null);

@@ -9,7 +9,7 @@ import { CurrencyProvider } from "@/components/currency-provider";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
+    <SessionProvider refetchInterval={60} refetchOnWindowFocus>
       <ToasterProvider />
       <ThemeProvider
         attribute="class"

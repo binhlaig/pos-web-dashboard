@@ -1024,8 +1024,8 @@ export default function TimecardPro() {
 
   const requireValidEmployee = () => {
     if (!accessToken) {
-      toast.error("Session expired. Please sign in again.");
-      signOut({ callbackUrl: "/Sign_in" });
+      toast.error("Session unavailable. Please retry shortly.");
+      if ((session as any)?.error === "AccessTokenExpired") void signOut({ callbackUrl: "/Sign_in" });
       return false;
     }
     if (showAll) {

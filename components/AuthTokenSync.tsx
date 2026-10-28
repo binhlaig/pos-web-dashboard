@@ -17,7 +17,16 @@ export default function AuthTokenSync() {
     }
 
     if (status === "unauthenticated") {
-      clearAuthTokens();
+      // NextAuth can report unauthenticated after a failed session fetch. Only
+      // clear browser credentials after a successful, authoritative empty read.
+      const controller = new AbortController();
+      void fetch("/api/auth/session", { cache: "no-store", signal: controller.signal })
+        .then(async response => {
+          if (!response.ok) return;
+          const current = await response.json();
+          if (!controller.signal.aborted && (!current?.user || current.error === "AccessTokenExpired")) clearAuthTokens();
+        }).catch(() => {});
+      return () => controller.abort();
     }
   }, [accessToken, status]);
 

@@ -63,7 +63,7 @@
 
 //   const hasBody = body !== undefined;
 
-//   const res = await fetch(buildUrl(path), {
+//   const res = await sessionFetch(buildUrl(path), {
 //     method: "POST",
 //     headers: {
 //       ...(hasBody ? { "Content-Type": "application/json" } : {}),
@@ -80,7 +80,8 @@
 
 
 
-import { clearAuthTokens, getStoredToken, redirectToSignIn } from "@/lib/auth";
+import { getStoredToken } from "@/lib/auth";
+import { sessionFetch } from "@/lib/api";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
@@ -95,8 +96,6 @@ async function parseResponse<T>(res: Response): Promise<T> {
 
   if (!res.ok) {
     if (res.status === 401) {
-      clearAuthTokens();
-      redirectToSignIn();
       throw new Error("Your login session has expired. Please sign in again.");
     }
 
@@ -129,7 +128,7 @@ function resolveToken(token?: string | null) {
 export async function get<T>(path: string, token?: string | null): Promise<T> {
   const resolvedToken = resolveToken(token);
 
-  const res = await fetch(buildUrl(path), {
+  const res = await sessionFetch(buildUrl(path), {
     method: "GET",
     headers: {
       ...(resolvedToken ? { Authorization: `Bearer ${resolvedToken}` } : {}),
@@ -147,7 +146,7 @@ export async function post<T>(
 ): Promise<T> {
   const resolvedToken = resolveToken(token);
 
-  const res = await fetch(buildUrl(path), {
+  const res = await sessionFetch(buildUrl(path), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -166,7 +165,7 @@ export async function put<T>(
 ): Promise<T> {
   const resolvedToken = resolveToken(token);
 
-  const res = await fetch(buildUrl(path), {
+  const res = await sessionFetch(buildUrl(path), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -181,7 +180,7 @@ export async function put<T>(
 export async function del<T>(path: string, token?: string | null): Promise<T> {
   const resolvedToken = resolveToken(token);
 
-  const res = await fetch(buildUrl(path), {
+  const res = await sessionFetch(buildUrl(path), {
     method: "DELETE",
     headers: {
       ...(resolvedToken ? { Authorization: `Bearer ${resolvedToken}` } : {}),

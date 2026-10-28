@@ -43,7 +43,10 @@ import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextRequest } from "next/server";
 
-const scope = new AsyncLocalStorage<{ cookies: string[]; headers: Headers }>();
+type CookieScope = AsyncLocalStorage<{ cookies: string[]; headers: Headers; forceRefresh?: boolean }>;
+const processState = globalThis as typeof globalThis & { __posCookieScope?: CookieScope };
+const scope: CookieScope = processState.__posCookieScope ??= new AsyncLocalStorage<{ cookies: string[]; headers: Headers; forceRefresh?: boolean }>();
+export function isSessionRefreshRequested() { return scope.getStore()?.forceRefresh === true; }
 export function captureRefreshCookie(response: Response) {
   const store = scope.getStore();
   if (!store) return;
@@ -73,9 +76,10 @@ export function browserMetadataHeaders(): Record<string, string> {
 }
 export function withRefreshCookieBridge(
   handler: (request: NextRequest, context: unknown) => Promise<Response>,
+  forceRefresh = false,
 ) {
   return async (request: NextRequest, context: unknown) => {
-    const state = { cookies: [] as string[], headers: request.headers };
+    const state = { cookies: [] as string[], headers: request.headers, forceRefresh };
     return scope.run(state, async () => {
       const response = await handler(request, context);
       for (const cookie of state.cookies) response.headers.append("Set-Cookie", cookie);

@@ -9,13 +9,15 @@ function load(file, imports = {}, globals = {}) {
   const exports = {};
   const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: {
-    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-  } }).outputText, { exports, require: name => imports[name],
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
+  } }).outputText, { exports, require: name => name === '@/lib/session-identity' ? identity : imports[name],
     process: { env: {} }, Buffer, Response, Headers, URL, AbortSignal,
-    setTimeout, console: { log() {}, error() {} }, ...globals });
+    setTimeout, atob, console: { log() {}, error() {} }, ...globals });
   return exports;
 }
-const jwt = (exp, sid = 'session') => `header.${Buffer.from(JSON.stringify({ exp, sid })).toString('base64url')}.signature`;
+const claims = { sid: 'session', type: 'USER', accountId: 7, shopId: 3, sub: '7', shopCode: 'SHOP', role: 'ADMIN' };
+const jwt = (exp, sid = 'session', overrides = {}) => `header.${Buffer.from(JSON.stringify({ ...claims, exp, sid, ...overrides })).toString('base64url')}.signature`;
+const identity = load('lib/session-identity.ts');
 const expired = { accessToken: jwt(1), accessTokenExpires: 1, exp: Date.now() / 1000 + 64800 };
 function middleware(token) {
   return load('middleware.ts', {
@@ -43,8 +45,8 @@ test('missing, expired NextAuth, and definitively revoked sessions redirect with
     assert.equal((await run(request(result.url))).status, 200);
   }
 });
-test('sign-in redirects expired access sessions to an allowed route, never itself or another origin', async () => {
-  const run = middleware(expired);
+test('sign-in redirects valid access sessions to an allowed route, never itself or another origin', async () => {
+  const run = middleware({ ...expired, accessTokenExpires: Date.now() / 1000 + 900 });
   for (const next of ['/dashboard', '/Sign_in?next=/dashboard', '/sign-in', '/a/../Sign_in', '/\\evil.test']) {
     const result = await run(request(`/Sign_in?next=${encodeURIComponent(next)}`));
     assert.equal(new URL(result.url).origin, 'https://pos.test');
@@ -100,7 +102,7 @@ function authOptions(refresh) {
   class SessionRefreshError extends Error { constructor(status) { super(); this.status = status; } }
   return { SessionRefreshError, options: load('lib/next-auth.ts', {
     '@/lib/spring-session-refresh': { refreshSpringSession: refresh, SessionRefreshError },
-    '@/lib/session-cookie-bridge': { captureRefreshCookie() {}, browserMetadataHeaders: () => ({}) },
+    '@/lib/session-cookie-bridge': { captureRefreshCookie() {}, browserMetadataHeaders: () => ({}), isSessionRefreshRequested: () => false },
     'next-auth/providers/credentials': { default: config => config },
   }).authOptions };
 }
@@ -151,4 +153,200 @@ test('temporary refresh failure in browser does not logout or retry request', as
   }, { fetch: async () => { calls++; return Response.json({}, { status: 401 }); } });
   await assert.rejects(api.apiRequest('/orders', { auth: true }), /renew session/);
   assert.equal(calls, 1);
+});
+
+test('missing identity is recoverable and mismatched account, shop, type or device is rejected', async () => {
+  for (const overrides of [{ sid: undefined }, { accountId: undefined }, { shopId: undefined }, { type: undefined }, { sub: undefined }]) {
+    const { options } = authOptions(async () => ({ data: { token: jwt(Date.now()/1000+900, 'session', overrides) }, refreshToken: 'rotated', cookies: [] }));
+    const token = await options.callbacks.jwt({ token: { ...expired, refreshCredential: 'old' } });
+    assert.equal(token.error, 'RefreshTemporarilyUnavailable');
+    assert.equal(token.refreshReason, 'MISSING_IDENTITY_CLAIM');
+    assert.equal(token.refreshCredential, 'old');
+  }
+  for (const overrides of [{ sid: 'different' }, { accountId: 8 }, { shopId: 4 }, { type: 'STAFF' }, { sub: '8' }, { shopCode: 'OTHER' }]) {
+    const { options } = authOptions(async () => ({ data: { token: jwt(Date.now()/1000+900, 'session', overrides) }, refreshToken: 'rotated', cookies: [] }));
+    const token = await options.callbacks.jwt({ token: { ...expired, refreshCredential: 'old' } });
+    assert.equal(token.error, 'AccessTokenExpired');
+    assert.equal(token.refreshReason, 'IDENTITY_MISMATCH');
+    assert.equal(token.accessToken, null);
+  }
+});
+
+test('real STAFF subject and account type survive refresh; credentials never enter browser session', async () => {
+  const staff = { type: 'STAFF', accountId: 12, sub: 'staff:3:12', staffId: 100, role: 'CASHIER' };
+  const next = jwt(Date.now()/1000+900, 'session', staff);
+  const { options } = authOptions(async () => ({ data: { token: next }, refreshToken: 'rotated', cookies: [] }));
+  const token = await options.callbacks.jwt({ token: { ...expired, accessToken: jwt(1, 'session', staff), refreshCredential: 'old' } });
+  assert.equal(token.accessToken, next);
+  assert.equal(token.refreshCredential, 'rotated');
+  const session = await options.callbacks.session({ session: { user: {} }, token });
+  assert.equal(session.accessToken, next);
+  assert.equal(session.refreshCredential, undefined);
+});
+
+test('missing refresh credential has a separate safe reason code', async () => {
+  const service = refreshSetup({}, () => assert.fail('must not POST'));
+  await assert.rejects(service.refreshSpringSession(''), error => error.status === 401 && error.reason === 'MISSING_REFRESH_CREDENTIAL');
+});
+
+test('overlapping requests share exactly one rotation and stale server cookie follows latest alias', async () => {
+  let posts = 0;
+  let now = Date.now();
+  class Clock extends Date { static now() { return now; } }
+  const service = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } }, {
+    Date: Clock, process: { env: { APP_FRONTEND_ORIGIN: 'https://pos.test' } }, fetch: async () => {
+      posts++;
+      await new Promise(resolve => setTimeout(resolve, 5));
+      return new Response(JSON.stringify({ token: jwt(now/1000+900) }), {
+        headers: { 'Set-Cookie': `pos_refresh=rotation-${posts}; Path=/api/auth; HttpOnly; Max-Age=63000` },
+      });
+    },
+  });
+  const results = await Promise.all(Array.from({length: 12}, () => service.refreshSpringSession('original')));
+  assert.equal(posts, 1);
+  assert.ok(results.every(result => result.refreshToken === 'rotation-1'));
+  now += 901000;
+  const latest = await service.refreshSpringSession('original');
+  assert.equal(posts, 2);
+  assert.equal(latest.refreshToken, 'rotation-2');
+});
+
+test('separate Vercel workers reuse Redis rotation, and Redis preflight outages recover', async () => {
+  const records = new Map(); let posts = 0, offline = true;
+  const env = { VERCEL: '1', APP_FRONTEND_ORIGIN: 'https://pos.test', SESSION_REDIS_REST_URL: 'https://redis.test', SESSION_REDIS_REST_TOKEN: 'test-only' };
+  const fetch = async (url, init) => {
+    if (url !== 'https://redis.test') { posts++; return refreshedResponse(); }
+    if (offline) throw new Error('offline');
+    const [command, key, value, mode] = JSON.parse(init.body);
+    if (command === 'GET') return Response.json({ result: records.get(key) ?? null });
+    if (mode === 'NX' && records.has(key)) return Response.json({ result: null });
+    records.set(key, value); return Response.json({ result: 'OK' });
+  };
+  const first = refreshSetup(env, fetch), second = refreshSetup(env, fetch);
+  await assert.rejects(first.refreshSpringSession('shared'));
+  assert.equal(posts, 0);
+  offline = false;
+  const results = await Promise.all([first.refreshSpringSession('shared'), second.refreshSpringSession('shared')]);
+  assert.equal(posts, 1);
+  assert.ok(results.every(result => result.refreshToken === 'rotated'));
+});
+
+test('temporary refresh failure on factory access returns recoverable 503, never logout 401', async () => {
+  for (const error of ['RefreshTemporarilyUnavailable', 'SessionMappingError']) {
+    const route = load('app/api/auth/business-type/route.ts', {
+      'next-auth': { getServerSession: async () => ({ user: {}, accessToken: null, error }) }, '@/lib/next-auth': {},
+    });
+    const response = await route.GET();
+    assert.equal(response.status, 503);
+    const business = load('lib/business-access.ts', { './business-routing': {} });
+    assert.equal((await business.loadBusinessAccess(async () => response)).kind, 'error');
+  }
+});
+
+test('expired access cookie permits sign-in page so server-side rejection cannot redirect-loop', async () => {
+  for (const error of [undefined, 'RefreshTemporarilyUnavailable', 'AccessTokenExpired']) {
+    assert.equal((await middleware({ ...expired, error })(request('/Sign_in?next=/factory/receiving'))).status, 200);
+  }
+});
+
+test('cookie bridge forwards rotation only to its own response; encrypted NextAuth cookie retains rotation', async () => {
+  const { AsyncLocalStorage } = await import('node:async_hooks');
+  const { encode, decode } = await import('next-auth/jwt');
+  const bridge = load('lib/session-cookie-bridge.ts', { 'node:async_hooks': { AsyncLocalStorage } });
+  const { options } = authOptions(async () => ({ data: { token: jwt(Date.now()/1000+900) }, refreshToken: 'rotated', cookies: [] }));
+  const token = await options.callbacks.jwt({ token: { ...expired, refreshCredential: 'old' } });
+  const secret = 'test-only-cookie-secret';
+  const encrypted = await encode({ token, secret, maxAge: options.session.maxAge });
+  const persisted = await decode({ token: encrypted, secret });
+  assert.equal(persisted.refreshCredential, 'rotated');
+  assert.equal(persisted.accessToken, token.accessToken);
+  const handler = bridge.withRefreshCookieBridge(async request => {
+    bridge.captureRefreshCookie(new Response(null, { headers: { 'Set-Cookie': `pos_refresh=${request.label}; Path=/api/auth; HttpOnly` } }));
+    await new Promise(resolve => setTimeout(resolve, 2));
+    return new Response(null, { headers: { 'Set-Cookie': `next-auth.session-token=${encrypted}; HttpOnly` } });
+  });
+  const responses = await Promise.all(['one', 'two'].map(label => handler({ label, headers: new Headers() })));
+  responses.forEach((response, i) => {
+    const cookies = response.headers.getSetCookie();
+    assert.equal(cookies.length, 2);
+    assert.ok(cookies.some(value => value.startsWith(`pos_refresh=${i === 0 ? 'one' : 'two'};`)));
+    assert.ok(cookies.some(value => value.startsWith('next-auth.session-token=')));
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  });
+});
+
+test('development module reload reuses pending rotation rather than replaying credential', async () => {
+  const sharedGlobal = {}; let posts = 0;
+  const globals = { globalThis: sharedGlobal, process: { env: { APP_FRONTEND_ORIGIN: 'https://pos.test' } }, fetch: async () => { posts++; return refreshedResponse(); } };
+  const first = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } }, globals);
+  await first.refreshSpringSession('hot-reload');
+  const reloaded = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } }, globals);
+  assert.equal((await reloaded.refreshSpringSession('hot-reload')).refreshToken, 'rotated');
+  assert.equal(posts, 1);
+});
+
+test('compatibility refresh route persists NextAuth and bridge cookies and cannot use an unrelated staff cookie', async () => {
+  class NextRequest { constructor(url, options) { this.url = String(url); this.headers = options.headers; } }
+  let calls = 0;
+  const route = load('app/api/auth/refresh/route.ts', {
+    'next/server': { NextRequest },
+    '@/lib/session-proxy': { proxySessionRequest: () => assert.fail('must use NextAuth credential') },
+    'next-auth/jwt': { getToken: async () => ({ refreshCredential: 'owner-credential' }) },
+    '@/lib/next-auth': {},
+    '@/lib/session-cookie-bridge': { withRefreshCookieBridge: (handler, force) => { assert.equal(force, true); return handler; } },
+    'next-auth': { default: () => async (request, context) => {
+      calls++;
+      assert.equal(new URL(request.url).pathname, '/api/auth/session');
+      assert.equal(context.params.nextauth[0], 'session');
+      const headers = new Headers();
+      headers.append('Set-Cookie', 'next-auth.session-token=encrypted-rotation; HttpOnly');
+      headers.append('Set-Cookie', 'pos_refresh=rotation; HttpOnly');
+      return Response.json({ accessToken: jwt(Date.now()/1000+900) }, { headers });
+    } },
+  }, { process: { env: { APP_FRONTEND_ORIGIN: 'https://pos.test' } } });
+  const response = await route.POST({ url: 'https://pos.test/api/auth/refresh', headers: new Headers({ Origin: 'https://pos.test' }) });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.getSetCookie().length, 2);
+  assert.equal(calls, 1);
+  assert.equal((await response.json()).refreshCredential, undefined);
+  assert.equal((await route.POST({ headers: new Headers({ Origin: 'https://other.test' }) })).status, 403);
+  assert.equal(calls, 1);
+});
+
+test('backend revocation stays definitive and malformed identity never becomes an accepted session', async () => {
+  const rejected = refreshSetup({ APP_FRONTEND_ORIGIN: 'https://pos.test' }, async () => Response.json({}, { status: 401 }));
+  await assert.rejects(rejected.refreshSpringSession('revoked'), error => error.status === 401 && error.reason === 'BACKEND_REFRESH_REJECTED');
+  const invalid = refreshSetup({ APP_FRONTEND_ORIGIN: 'https://pos.test' }, async () => new Response(JSON.stringify({ token: jwt(Date.now()/1000+900, undefined, { accountId: undefined }) }), { headers: { 'Set-Cookie': 'pos_refresh=rotation; HttpOnly;' } }));
+  await assert.rejects(invalid.refreshSpringSession('invalid'), error => error.reason === 'MISSING_IDENTITY_CLAIM' && error.status !== 401);
+});
+
+test('authenticated forced refresh detects revocation before access expiry', async () => {
+  const errorService = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } });
+  const options = load('lib/next-auth.ts', {
+    '@/lib/session-identity': identity,
+    '@/lib/spring-session-refresh': { SessionRefreshError: errorService.SessionRefreshError, refreshSpringSession: async () => { throw new errorService.SessionRefreshError(401, 'revoked'); } },
+    '@/lib/session-cookie-bridge': { isSessionRefreshRequested: () => true, captureRefreshCookie() {}, browserMetadataHeaders: () => ({}) },
+    'next-auth/providers/credentials': { default: config => config },
+  }).authOptions;
+  const token = await options.callbacks.jwt({ token: { ...expired, accessTokenExpires: Date.now()/1000+900, accessToken: jwt(Date.now()/1000+900), refreshCredential: 'revoked' } });
+  assert.equal(token.error, 'AccessTokenExpired');
+  assert.equal(token.refreshReason, 'BACKEND_REFRESH_REJECTED');
+  assert.equal(token.refreshCredential, null);
+});
+
+test('client session transport failure cannot clear tokens or redirect the auth guard', async () => {
+  const hooks = { useEffect: effect => effect(), useState: initial => [initial, () => {}] };
+  const session = { useSession: () => ({ status: 'unauthenticated', data: null, update: async () => null }) };
+  const failFetch = async () => { throw new Error('offline'); };
+  const sync = load('components/AuthTokenSync.tsx', {
+    react: hooks, 'next-auth/react': session,
+    '@/lib/auth': { clearAuthTokens: () => assert.fail('must retain tokens'), saveToken() {} },
+  }, { fetch: failFetch, AbortController });
+  sync.default();
+  const guard = load('components/auth/AuthTokenGuard.tsx', {
+    react: hooks, 'react/jsx-runtime': { jsx: () => null, jsxs: () => null }, 'next-auth/react': session,
+    'next/navigation': { useRouter: () => ({ replace: () => assert.fail('must not redirect') }), usePathname: () => '/factory/receiving', useSearchParams: () => new URLSearchParams() },
+  }, { fetch: failFetch, AbortController });
+  guard.default({ children: null });
+  await new Promise(resolve => setTimeout(resolve, 5));
 });

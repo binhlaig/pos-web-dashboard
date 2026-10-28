@@ -8,7 +8,7 @@ import { loadBusinessAccess, type BusinessAccess } from "@/lib/business-access";
 import { destinationForBusinessType } from "@/lib/business-routing";
 
 export function BusinessAccessGate({ children, entry = false }: { children?: ReactNode; entry?: boolean }) {
-  const { status, data: session } = useSession();
+  const { status, data: session, update } = useSession();
   const router = useRouter();
   const params = useSearchParams();
   const callback = params.get("next") || params.get("callbackUrl");
@@ -22,7 +22,9 @@ export function BusinessAccessGate({ children, entry = false }: { children?: Rea
     let active = true;
     const controller = new AbortController();
     async function check() {
-      const result = status === "unauthenticated" ? { kind: "unauthenticated" } as const : await loadBusinessAccess(fetch, controller.signal);
+      // A client session fetch failure can look unauthenticated. Confirm with
+      // the authenticated server endpoint before destroying the session.
+      const result = await loadBusinessAccess(fetch, controller.signal);
       if (!active) return;
       if (result.kind === "unauthenticated") {
         // Clear the NextAuth cookie as well as local tokens to avoid middleware login loops.
@@ -32,6 +34,11 @@ export function BusinessAccessGate({ children, entry = false }: { children?: Rea
         return;
       }
       setCheckedIdentity(identity);
+      if (status === "unauthenticated" && result.kind === "ready") {
+        await update();
+        if (active) setAccess({ kind: "error" });
+        return;
+      }
       setAccess(result);
       if (entry && result.kind === "ready") {
         const destination = destinationForBusinessType(result.businessType, callback);
@@ -40,9 +47,9 @@ export function BusinessAccessGate({ children, entry = false }: { children?: Rea
     }
     void check();
     return () => { active = false; controller.abort(); };
-  }, [status, identity, attempt, router, entry, callback]);
+  }, [status, identity, attempt, router, entry, callback, update]);
   function retry() { setAccess(null); setAttempt(value => value + 1); }
-  if (status !== "authenticated" || checkedIdentity !== identity || !access || (entry && access.kind === "ready")) {
+  if (status === "loading" || checkedIdentity !== identity || !access || (entry && access.kind === "ready")) {
     return <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground" role="status">Checking business access…</div>;
   }
   if (access.kind === "ready" && access.businessType === "FACTORY") return <>{children}</>;

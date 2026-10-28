@@ -26,7 +26,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   if (
     !session ||
     (session as any).error === "AccessTokenExpired" ||
-    !(session as any).accessToken
+    (!(session as any).accessToken && (session as any).error !== "RefreshTemporarilyUnavailable")
   ) {
     return null;
   }
