@@ -23,6 +23,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -143,6 +145,59 @@ function warehouseBulkBalances(
 }
 
 type StockKind = "BULK" | "FINISHED";
+type ArchiveKey = {
+  stockKind: StockKind; itemId: number; sourceVersion: number;
+  warehouseId: number; locationId: number; batch: string;
+};
+type ArchiveRecord = { key: ArchiveKey; name: string; reason: string; archivedAt: string };
+function archiveIdentity(row: Balance): ArchiveKey {
+  return {stockKind:row.stockKind === "BULK" ? "BULK" : "FINISHED",itemId:row.itemId,sourceVersion:row.sourceVersion,
+    warehouseId:row.warehouseId,locationId:row.locationId,batch:row.batch.trim().toUpperCase()};
+}
+function archiveKey(key: ArchiveKey): string {
+  return JSON.stringify([key.stockKind,key.itemId,key.sourceVersion,key.warehouseId,key.locationId,key.batch.trim().toUpperCase()]);
+}
+function decodeArchives(raw: unknown): ArchiveRecord[] {
+  if (!Array.isArray(raw)) throw new StockError("ဖယ်သိမ်းစာရင်း response မမှန်ပါ။",502);
+  const keys = new Set<string>();
+  return raw.map(value => {
+    const r = value as ArchiveRecord;
+    if (!r || !r.key || !["BULK","FINISHED"].includes(r.key.stockKind) ||
+      ![r.key.itemId,r.key.warehouseId,r.key.locationId].every(n=>Number.isSafeInteger(n)&&n>0) ||
+      !Number.isSafeInteger(r.key.sourceVersion)||r.key.sourceVersion<0||
+      typeof r.key.batch!=="string"||!r.key.batch.trim()||typeof r.name!=="string"||
+      typeof r.reason!=="string"||typeof r.archivedAt!=="string"||!Number.isFinite(Date.parse(r.archivedAt)))
+      throw new StockError("ဖယ်သိမ်းထားသော ပစ္စည်းအချက်အလက် မမှန်ပါ။",502);
+    const key=archiveKey(r.key);if(keys.has(key))throw new StockError("ဖယ်သိမ်းစာရင်း ထပ်နေပါသည်။",502);
+    keys.add(key);return r;
+  });
+}
+function visibleBulkRows(raw: unknown, archived: Set<string>): unknown {
+  if(!Array.isArray(raw))return raw;
+  return raw.filter(row=>!row||typeof row!=="object"||!archived.has(archiveKey({stockKind:"BULK",
+    itemId:row.item_id,sourceVersion:row.source_version,warehouseId:row.warehouse_id,
+    locationId:row.location_id,batch:typeof row.batch==="string"?row.batch:""})));
+}
+// Apply visibility before pagination, including for finished stock. History is untouched.
+async function visibleFinishedBalances(q: URLSearchParams, page: number, archived: Set<string>, signal: AbortSignal): Promise<StockPage<Balance>> {
+  if(!archived.size)return decodeBalances(await api(`/api/factory/stock/balances?${q}`,{signal}));
+  const params=new URLSearchParams(q);params.set("size","100");
+  const all: Balance[]=[];let template: StockPage<Balance>|null=null;
+  for(let p=0;p<1000;p++){
+    params.set("page",String(p));
+    const data=decodeBalances(await api(`/api/factory/stock/balances?${params}`,{signal}));
+    if(data.page!==p||data.size!==100||template&&data.totalElements!==template.totalElements)
+      throw new StockError("Stock စာရင်း ပြောင်းနေပါသည်။ ပြန်တင်ပြီး စစ်ပါ။",409);
+    template??=data;all.push(...data.content);
+    if(all.length>=data.totalElements){
+      const rows=all.filter(row=>!archived.has(archiveKey(archiveIdentity(row))));
+      return {...template,page,size:SIZE,totalElements:rows.length,content:rows.slice(page*SIZE,(page+1)*SIZE)};
+    }
+    if(!data.content.length)break;
+  }
+  throw new StockError("Stock စာရင်း အပြည့်မရပါ။ Search ဖြင့် စာရင်းလျှော့ပြီး ပြန်စမ်းပါ။",502);
+}
+
 type Filters = {
   search: string;
   warehouseId: string;
@@ -647,6 +702,34 @@ function StockWorkspace() {
   >({});
   const [mappingOpen, setMappingOpen] = React.useState(false),
     [detail, setDetail] = React.useState<Balance | Movement | null>(null);
+  const [archives,setArchives]=React.useState<ArchiveRecord[]>([]);
+  const [archiveReady,setArchiveReady]=React.useState(false),[archiveError,setArchiveError]=React.useState("");
+  const [archiveHistory,setArchiveHistory]=React.useState(false);
+  const [archiveAction,setArchiveAction]=React.useState<{key:ArchiveKey;name:string;restore:boolean}|null>(null);
+  const [archiveReason,setArchiveReason]=React.useState(""),[archiveConfirmation,setArchiveConfirmation]=React.useState("");
+  const [archiveBusy,setArchiveBusy]=React.useState(false),[archiveMessage,setArchiveMessage]=React.useState("");
+  const archiveLock=React.useRef(false),archiveMounted=React.useRef(true);
+  React.useEffect(()=>{archiveMounted.current=true;return()=>{archiveMounted.current=false;};},[]);
+  const beginArchive=(row:Balance)=>{if(archiveBusy||!archiveReady)return;setArchiveReason("");setArchiveConfirmation("");setArchiveMessage("");setArchiveAction({key:archiveIdentity(row),name:row.name,restore:false});};
+  async function saveArchive(){
+    const action=archiveAction;if(!action||archiveLock.current||!archiveReady||archiveConfirmation.trim()!==action.name.trim()||!action.restore&&!archiveReason.trim())return;
+    archiveLock.current=true;setArchiveBusy(true);setArchiveMessage("");
+    try{
+      await api("/api/factory/warehouse/archives",{method:action.restore?"DELETE":"POST",body:JSON.stringify(action.restore?action.key:{key:action.key,name:action.name,reason:archiveReason.trim()})});
+      if(!archiveMounted.current)return;
+      // Read canonical visibility; never remove a card optimistically on an error.
+      const current=decodeArchives(await api("/api/factory/warehouse/archives"));
+      if(!archiveMounted.current)return;
+      const present=current.some(r=>archiveKey(r.key)===archiveKey(action.key));
+      setArchives(current);
+      if(present===action.restore)throw new Error("Server အခြေအနေ ထပ်ပြောင်းထားပါသည်။ ဖယ်သိမ်းစာရင်းကို ပြန်စစ်ပါ။");
+      setArchiveAction(null);setDetail(null);setSelectedKey(null);setPage(0);setRevision(v=>v+1);
+      setArchiveMessage(action.restore?"Warehouse စာရင်းတွင် ပြန်ဖော်ပြီးပါပြီ။ Stock ပမာဏ မပြောင်းပါ။":"ရွေးထားသော Warehouse / နေရာ / Batch ကို စာရင်းမှဖယ်သိမ်းပြီးပါပြီ။ Stock နှင့် ယခင်မှတ်တမ်းများ မပြောင်းပါ။");
+      window.dispatchEvent(new Event("factory-warehouse-archives-changed"));
+    }catch(e){
+      if(archiveMounted.current){setArchiveMessage(e instanceof Error?e.message:"ဖယ်သိမ်းခြင်း မအောင်မြင်ပါ။");setArchiveAction(null);setRevision(v=>v+1);}
+    }finally{archiveLock.current=false;if(archiveMounted.current)setArchiveBusy(false);}
+  }
   const refresh = React.useCallback(() => setRevision((v) => v + 1), []);
   const busyRef = React.useRef(false);
   const refreshFromEvents = React.useCallback(() => {
@@ -657,6 +740,7 @@ function StockWorkspace() {
     refreshFromEvents,
     stockKind === "BULK",
   );
+  React.useEffect(()=>{const changed=()=>refresh();window.addEventListener("factory-warehouse-archives-changed",changed);return()=>window.removeEventListener("factory-warehouse-archives-changed",changed);},[refresh]);
   const queryKey = JSON.stringify({ filters, page, stockKind });
   const dataKey = JSON.stringify({ filters, stockKind });
   const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
@@ -692,6 +776,16 @@ function StockWorkspace() {
     if (filters.locationId) q.set("locationId", filters.locationId);
     if (filters.batch) q.set("batch", filters.batch);
     const load = async (): Promise<StockPage<Balance>> => {
+      let archived: ArchiveRecord[]=[];
+      try{
+        archived=decodeArchives(await api("/api/factory/warehouse/archives",{signal:c.signal}));
+        if(active){setArchives(archived);setArchiveReady(true);setArchiveError("");}
+      }catch(e){
+        if(c.signal.aborted)throw e;
+        if(e instanceof StockError&&e.status===401)throw e;
+        if(active){setArchiveReady(false);setArchiveError("ဖယ်သိမ်းခြင်း API မရသေးပါ။ Backend migration၊ Controller နှင့် Next.js route ကို ထည့်ပြီး ပြန်စမ်းပါ။ Stock စာရင်းကို ဆက်ပြထားပါသည်။");}
+      }
+      const archivedKeys=new Set(archived.map(row=>archiveKey(row.key)));
       if (stockKind === "BULK") {
         const [raw, receipts] = await Promise.all([
           api("/api/factory/warehouse/bulk-balances", { signal: c.signal }),
@@ -699,13 +793,11 @@ function StockWorkspace() {
         ]);
         // Validate the history payload before using it in the synchronous table renderer.
         bulkReceivingHistory(receipts, filters, 0, ACTIVITY_SIZE);
-        const balances = warehouseBulkBalances(raw, receipts, filters, page, SIZE);
+        const balances = warehouseBulkBalances(visibleBulkRows(raw,archivedKeys), receipts, filters, page, SIZE);
         if (active) setBulkHistory({ key: dataKey, receipts });
         return balances;
       }
-      return decodeBalances(
-        await api(`/api/factory/stock/balances?${q}`, { signal: c.signal }),
-      );
+      return visibleFinishedBalances(q,page,archivedKeys,c.signal);
     };
     void load()
       .then((data) => {
@@ -1050,6 +1142,12 @@ function StockWorkspace() {
           {connectionText}
         </p>
       </header>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
+        <p className="text-xs leading-6 text-muted-foreground">ဖယ်သိမ်းခြင်းသည် ဤ Warehouse / နေရာ / Batch ကို စာရင်းမှဖယ်ခြင်းသာဖြစ်ပြီး Stock ပမာဏ မပြောင်းပါ။</p>
+        <Button type="button" variant="outline" disabled={!archiveReady||archiveBusy} onClick={()=>setArchiveHistory(true)}><Archive className="mr-2 size-4"/>ဖယ်သိမ်းစာရင်း ({archives.length})</Button>
+      </div>
+      {archiveError&&<p role="alert" className="rounded-xl border border-amber-300 p-3 text-xs leading-7 text-amber-800 dark:text-amber-300">{archiveError}</p>}
+      {archiveMessage&&<p role="status" className="rounded-xl border p-3 text-sm leading-7">{archiveMessage}</p>}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1653,6 +1751,7 @@ function StockWorkspace() {
                   POS ပစ္စည်းချိတ်ရန်
                 </Button>
               )}
+              <Button type="button" variant="outline" className="mt-2 w-full text-amber-700 dark:text-amber-300" disabled={!archiveReady||archiveBusy||busy||authExpired} onClick={()=>beginArchive(selected)}><Archive className="mr-2 size-4"/>စာရင်းမှဖယ်သိမ်းရန်</Button>
               <Button
                 variant="ghost"
                 className="mt-1 w-full text-xs text-muted-foreground"
@@ -1701,10 +1800,26 @@ function StockWorkspace() {
             />
           )}
           <DialogFooter>
+            {detail&&"quantity" in detail&&<Button type="button" variant="outline" disabled={!archiveReady||archiveBusy||authExpired} onClick={()=>{beginArchive(detail);setDetail(null);}}><Archive className="mr-2 size-4"/>စာရင်းမှဖယ်သိမ်းရန်</Button>}
             <Button variant="outline" onClick={() => setDetail(null)}>
               ပိတ်မည်
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={archiveHistory} onOpenChange={setArchiveHistory}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>ဖယ်သိမ်းထားသော Warehouse စာရင်း</DialogTitle><DialogDescription>Bulk နှင့် Finished Stock ၏ Warehouse / နေရာ / Batch အလိုက် ဖယ်သိမ်းထားခြင်း ဖြစ်ပါသည်။ Stock ပမာဏနှင့် ယခင်မှတ်တမ်းများကို ထိန်းထားပါသည်။</DialogDescription></DialogHeader>
+          {!archives.length&&<p className="py-6 text-center text-sm text-muted-foreground">ဖယ်သိမ်းထားသော ပစ္စည်း မရှိသေးပါ။</p>}
+          {archives.map(row=><div key={archiveKey(row.key)} className="space-y-2 rounded-xl border p-3 text-sm leading-7"><p className="font-semibold">{row.name}</p><p className="text-xs text-muted-foreground">{row.key.stockKind} · Batch {row.key.batch} · Warehouse #{row.key.warehouseId} / နေရာ #{row.key.locationId}</p><p className="whitespace-pre-wrap break-words text-xs">အကြောင်းပြချက် — {row.reason}</p><p className="text-xs text-muted-foreground"><Stamp value={row.archivedAt}/></p><Button type="button" variant="outline" disabled={archiveBusy||!archiveReady} onClick={()=>{setArchiveHistory(false);setArchiveConfirmation("");setArchiveReason("");setArchiveAction({key:row.key,name:row.name,restore:true});}}><ArchiveRestore className="mr-2 size-4"/>စာရင်းတွင် ပြန်ဖော်မည်</Button></div>)}
+          <DialogFooter><Button variant="outline" onClick={()=>setArchiveHistory(false)}>ပိတ်မည်</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!archiveAction} onOpenChange={open=>{if(!archiveLock.current&&!open)setArchiveAction(null);}}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{archiveAction?.restore?"Warehouse စာရင်းတွင် ပြန်ဖော်မလား။":"Warehouse စာရင်းမှ ဖယ်သိမ်းမလား။"}</DialogTitle><DialogDescription>Stock ပမာဏ၊ Receiving၊ Production၊ အော်ဒါနှင့် Costing မှတ်တမ်းများကို မပြောင်းပါ။ Costing ကို အပြီးဖျက်ခွင့်ပေးခြင်းလည်း မဟုတ်ပါ။</DialogDescription></DialogHeader>
+          <div className="rounded-xl border p-3 text-sm leading-7"><p className="font-semibold">{archiveAction?.name}</p><p className="break-all text-xs">{archiveAction?.key.stockKind} · Batch {archiveAction?.key.batch} · Warehouse #{archiveAction?.key.warehouseId} / နေရာ #{archiveAction?.key.locationId}</p></div>
+          {!archiveAction?.restore&&<div className="space-y-2"><Label htmlFor="warehouse-archive-reason">ဖယ်သိမ်းရသည့်အကြောင်းပြချက် *</Label><textarea id="warehouse-archive-reason" value={archiveReason} maxLength={1000} rows={3} disabled={archiveBusy} onChange={e=>setArchiveReason(e.target.value)} className="w-full rounded-xl border bg-background p-3 text-sm"/></div>}
+          <div className="space-y-2"><Label htmlFor="warehouse-archive-confirmation">အတည်ပြုရန် ပစ္စည်းအမည်ကို ပြန်ရိုက်ပါ</Label><Input id="warehouse-archive-confirmation" value={archiveConfirmation} disabled={archiveBusy} autoComplete="off" onChange={e=>setArchiveConfirmation(e.target.value)}/></div>
+          <DialogFooter><Button variant="outline" disabled={archiveBusy} onClick={()=>setArchiveAction(null)}>မလုပ်တော့ပါ</Button><Button disabled={archiveBusy||!archiveReady||!archiveAction||archiveConfirmation.trim()!==archiveAction.name.trim()||!archiveAction.restore&&!archiveReason.trim()} onClick={()=>void saveArchive()}>{archiveBusy?<Loader2 className="mr-2 size-4 animate-spin"/>:<Archive className="mr-2 size-4"/>}{archiveAction?.restore?"အတည်ပြု၍ ပြန်ဖော်မည်":"အတည်ပြု၍ ဖယ်သိမ်းမည်"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={cameraOpen} onOpenChange={setCameraOpen}>

@@ -64,7 +64,8 @@ async function proxy(req: NextRequest, context: Context) {
   const itemDelete =
     path.length === 3 && id(path[0]) && path[1] === "items" && id(path[2]);
   const action =
-    path.length === 2 && id(path[0]) && ["finalize", "copy"].includes(path[1]);
+    path.length === 2 && id(path[0]) && ["finalize", "copy", "archive"].includes(path[1]) ||
+    path.length === 4 && id(path[0]) && path[1] === "items" && id(path[2]) && path[3] === "archive";
   const image =
     path.length === 5 &&
     id(path[0]) &&
@@ -102,6 +103,11 @@ async function proxy(req: NextRequest, context: Context) {
       const v = req.nextUrl.searchParams.get(key);
       if (v !== null) q.set(key, v);
     }
+  if (sheet && req.method === "GET" && req.nextUrl.searchParams.has("includeArchived")) {
+    const value = req.nextUrl.searchParams.get("includeArchived");
+    if (value !== "true" && value !== "false") return error("Invalid includeArchived value.", 400);
+    q.set("includeArchived", value);
+  }
   if (req.method === "DELETE" || (image && req.method === "PUT")) {
     const v = req.nextUrl.searchParams.get("version");
     if (v === null || !/^\d+$/.test(v) || !Number.isSafeInteger(Number(v)))

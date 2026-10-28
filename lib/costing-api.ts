@@ -1,8 +1,8 @@
 export type CostingResult = { ready: boolean; errors: string[]; values: Record<string, number | null> };
 export type CostingServerItem = { id: number; clientItemId: string; displayOrder: number; inputs: Record<string, string | number | null>; originalImage: boolean; packagedImage: boolean; calculation: CostingResult };
-export type CostingSheet = { id: number; title: string; currencyCode: string; status: 'DRAFT' | 'FINALIZED'; version: number; calculationVersion: number; updatedAt: string; items: CostingServerItem[]; totals: { includedItems: number; totalItems: number; packedCost: number | null; revenue: number | null; profit: number | null; discountedRevenue: number | null; discountedProfit: number | null; combinedMargin: number | null } };
+export type CostingSheet = { archived?: boolean; archivedAt?: string | null; archivedByAccountId?: number | null; id: number; title: string; currencyCode: string; status: 'DRAFT' | 'FINALIZED'; version: number; calculationVersion: number; updatedAt: string; items: CostingServerItem[]; totals: { includedItems: number; totalItems: number; packedCost: number | null; revenue: number | null; profit: number | null; discountedRevenue: number | null; discountedProfit: number | null; combinedMargin: number | null } };
 export type CostingList = { content: CostingSheet[]; totalPages: number; totalElements: number; number: number };
-export class CostingApiError extends Error { constructor(message: string, public status: number, public uncertain = false) { super(message); } }
+export class CostingApiError extends Error { constructor(message: string, public status: number, public uncertain = false, public code?: string) { super(message); } }
 const BASE = '/api/factory/costings';
 export const numericFields = ['containers','unitsPerContainer','weightKg','purchase','processing','lossKg','packGrams','packaging','sellingPrice','targetPercent','minimumMargin','discount','rounding'] as const;
 export const textFields = ['product','productType','containerName','unitName','purchasePriceMode','mode','basis'] as const;
@@ -31,7 +31,7 @@ export async function costingRequest(path='', options: RequestInit={}): Promise<
   catch { throw new CostingApiError(mutation?'ဆက်သွယ်မှု ပြတ်သွားပါသည်။ Server စာရင်းကို ပြန်စစ်ပြီးမှ ဆက်လုပ်ပါ။':'Server ချိတ်ဆက်မရပါ။ ပြန်စမ်းပါ။',0,mutation); }
   if(response.status===204 && response.ok) return null;
   const body=await response.json().catch(()=>null);
-  if(!response.ok){const labels:Record<number,string>={400:'ဖြည့်ထားသောအချက်အလက် စစ်ပါ။',401:'Login session ကုန်ဆုံးပါပြီ။ ပြန်ဝင်ပါ။',403:'FACTORY ဆိုင်၏ Owner account ဖြင့်သာ သုံးနိုင်ပါသည်။',404:'စာရင်း မတွေ့ပါ သို့မဟုတ် အသုံးပြုခွင့်မရှိပါ။',409:'စာရင်းပြောင်းထားပါသည် သို့မဟုတ် အတည်ပြုပြီးဖြစ်ပါသည်။ Server စာရင်းကို ပြန်ဖွင့်စစ်ပါ။',413:'ဖိုင်အရွယ်အစား ကြီးလွန်းပါသည်။'};throw new CostingApiError(`${labels[response.status]||'Server လုပ်ဆောင်ချက် မအောင်မြင်ပါ။'} ${typeof body?.message==='string'?body.message:''}`,response.status,mutation&&response.status>=500);}
+  if(!response.ok){const labels:Record<number,string>={400:'ဖြည့်ထားသောအချက်အလက် စစ်ပါ။',401:'Login session ကုန်ဆုံးပါပြီ။ ပြန်ဝင်ပါ။',403:'FACTORY ဆိုင်၏ Owner account ဖြင့်သာ သုံးနိုင်ပါသည်။',404:'စာရင်း မတွေ့ပါ သို့မဟုတ် အသုံးပြုခွင့်မရှိပါ။',409:'စာရင်းပြောင်းထားပါသည် သို့မဟုတ် အတည်ပြုပြီးဖြစ်ပါသည်။ Server စာရင်းကို ပြန်ဖွင့်စစ်ပါ။',413:'ဖိုင်အရွယ်အစား ကြီးလွန်းပါသည်။'};throw new CostingApiError(`${labels[response.status]||'Server လုပ်ဆောင်ချက် မအောင်မြင်ပါ။'} ${typeof body?.message==='string'?body.message:''}`,response.status,mutation&&response.status>=500,typeof body?.code==='string'?body.code:undefined);}
   if(!body) throw new CostingApiError('Server response ဖတ်မရပါ။ စာရင်းပြန်ဖွင့်စစ်ပါ။',502,mutation);
   return body;
 }

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Trash2, Loader2, RefreshCw } from "lucide-react";
+import { Trash2, Loader2, RefreshCw, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,22 @@ import {
   type CostingSheet,
   type CostingServerItem,
 } from "@/lib/costing-api";
+
+function deletionError(reason: unknown, fallback: string): string {
+  if (reason instanceof CostingApiError && reason.code === "COSTING_REFERENCED") {
+    return "Receiving နှင့် ဆက်စပ်မှတ်တမ်းရှိသဖြင့် အပြီးဖျက်မရပါ။ စာရင်းမှဖယ်သိမ်းမည် ကို အသုံးပြုပါ။";
+  }
+  if (reason instanceof CostingApiError && reason.status === 409) {
+    if (/Referenced Costing history|foreign key|constraint/i.test(reason.message)) {
+      return "Server က ဆက်စပ်မှတ်တမ်း သို့မဟုတ် အချက်အလက်မကိုက်ညီမှုကြောင့် ဖျက်ခွင့်ငြင်းထားပါသည်။ အတည်ပြုပြီးသားဖြစ်ခြင်းတစ်ခုတည်းကို ဆိုလိုခြင်းမဟုတ်ပါ။ Server စာရင်းပြန်ယူပြီး ဆက်ဖြစ်နေပါက Receiving နှင့် ဆက်စပ်မှတ်တမ်းများကို Backend မှ စစ်ရန်လိုပါသည်။";
+    }
+    return "Server က ဖျက်ခွင့်ငြင်းထားပါသည် (409)။ စာရင်း version ပြောင်းထားခြင်း သို့မဟုတ် ဆက်စပ်မှတ်တမ်းရှိခြင်း ဖြစ်နိုင်ပါသည်။ Server စာရင်းပြန်ယူပြီး စစ်ပါ။";
+  }
+  if (reason instanceof CostingApiError && reason.uncertain) {
+    return "ဖျက်ခြင်းရလဒ် မသေချာသေးပါ။ Request ကို ထပ်မပို့မီ Server စာရင်းပြန်ယူ၍ ပစ္စည်းရှိသေးလား စစ်ပါ။";
+  }
+  return reason instanceof Error ? reason.message : fallback;
+}
 
 type Props = {
   sheet: CostingSheet;
@@ -71,7 +87,24 @@ export function CostingProductDelete({
   function changeOpen(next: boolean) {
     if (lock.current) return;
     setOpen(next);
-    if (next) setConfirmation("");
+    if (next) {
+      setConfirmation("");
+      if (!blocked) setError("");
+    }
+  }
+  async function reloadServer() {
+    if (lock.current || busy) return;
+    lock.current = true;
+    setBusy(true);
+    try {
+      await onReload();
+      setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Server စာရင်း ပြန်ယူမရပါ။ ထပ်စမ်းပါ။");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
   }
   async function remove() {
     if (lock.current || disabled || blocked || !allowed || confirmation.trim() !== name)
@@ -80,8 +113,8 @@ export function CostingProductDelete({
     lock.current = true;
     setBusy(true);
     setError("");
-    onBusyChange?.(true);
     try {
+      onBusyChange?.(true);
       // Dedicated item deletion permits finalized sheets without opening generic
       // finalized edits. Backend preserves the remaining items and snapshots.
       const result = await sheetRequest(
@@ -105,19 +138,16 @@ export function CostingProductDelete({
         onDeleted();
       } else router.replace("/factory/costing/products");
     } catch (reason) {
-      if (
-        reason instanceof CostingApiError &&
-        (reason.status === 409 || reason.uncertain)
-      ) {
+      if (reason instanceof CostingApiError && reason.status !== 409 && reason.uncertain) {
         setBlocked(true);
         onUncertain?.();
       }
-      setError(reason instanceof Error ? reason.message : "ပစ္စည်းဖျက်မရပါ။");
+      setError(deletionError(reason, "ပစ္စည်းဖျက်မရပါ။"));
     } finally {
       lock.current = false;
       setBusy(false);
-      onRelease?.();
-      onBusyChange?.(false);
+      try { onRelease?.(); }
+      finally { onBusyChange?.(false); }
     }
   }
   if (!allowed)
@@ -135,6 +165,9 @@ export function CostingProductDelete({
     );
   return (
     <>
+      <CostingArchive sheet={sheet} item={item} disabled={disabled || busy || blocked} unsavedChanges={unsavedChanges}
+        onAcquire={onAcquire} onRelease={onRelease} onBusyChange={onBusyChange} onUncertain={onUncertain}
+        onBeforeNavigate={onBeforeNavigate} onReload={onReload} onDeleted={onDeleted} />
       <Button
         type="button"
         variant="destructive"
@@ -207,19 +240,16 @@ export function CostingProductDelete({
                 {error}
               </p>
             )}
-            {blocked && (
+            {(blocked || error) && (
               <div className="space-y-2 rounded-xl border border-border p-3">
                 <p className="text-xs leading-7 text-muted-foreground">
-                  ထပ်မဖျက်မီ Server စာရင်း ပြန်ယူစစ်ဆေးပါ။
+                  {blocked ? "ရလဒ်မသေချာသေးသဖြင့် ထပ်မဖျက်မီ Server စာရင်း ပြန်ယူစစ်ဆေးပါ။" : "ဖျက်ခြင်း မအောင်မြင်သေးပါ။ Server စာရင်းပြန်ယူနိုင်သလို Dialog ကို ပိတ်နိုင်ပါသည်။"}
                 </p>
                 <Button
                   type="button"
                   variant="outline"
                   disabled={busy}
-                  onClick={() => {
-                    setOpen(false);
-                    void onReload();
-                  }}
+                  onClick={() => void reloadServer()}
                   className="h-auto min-h-10 whitespace-normal py-2 text-xs leading-6"
                 >
                   <RefreshCw className="mr-2 size-4" />
@@ -299,7 +329,24 @@ export function CostingSheetDelete({
   function changeOpen(next: boolean) {
     if (lock.current) return;
     setOpen(next);
-    if (next) setConfirmation("");
+    if (next) {
+      setConfirmation("");
+      if (!blocked) setError("");
+    }
+  }
+  async function reloadServer() {
+    if (lock.current || busy) return;
+    lock.current = true;
+    setBusy(true);
+    try {
+      await onReload();
+      setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Server စာရင်း ပြန်ယူမရပါ။ ထပ်စမ်းပါ။");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
   }
   async function remove() {
     if (lock.current || disabled || blocked || !name || confirmation.trim() !== name)
@@ -308,33 +355,33 @@ export function CostingSheetDelete({
     lock.current = true;
     setBusy(true);
     setError("");
-    onBusyChange?.(true);
     try {
+      onBusyChange?.(true);
       // This endpoint deletes the sheet AND its products/photos. Never use it
-      // for a single card; single-product deletion above uses versioned PUT.
+      // for a single card; single-product deletion above uses versioned DELETE.
       await costingRequest(`/${sheet.id}?version=${sheet.version}`, { method: "DELETE" });
       setBlocked(true);
       setOpen(false);
       if (onDeleted) onDeleted();
       else router.replace("/factory/costing/products");
     } catch (reason) {
-      if (
-        reason instanceof CostingApiError &&
-        (reason.status === 409 || reason.uncertain)
-      ) {
+      if (reason instanceof CostingApiError && reason.status !== 409 && reason.uncertain) {
         setBlocked(true);
         onUncertain?.();
       }
-      setError(reason instanceof Error ? reason.message : "အတွဲဖျက်မရပါ။");
+      setError(deletionError(reason, "အတွဲဖျက်မရပါ။"));
     } finally {
       lock.current = false;
       setBusy(false);
-      onRelease?.();
-      onBusyChange?.(false);
+      try { onRelease?.(); }
+      finally { onBusyChange?.(false); }
     }
   }
   return (
     <>
+      <CostingArchive sheet={sheet} disabled={disabled || busy || blocked}
+        onAcquire={onAcquire} onRelease={onRelease} onBusyChange={onBusyChange} onUncertain={onUncertain}
+        onReload={onReload} onDeleted={onDeleted} />
       <Button
         type="button"
         variant="destructive"
@@ -408,19 +455,16 @@ export function CostingSheetDelete({
                 {error}
               </p>
             )}
-            {blocked && (
+            {(blocked || error) && (
               <div className="space-y-2">
                 <p className="text-xs leading-7 text-muted-foreground">
-                  ထပ်မဖျက်မီ Server စာရင်းကို ပြန်စစ်ပါ။
+                  {blocked ? "ရလဒ်မသေချာသေးသဖြင့် ထပ်မဖျက်မီ Server စာရင်းကို ပြန်စစ်ပါ။" : "ဖျက်ခြင်း မအောင်မြင်သေးပါ။ Server စာရင်းပြန်ယူပြီး စစ်ပါ။"}
                 </p>
                 <Button
                   type="button"
                   variant="outline"
                   disabled={busy}
-                  onClick={() => {
-                    setOpen(false);
-                    void onReload();
-                  }}
+                  onClick={() => void reloadServer()}
                   className="h-auto min-h-10 whitespace-normal py-2 text-xs leading-6"
                 >
                   <RefreshCw className="mr-2 size-4" />
@@ -460,4 +504,110 @@ export function CostingSheetDelete({
       </Dialog>
     </>
   );
+}
+
+// Archiving is an explicit visibility action, independent of permanent deletion.
+function CostingArchive(props: Omit<Props, "item"> & { item?: CostingServerItem }) {
+  const router = useRouter();
+  const inputId = React.useId();
+  const lock = React.useRef(false);
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [blocked, setBlocked] = React.useState(false);
+  const [confirmation, setConfirmation] = React.useState("");
+  const [error, setError] = React.useState("");
+  const name = String(props.item?.inputs.product || props.sheet.title).trim();
+  React.useEffect(() => {
+    setOpen(false); setBlocked(false); setConfirmation(""); setError("");
+  }, [props.sheet, props.item?.id]);
+  function changeOpen(next: boolean) {
+    if (lock.current) return;
+    setOpen(next);
+    if (next) { setConfirmation(""); if (!blocked) setError(""); }
+  }
+  async function archive() {
+    if (lock.current || busy || props.disabled || blocked || confirmation.trim() !== name) return;
+    if (props.onAcquire && !props.onAcquire()) return;
+    lock.current = true; setBusy(true); setError("");
+    try {
+      props.onBusyChange?.(true);
+      const path = props.item
+        ? "/" + props.sheet.id + "/items/" + props.item.id + "/archive"
+        : "/" + props.sheet.id + "/archive";
+      const result = await sheetRequest(path, { method: "POST", body: JSON.stringify({ version: props.sheet.version }) });
+      if (result.id !== props.sheet.id || (props.item
+          ? result.items.some(entry => entry.id === props.item!.id)
+          : result.archived !== true)) {
+        throw new CostingApiError("Archive ရလဒ် မသေချာပါ။ Server စာရင်း ပြန်ယူပါ။", 502, true);
+      }
+      setBlocked(true); setOpen(false);
+      props.onBeforeNavigate?.();
+      if (props.onDeleted) props.onDeleted();
+      else router.replace("/factory/costing/products");
+    } catch (reason) {
+      if (reason instanceof CostingApiError && reason.uncertain) {
+        setBlocked(true); props.onUncertain?.();
+      }
+      setError(reason instanceof Error ? reason.message : "စာရင်းမှဖယ်သိမ်းမရပါ။");
+    } finally {
+      lock.current = false; setBusy(false);
+      try { props.onRelease?.(); } finally { props.onBusyChange?.(false); }
+    }
+  }
+  async function reload() {
+    if (lock.current || busy) return;
+    if (props.onAcquire && !props.onAcquire()) return;
+    lock.current = true; setBusy(true);
+    try {
+      props.onBusyChange?.(true); await props.onReload(); setBlocked(false); setError(""); setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Server စာရင်း ပြန်ယူမရပါ။");
+    } finally {
+      lock.current = false; setBusy(false);
+      try { props.onRelease?.(); } finally { props.onBusyChange?.(false); }
+    }
+  }
+  return <>
+    <Button type="button" variant="outline" disabled={props.disabled || busy || props.sheet.archived}
+      onClick={() => changeOpen(true)} className="h-auto min-h-11 py-2 text-xs leading-6">
+      <Archive className="mr-2 size-4" />စာရင်းမှဖယ်သိမ်းမည်
+    </Button>
+    <Dialog open={open} onOpenChange={changeOpen}>
+      <DialogContent className="max-w-lg rounded-2xl"
+        onEscapeKeyDown={event => { if (busy) event.preventDefault(); }}
+        onInteractOutside={event => { if (busy) event.preventDefault(); }}>
+        <DialogHeader>
+          <DialogTitle className="text-base leading-8">စာရင်းမှဖယ်သိမ်းမည်</DialogTitle>
+          <DialogDescription className="text-sm leading-7">
+            {props.item ? "ဤပစ္စည်းကို" : "ဤအတွဲကို"} ပုံမှန် Costing စာရင်းနှင့် Receiving အသစ် ရွေးချယ်မှုမှ ဖယ်သိမ်းပါမည်။
+            လက်ကျန်၊ ပုံများနှင့် ယခင်မှတ်တမ်းများကို ထိန်းသိမ်းထားပါမည်။
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm leading-7">
+            <p className="break-words font-semibold">{name}</p>
+            <p className="text-xs text-muted-foreground">{props.sheet.title} · စာရင်း #{props.sheet.id}</p>
+          </div>
+          {props.unsavedChanges && <p className="text-xs leading-7 text-destructive">မသိမ်းရသေးသော ပြင်ဆင်ချက်များ ရှိပါသည်။</p>}
+          <div className="space-y-2">
+            <Label htmlFor={inputId} className="text-xs leading-7">အတည်ပြုရန် အထက်ပါအမည်ကို ပြန်ရိုက်ပါ</Label>
+            <Input id={inputId} value={confirmation} onChange={event => setConfirmation(event.target.value)}
+              disabled={busy || blocked} autoComplete="off" className="h-11 text-sm" />
+          </div>
+          {error && <p role="alert" className="text-xs leading-7 text-destructive">{error}</p>}
+          {(blocked || error) && <Button type="button" variant="outline" disabled={busy} onClick={() => void reload()}
+            className="h-auto min-h-10 py-2 text-xs leading-6"><RefreshCw className="mr-2 size-4" />Server စာရင်း ပြန်ယူရန်</Button>}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" disabled={busy} onClick={() => changeOpen(false)}
+            className="h-auto min-h-11 py-2 text-xs leading-6">မဖယ်သိမ်းတော့ပါ</Button>
+          <Button type="button" disabled={props.disabled || busy || blocked || !name || confirmation.trim() !== name}
+            onClick={() => void archive()} className="h-auto min-h-11 py-2 text-xs leading-6">
+            {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Archive className="mr-2 size-4" />}
+            {busy ? "ဖယ်သိမ်းနေသည်…" : "စာရင်းမှဖယ်သိမ်းမည်"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>;
 }
