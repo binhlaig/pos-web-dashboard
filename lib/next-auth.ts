@@ -494,10 +494,21 @@ export const authOptions: NextAuthOptions = {
             );
           delete token.error;
           delete token.refreshReason;
+          delete token.refreshUpstreamStatus;
+          delete token.refreshOriginalReason;
         } catch (error) {
           token.refreshReason = error instanceof SessionIdentityError ? error.reason
             : error instanceof SessionRefreshError ? error.reason : "TEMPORARY_REFRESH_FAILURE";
-          console.error("[Session refresh]", { reason: token.refreshReason });
+          token.refreshUpstreamStatus = error instanceof SessionRefreshError ? error.upstreamStatus
+            : error instanceof SessionIdentityError && error.reason === "IDENTITY_MISMATCH" ? 200 : null;
+          token.refreshOriginalReason = error instanceof SessionRefreshError ? error.originalReason ?? null : null;
+          console.error("[Session refresh]", {
+            stage: "jwt", reason: token.refreshReason, originalReason: token.refreshOriginalReason,
+            upstreamStatus: token.refreshUpstreamStatus,
+            redisStatus: error instanceof SessionRefreshError ? error.redisStatus ?? null : null,
+            cached: error instanceof SessionRefreshError ? error.cached ?? false : false,
+            configuration: error instanceof SessionRefreshError ? error.configuration ?? null : null,
+          });
           if ((error instanceof SessionRefreshError && error.status === 401) ||
               (error instanceof SessionIdentityError && error.reason === "IDENTITY_MISMATCH")) {
             token.error = "AccessTokenExpired";
@@ -581,6 +592,8 @@ export const authOptions: NextAuthOptions = {
           ? (token.error ?? "RefreshTemporarilyUnavailable")
           : (token.error ?? null);
         (session as any).refreshReason = token.refreshReason ?? null;
+        (session as any).refreshUpstreamStatus = token.refreshUpstreamStatus ?? null;
+        (session as any).refreshOriginalReason = token.refreshOriginalReason ?? null;
         (session as any).accessTokenExpires =
           (token.accessTokenExpires as number | null) ?? null;
         (session as any).shopStatus = expired ? null : (token.shopStatus ?? null);

@@ -91,6 +91,8 @@ export async function proxySessionRequest(
       return Response.json(
         {
           reason: error instanceof SessionRefreshError ? error.reason : "TEMPORARY_REFRESH_FAILURE",
+          originalReason: error instanceof SessionRefreshError ? error.originalReason : undefined,
+          upstreamStatus: error instanceof SessionRefreshError ? error.upstreamStatus : null,
           error:
             status === 401
               ? "Session expired. Please sign in again."

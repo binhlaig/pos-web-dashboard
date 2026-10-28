@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 function load(file, imports = {}, globals = {}) {
   const exports = {};
@@ -55,7 +55,7 @@ test('sign-in redirects valid access sessions to an allowed route, never itself 
   }
 });
 function refreshSetup(env, fetch) {
-  return load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } }, { process: { env }, fetch });
+  return load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, { process: { env }, fetch });
 }
 function refreshedResponse() {
   return new Response(JSON.stringify({ token: jwt(Date.now() / 1000 + 900) }), {
@@ -63,7 +63,7 @@ function refreshedResponse() {
   });
 }
 test('missing Redis configuration is retryable after repair and still fails closed on Vercel', async () => {
-  const env = { VERCEL: '1', APP_FRONTEND_ORIGIN: 'https://pos.test' };
+  const env = { VERCEL: '1', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test' };
   let posts = 0;
   const service = refreshSetup(env, async url => {
     if (url === 'https://redis.test') return Response.json({ result: 'OK' });
@@ -83,7 +83,7 @@ test('uncertain backend refresh outcome remains cached and never replays the cre
   assert.equal(posts, 1);
 });
 test('invalid origin and Redis URL fail before claiming a credential and recover after repair', async () => {
-  const env = { VERCEL: '1', APP_FRONTEND_ORIGIN: 'invalid',
+  const env = { VERCEL: '1', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'invalid',
     SESSION_REDIS_REST_URL: 'http://redis.test', SESSION_REDIS_REST_TOKEN: 'test-only' };
   let claims = 0, posts = 0;
   const service = refreshSetup(env, async url => {
@@ -193,7 +193,7 @@ test('overlapping requests share exactly one rotation and stale server cookie fo
   let posts = 0;
   let now = Date.now();
   class Clock extends Date { static now() { return now; } }
-  const service = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } }, {
+  const service = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, {
     Date: Clock, process: { env: { APP_FRONTEND_ORIGIN: 'https://pos.test' } }, fetch: async () => {
       posts++;
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -213,7 +213,7 @@ test('overlapping requests share exactly one rotation and stale server cookie fo
 
 test('separate Vercel workers reuse Redis rotation, and Redis preflight outages recover', async () => {
   const records = new Map(); let posts = 0, offline = true;
-  const env = { VERCEL: '1', APP_FRONTEND_ORIGIN: 'https://pos.test', SESSION_REDIS_REST_URL: 'https://redis.test', SESSION_REDIS_REST_TOKEN: 'test-only' };
+  const env = { VERCEL: '1', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test', SESSION_REDIS_REST_URL: 'https://redis.test', SESSION_REDIS_REST_TOKEN: 'test-only' };
   const fetch = async (url, init) => {
     if (url !== 'https://redis.test') { posts++; return refreshedResponse(); }
     if (offline) throw new Error('offline');
@@ -278,9 +278,9 @@ test('cookie bridge forwards rotation only to its own response; encrypted NextAu
 test('development module reload reuses pending rotation rather than replaying credential', async () => {
   const sharedGlobal = {}; let posts = 0;
   const globals = { globalThis: sharedGlobal, process: { env: { APP_FRONTEND_ORIGIN: 'https://pos.test' } }, fetch: async () => { posts++; return refreshedResponse(); } };
-  const first = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } }, globals);
+  const first = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, globals);
   await first.refreshSpringSession('hot-reload');
-  const reloaded = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } }, globals);
+  const reloaded = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, globals);
   assert.equal((await reloaded.refreshSpringSession('hot-reload')).refreshToken, 'rotated');
   assert.equal(posts, 1);
 });
@@ -321,7 +321,7 @@ test('backend revocation stays definitive and malformed identity never becomes a
 });
 
 test('authenticated forced refresh detects revocation before access expiry', async () => {
-  const errorService = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash } });
+  const errorService = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } });
   const options = load('lib/next-auth.ts', {
     '@/lib/session-identity': identity,
     '@/lib/spring-session-refresh': { SessionRefreshError: errorService.SessionRefreshError, refreshSpringSession: async () => { throw new errorService.SessionRefreshError(401, 'revoked'); } },
@@ -349,4 +349,186 @@ test('client session transport failure cannot clear tokens or redirect the auth 
   }, { fetch: failFetch, AbortController });
   guard.default({ children: null });
   await new Promise(resolve => setTimeout(resolve, 5));
+});
+
+test('pre-connection refusal recovers with the same valid credential after backend availability returns', async () => {
+  let attempts = 0;
+  const service = refreshSetup({ APP_FRONTEND_ORIGIN: 'https://pos.test' }, async () => {
+    if (++attempts === 1) throw new TypeError('fetch failed', { cause: Object.assign(new Error('private connection details'), { code: 'ECONNREFUSED' }) });
+    return refreshedResponse();
+  });
+  await assert.rejects(service.refreshSpringSession('valid-unconsumed'));
+  const result = await service.refreshSpringSession('valid-unconsumed');
+  assert.equal(result.refreshToken, 'rotated');
+  assert.equal(attempts, 2);
+});
+
+test('pre-rotation origin rejection recovers after correction; arbitrary 403 remains non-replayable', async () => {
+  for (const shape of ['cors', 'controller', 'unknown']) {
+    let attempts = 0;
+    const service = refreshSetup({ APP_FRONTEND_ORIGIN: 'https://pos.test' }, async () => {
+      if (++attempts > 1) return refreshedResponse();
+      return shape === 'controller' ? Response.json({ error: 'FORBIDDEN', message: 'An allowed Origin is required', path: '/api/auth/refresh' }, { status: 403 })
+        : new Response(shape === 'cors' ? 'Invalid CORS request' : 'generic denial', { status: 403 });
+    });
+    await assert.rejects(service.refreshSpringSession('credential'));
+    if (shape === 'unknown') {
+      await assert.rejects(service.refreshSpringSession('credential'), error => error.reason === 'CACHED_REFRESH_FAILURE' && error.upstreamStatus === 403);
+      assert.equal(attempts, 1);
+    } else {
+      assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+      assert.equal(attempts, 2);
+    }
+  }
+});
+
+function redisHarness() {
+  const records = new Map();
+  const env = { VERCEL: '1', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test',
+    SESSION_REDIS_REST_URL: 'https://redis.test', SESSION_REDIS_REST_TOKEN: 'test-only' };
+  let loseAck = false, failCleanup = false, refuse = false, backendPosts = 0;
+  const request = async (url, init) => {
+    if (url !== 'https://redis.test') {
+      backendPosts++;
+      if (refuse) { refuse = false; throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } }); }
+      return refreshedResponse();
+    }
+    const [command, key, value, mode, claim] = JSON.parse(init.body);
+    if (command === 'EVAL') {
+      if (failCleanup) return Response.json({}, { status: 503 });
+      const result = records.get(mode) === claim ? Number(records.delete(mode)) : 0;
+      return Response.json({ result });
+    }
+    if (command === 'GET') return Response.json({ result: records.get(key) ?? null });
+    if (mode === 'NX' && records.has(key)) return Response.json({ result: null });
+    records.set(key, value);
+    if (loseAck) { loseAck = false; throw new Error('Redis acknowledgement lost'); }
+    return Response.json({ result: 'OK' });
+  };
+  return { records, env, request, get posts() { return backendPosts; }, loseNextAck() { loseAck = true; },
+    failCleanup(value) { failCleanup = value; }, refuseConnection() { refuse = true; } };
+}
+
+test('lost Redis SET acknowledgement releases only its owned unused pending claim before safe recovery', async () => {
+  const state = redisHarness(); state.loseNextAck();
+  const service = refreshSetup(state.env, state.request);
+  await assert.rejects(service.refreshSpringSession('credential'), error => error.reason === 'REDIS_FAILURE');
+  assert.equal(state.posts, 0);
+  assert.equal([...state.records.values()].map(value => JSON.parse(value))[0].state, 'pending');
+  const result = await service.refreshSpringSession('credential');
+  assert.equal(result.refreshToken, 'rotated');
+  assert.equal(state.posts, 1);
+});
+
+test('Redis cleanup outage after proven non-consumption recovers without stranding the pending record', async () => {
+  const state = redisHarness(); state.refuseConnection(); state.failCleanup(true);
+  const service = refreshSetup(state.env, state.request);
+  await assert.rejects(service.refreshSpringSession('credential'), error => error.reason === 'NETWORK_FAILURE');
+  assert.equal(state.posts, 1);
+  await assert.rejects(service.refreshSpringSession('credential'), error => error.reason === 'REDIS_FAILURE' && error.redisStatus === 503);
+  assert.equal(state.posts, 1);
+  state.failCleanup(false);
+  assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+  assert.equal(state.posts, 2);
+});
+
+test('backend URL configuration is validated before creating any Vercel pending claim', async () => {
+  const state = redisHarness(); state.env.REMOTE_API_BASE_URL = 'invalid';
+  const service = refreshSetup(state.env, state.request);
+  await assert.rejects(service.refreshSpringSession('credential'), error => error.reason === 'MISSING_CONFIGURATION');
+  assert.equal(state.records.size, 0); assert.equal(state.posts, 0);
+  state.env.REMOTE_API_BASE_URL = 'https://backend.test';
+  assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+});
+
+test('timeout and malformed success are diagnosed and cached without replaying an uncertain rotation', async () => {
+  for (const kind of ['timeout', 'invalid-response', 'http503']) {
+    let posts = 0; const logs = [];
+    const service = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, {
+      process: { env: { APP_FRONTEND_ORIGIN: 'https://pos.test' } }, console: { error: (...values) => logs.push(values) },
+      fetch: async () => {
+        posts++;
+        if (kind === 'timeout') throw Object.assign(new Error('DO-NOT-LOG-THIS'), { name: 'TimeoutError' });
+        return kind === 'http503' ? new Response('DO-NOT-LOG-THIS', { status: 503 }) : Response.json({ token: 'DO-NOT-LOG-THIS' });
+      },
+    });
+    const reason = kind === 'timeout' ? 'NETWORK_TIMEOUT' : kind === 'http503' ? 'BACKEND_REFRESH_FAILURE' : 'INVALID_REFRESH_RESPONSE';
+    await assert.rejects(service.refreshSpringSession('PRIVATE-CREDENTIAL'), error => error.reason === reason);
+    await assert.rejects(service.refreshSpringSession('PRIVATE-CREDENTIAL'), error => error.reason === 'CACHED_REFRESH_FAILURE' && error.originalReason === reason && error.cached);
+    assert.equal(posts, 1);
+    assert.ok(!JSON.stringify(logs).includes('DO-NOT-LOG-THIS'));
+    assert.ok(!JSON.stringify(logs).includes('PRIVATE-CREDENTIAL'));
+    assert.equal(logs[0][1].upstreamStatus, kind === 'timeout' ? null : kind === 'http503' ? 503 : 200);
+  }
+});
+
+test('cleanup cannot delete another worker result; old pending records are never stolen', async () => {
+  const state = redisHarness(); state.loseNextAck();
+  const service = refreshSetup(state.env, state.request);
+  await assert.rejects(service.refreshSpringSession('credential'));
+  const key = [...state.records.keys()][0];
+  const done = JSON.stringify({ state: 'done', result: { data: { token: jwt(Date.now()/1000+900) }, refreshToken: 'other-result', cookies: [] } });
+  state.records.set(key, done);
+  assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'other-result');
+  assert.equal(state.records.get(key), done);
+  assert.equal(state.posts, 0);
+
+  const pendingState = redisHarness();
+  let now = Date.now(); class Clock extends Date { static now() { return now; } }
+  const hash = createHash('sha256').update('uncertain').digest('hex');
+  const pending = JSON.stringify({ state: 'pending' }); // Legacy worker: outcome unknown.
+  pendingState.records.set(`pos:refresh:v1:${hash}`, pending);
+  const follower = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, {
+    Date: Clock, process: { env: pendingState.env }, fetch: pendingState.request,
+    setTimeout: resolve => { now += 10001; resolve(); },
+  });
+  for (let i = 0; i < 2; i++) await assert.rejects(follower.refreshSpringSession('uncertain'), error => error.reason === 'CACHED_REFRESH_FAILURE' && error.originalReason === 'REFRESH_OUTCOME_UNKNOWN');
+  assert.equal(pendingState.posts, 0);
+  assert.equal(pendingState.records.get(`pos:refresh:v1:${hash}`), pending);
+});
+
+test('JWT callback renews the same session after a proven pre-connect failure and its retry backoff', async () => {
+  let now = Date.now(), attempts = 0;
+  class Clock extends Date { static now() { return now; } }
+  const env = { APP_FRONTEND_ORIGIN: 'https://pos.test' };
+  const service = load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, {
+    Date: Clock, process: { env }, fetch: async () => {
+      if (++attempts === 1) throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
+      return refreshedResponse();
+    },
+  });
+  const { authOptions: options } = load('lib/next-auth.ts', {
+    '@/lib/spring-session-refresh': service,
+    '@/lib/session-cookie-bridge': { captureRefreshCookie() {}, browserMetadataHeaders: () => ({}), isSessionRefreshRequested: () => false },
+    'next-auth/providers/credentials': { default: config => config },
+  }, { Date: Clock });
+  let token = await options.callbacks.jwt({ token: { ...expired, refreshCredential: 'valid-credential' } });
+  assert.equal(token.error, 'RefreshTemporarilyUnavailable');
+  assert.equal(token.refreshReason, 'NETWORK_FAILURE');
+  assert.equal(token.refreshCredential, 'valid-credential');
+  token = await options.callbacks.jwt({ token });
+  assert.equal(attempts, 1); // Respect the existing backoff.
+  now += 16000;
+  token = await options.callbacks.jwt({ token });
+  assert.equal(token.error, undefined);
+  assert.equal(token.refreshCredential, 'rotated');
+  assert.equal(attempts, 2);
+  assert.equal(identity.sessionIdentity(token.accessToken), identity.sessionIdentity(expired.accessToken));
+  const session = await options.callbacks.session({ session: { user: {} }, token });
+  assert.equal(session.accessToken, token.accessToken);
+  assert.equal(session.refreshReason, null);
+  assert.equal(session.refreshCredential, undefined);
+});
+
+test('invalid Redis records are re-read after repair without caching a permanent failed promise or posting upstream', async () => {
+  for (const corrupt of ['null', '{}', '{"state":"done","result":null}']) {
+    const state = redisHarness();
+    const key = `pos:refresh:v1:${createHash('sha256').update('credential').digest('hex')}`;
+    state.records.set(key, corrupt);
+    const service = refreshSetup(state.env, state.request);
+    await assert.rejects(service.refreshSpringSession('credential'), error => error.reason === 'REDIS_FAILURE');
+    state.records.set(key, JSON.stringify({ state: 'done', result: { data: { token: jwt(Date.now()/1000+900) }, refreshToken: 'rotated', cookies: [] } }));
+    assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+    assert.equal(state.posts, 0);
+  }
 });

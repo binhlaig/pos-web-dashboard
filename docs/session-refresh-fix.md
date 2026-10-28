@@ -1,5 +1,7 @@
 ﻿# Automatic logout investigation and fix
 
+Follow-up: [Session renewal recovery](session-refresh-recovery.md) documents the subsequent cached-failure fix, expanded diagnostics, and latest validation. Its safe-retry policy supersedes the original blanket failed-promise retention described below.
+
 ## Evidence and backend contract
 
 Reviewed backend main at commit `95ca2c99ffacbb56d8d802ba7a6a7457ab2d8e50` on 2026-10-28. Backend source is available; no backend changes were necessary. This does not establish the version or configuration currently deployed.
