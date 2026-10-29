@@ -453,11 +453,11 @@ function fromServerOrder(o: ServerOrder, scope: string): BrowserOrder {
     buyerId:o.buyerId,buyerCode:o.customer.code,buyerType:o.customer.type,buyerName:o.customer.name,phone:o.phone||"",address:o.address||"",deliveryDate:o.deliveryDate,note:o.note||"",updatedAt:new Date().toISOString(),
     lines:o.lines.map(l=>({key:identity(l.costingItemId,l.sourceVersion,l.warehouseId,l.locationId,l.batch),costingSheetId:l.costingSheetId,costingItemId:l.costingItemId,sourceVersion:l.sourceVersion,warehouseId:l.warehouseId,locationId:l.locationId,batch:l.batch,productionIds:l.productionIds,name:l.productName,barcode:l.barcode,packageSize:`${l.packageSize} ${l.packageSizeUnit}`,saleUnit:l.saleUnit,quantity:l.quantity,unitPrice:l.unitPrice,pricingVersion:l.pricingVersion??undefined,currency:l.currency,priceSource:"CURRENT_COSTING"})) };
 }
-type PackingCommand = { path:string; method:"POST"|"PUT"; body:string; key:string; scope:string };
+type PackingCommand = { path:string; method:"POST"|"PUT"|"DELETE"; body:string; key:string; scope:string };
 function pendingPackingCommand(prefix:string,scope:string):PackingCommand|null {
   for(const key of Object.keys(localStorage).filter(k=>k.startsWith(prefix+":")).sort()){
     const c=JSON.parse(localStorage.getItem(key)||"null") as PackingCommand;
-    if(!c||c.scope!==scope||!/^orders(?:\/[a-f0-9-]{36}(?:\/(?:confirm|cancel|reprice))?)?$/.test(c.path)||!["POST","PUT"].includes(c.method)||typeof c.body!=="string"||typeof c.key!=="string"||key!==`${prefix}:${c.key}`)throw new Error("Retry မှတ်တမ်းပုံစံ မမှန်ပါ။");
+    if(!c||c.scope!==scope||!/^orders(?:\/[a-f0-9-]{36}(?:\/(?:confirm|cancel|reprice))?)?$/.test(c.path)||!["POST","PUT","DELETE"].includes(c.method)||typeof c.body!=="string"||typeof c.key!=="string"||key!==`${prefix}:${c.key}`)throw new Error("Retry မှတ်တမ်းပုံစံ မမှန်ပါ။");
     JSON.parse(c.body);return c;
   }
   return null;
@@ -506,8 +506,14 @@ function usePackingOrder(scope: string | null, products: Product[], catalogReady
       const previous=localStorage.getItem(storageKey);
       if(previous&&previous!==JSON.stringify(command))throw new Error("မူလ Request နှင့် မကိုက်ပါ။");
       localStorage.setItem(storageKey,JSON.stringify(command));persisted=true;setPending(command);
-      const o=await packingRequest<ServerOrder>(command.path,{method:command.method,body:command.body,headers:{"Idempotency-Key":command.key}});
+      const o=await packingRequest<ServerOrder & {deleted?:boolean}>(command.path,{method:command.method,body:command.body,headers:{"Idempotency-Key":command.key}});
       if(scopeRef.current!==command.scope)return;
+      if(command.method==="DELETE"){
+        const sent=JSON.parse(command.body);
+        if(o.deleted!==true||o.id!==command.path.split("/")[1]||o.version!==sent.version+1)throw new PackingError(502,"Deletion response could not be verified. Retry the original request.",null,true);
+        settle();install(newBrowserOrder(command.scope));setMessage("Draft deleted. This cannot be undone through the UI.");
+        await refreshSaved();window.dispatchEvent(new Event("factory-packing-changed"));return;
+      }
       settle();install(fromServerOrder(o,command.scope));
       setMessage(o.status==="CONFIRMED"?"အော်ဒါ အတည်ပြုပြီးပါပြီ။ Stock ကို ကြိုဖယ်ထားပြီး ဖြစ်ပါသည်။":o.status==="CANCELLED"?"အော်ဒါ ပယ်ဖျက်ပြီးပါပြီ။ ကြိုဖယ်ထားသော Stock ပြန်လွတ်ပါပြီ။":"Server တွင် အော်ဒါမူကြမ်း သိမ်းပြီးပါပြီ။ Stock မဖယ်ထားသေးပါ။");
       void refreshSaved();window.dispatchEvent(new Event("factory-packing-changed"));
@@ -521,6 +527,10 @@ function usePackingOrder(scope: string | null, products: Product[], catalogReady
       }
       if(!(e instanceof PackingError)||!e.uncertain){settle();if(e instanceof PackingError&&e.code==="STALE_VERSION")setConflict(true);}
       if(e instanceof PackingError && ["PRICE_CHANGED","STOCK_SHORTAGE"].includes(e.code)) window.dispatchEvent(new Event("factory-packing-changed"));
+      if(command.method==="DELETE"&&e instanceof PackingError){
+        const messages:Record<number,string>={401:"Sign in again before retrying deletion.",403:"You do not have permission to delete this order.",404:"Order unavailable. Refresh the list; the current draft has been kept.",409:"Order changed or cannot be deleted. Reopen it from the server list before trying again."};
+        setMessage(e.uncertain?"Deletion result is uncertain. Your draft and original request are retained. Retry to verify the result.":messages[e.status]||e.message);void refreshSaved();return;
+      }
       setMessage(e instanceof Error?e.message:"အော်ဒါ သိမ်းမရပါ။");
     } finally {busy.current=false;if(scopeRef.current===command.scope)setSaving(false);}
   };
@@ -530,6 +540,11 @@ function usePackingOrder(scope: string | null, products: Product[], catalogReady
     if(d.lines.some(l=>!Number.isSafeInteger(l.pricingVersion))){setMessage("ပစ္စည်းဈေးအသစ်ကို ရွေးပြီးမှ သိမ်းပါ။");return;}
     const body={buyerId:d.buyerId,deliveryDate:d.deliveryDate,phone:d.phone.trim(),address:d.address.trim(),note:d.note.trim(),...(d.serverId?{version:d.serverVersion}:{clientDraftId:d.localId}),lines:d.lines.map(l=>({costingSheetId:l.costingSheetId,costingItemId:l.costingItemId,sourceVersion:l.sourceVersion,warehouseId:l.warehouseId,locationId:l.locationId,batch:l.batch,productionIds:l.productionIds,quantity:l.quantity,unitPrice:l.unitPrice,pricingVersion:l.pricingVersion,currency:l.currency}))};
     await execute({path:d.serverId?`orders/${d.serverId}`:"orders",method:d.serverId?"PUT":"POST",body:JSON.stringify(body),key:crypto.randomUUID(),scope});
+  };
+  const deleteDraft=async()=>{
+    const d=draftRef.current;if(!scope||!d?.serverId||d.serverStatus!=="DRAFT"||busy.current||pending||dirty||conflict)return;
+    if(!Number.isSafeInteger(d.serverVersion)||Number(d.serverVersion)<0){setMessage("Reopen the order to load its current version.");return;}
+    await execute({path:"orders/"+d.serverId,method:"DELETE",body:JSON.stringify({version:d.serverVersion}),key:crypto.randomUUID(),scope});
   };
   const transition=async(action:"confirm"|"cancel"|"reprice")=>{
     const d=draftRef.current;if(!scope||!d?.serverId||busy.current||pending||dirty)return;
@@ -555,7 +570,7 @@ function usePackingOrder(scope: string | null, products: Product[], catalogReady
       draftRef.current=next;setDraft(next);setBase("");setMessage("ယခင်မူကြမ်းကို လက်ရှိဈေးဖြင့် ယူထားပါသည်။ စစ်ပြီး Server မူကြမ်းသိမ်းပါ။ မူလ Browser data ကို မဖျက်ထားပါ။");
     }catch(e){setMessage(e instanceof Error?e.message:"မူကြမ်း ယူမရပါ။");}
   };
-  return { importLocal, draft:active?draft:null,saved,dirty,errors,message,storageError,conflict,saving,locked,pending,patch,add,open,save,refreshSaved,transition,retry:()=>pending?execute(pending):Promise.resolve() };
+  return { importLocal, draft:active?draft:null,saved,dirty,errors,message,storageError,conflict,saving,locked,pending,patch,add,open,save,refreshSaved,transition,deleteDraft,retry:()=>pending?execute(pending):Promise.resolve() };
 }
 
 type PackingBuyer = { id:string; type:OrderBuyer; name:string; code:string; phone:string; address:string; active:boolean; version:number };
@@ -648,9 +663,10 @@ function PackingBuyerBarcode({ buyer, onClose }: { buyer: PackingBuyer; onClose:
 
 function PackingOrderDrawer({ order, products, catalogReady, buyerReady, onClose }: { order: ReturnType<typeof usePackingOrder>; products: Product[]; catalogReady: boolean; buyerReady: boolean; onClose: () => void }) {
   const [selectedDraft, setSelectedDraft] = React.useState("");
+  React.useEffect(() => { if (!order.draft?.serverId) setSelectedDraft(""); }, [order.draft?.serverId]);
   const [legacy,setLegacy]=React.useState<BrowserOrder[]>([]),[legacyId,setLegacyId]=React.useState("");
   React.useEffect(()=>{try{setLegacy(order.draft?readBrowserOrders(order.draft.storageScope).orders:[]);}catch{setLegacy([]);}},[order.draft?.storageScope]);
-  const [pending, setPending] = React.useState<{ kind: "open"; draft: BrowserOrder | null } | { kind: "remove"; key: string } | { kind: "confirm" | "cancel" | "reprice" } | {kind:"import";draft:BrowserOrder} | null>(null);
+  const [pending, setPending] = React.useState<{ kind: "open"; draft: BrowserOrder | null } | { kind: "remove"; key: string } | { kind: "confirm" | "cancel" | "reprice" | "delete" } | {kind:"import";draft:BrowserOrder} | null>(null);
   const d = order.draft, total = d ? orderTotal(d.lines) : null;
   const choose = (next: BrowserOrder | null) => { if (order.dirty) setPending({ kind: "open", draft: next }); else order.open(next); };
   const bump = (line: OrderLine, step: number) => {
@@ -684,13 +700,14 @@ function PackingOrderDrawer({ order, products, catalogReady, buyerReady, onClose
     </DrawerBody><DrawerFooter className="flex-col gap-3 bg-background sm:flex-col"><div className="flex items-center justify-between"><div><p className="text-xs text-muted-foreground">ပစ္စည်းစုစုပေါင်း</p><p className="mt-1 text-2xl font-bold">{total === null ? "—" : orderMoney(total, d?.lines[0]?.currency || "MMK")}</p></div><Button variant="outline" onClick={onClose}>ဆက်ရွေးမည်</Button></div>{!order.locked && <Button className="w-full" disabled={!d || order.locked || !!order.pending || order.saving || !order.dirty || !catalogReady || !buyerReady || !!order.errors.length || order.conflict} onClick={() => void order.save()}><Save className="mr-2 size-4" />{order.saving ? "သိမ်းနေသည်…" : "Server မူကြမ်းသိမ်းမည်"}</Button>}{order.locked && <Button onClick={()=>choose(null)} disabled={order.saving||!!order.pending}><Plus className="mr-2 size-4"/>အော်ဒါမူကြမ်းအသစ်</Button>}{order.pending && <Button variant="outline" disabled={order.saving} onClick={()=>void order.retry()}>မူလ Request ပြန်စမ်းမည်</Button>}
       {d?.serverId && <div className="flex flex-wrap gap-2">
         {d.serverStatus==="DRAFT" && <><Button disabled={order.saving||order.dirty||!!order.pending||!catalogReady} onClick={()=>setPending({kind:"confirm"})}><Check className="mr-2 size-4"/>အော်ဒါ အတည်ပြုမည်</Button><Button variant="outline" disabled={order.saving||order.dirty||!!order.pending||!catalogReady} onClick={()=>setPending({kind:"reprice"})}>ဈေးပြန်သတ်မှတ်မည်</Button></>}
+        {d.serverStatus==="DRAFT" && <Button variant="destructive" disabled={order.saving||order.dirty||!!order.pending||order.conflict} onClick={()=>setPending({kind:"delete"})}>{order.saving ? "Deleting…" : "Delete draft"}</Button>}
         {d.serverStatus!=="CANCELLED" && <Button variant="outline" disabled={order.saving||order.dirty||!!order.pending} onClick={()=>setPending({kind:"cancel"})}>အော်ဒါ ပယ်ဖျက်မည်</Button>}
       </div>}
       <p className="text-[11px] leading-5 text-muted-foreground">မူကြမ်းသိမ်းလျှင် Stock မပြောင်းပါ။ အော်ဒါ အတည်ပြုလျှင်သာ Stock ကြိုဖယ်ထားမည်။ ပို့ဆောင်မှု မချိတ်ရသေးပါ။</p></DrawerFooter>
   </DrawerContent></Drawer>
-  <Dialog open={!!pending} onOpenChange={open => { if (!open) setPending(null); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{pending?.kind === "remove" ? "အော်ဒါမှ ပစ္စည်းဖယ်မလား။" : pending?.kind === "confirm" ? "အော်ဒါ အတည်ပြုပြီး Stock ကြိုဖယ်ထားမလား။" : pending?.kind === "cancel" ? "အော်ဒါ ပယ်ဖျက်မလား။" : pending?.kind === "reprice" ? "လက်ရှိ Costing ဈေးကို သုံးမလား။" : pending?.kind === "import" ? "ယခင် Browser မူကြမ်းကို Server အတွက် ယူမလား။" : "မသိမ်းရသေးသော ပြင်ဆင်မှုကို ပယ်ပြီး ဖွင့်မလား။"}</DialogTitle><DialogDescription>{pending?.kind === "remove" ? "ဤမူကြမ်းမှသာ ဖယ်မည်။ Warehouse Stock မပြောင်းပါ။" : pending?.kind === "confirm" ? "Server တွင် စစ်ပြီး အော်ဒါထဲက Stock ကို ကြိုဖယ်ထားပါမည်။" : pending?.kind === "cancel" ? "အော်ဒါကို ပယ်ဖျက်ပြီး ကြိုဖယ်ထားသော Stock ကို ပြန်လွှတ်ပါမည်။" : pending?.kind === "open" ? "ပြင်ဆင်မှုများကို သိမ်းလိုပါက အရင်ပြန်သွားပြီး သိမ်းပါ။" : "ရောင်းဈေးနှင့် ပို့မည့်သူကို စစ်ပြီးမှ အတည်ပြုပါ။"}</DialogDescription></DialogHeader>
+  <Dialog open={!!pending} onOpenChange={open => { if (!open && !order.saving) setPending(null); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{pending?.kind === "delete" ? `Delete ${d?.orderNumber || "draft"}?` : pending?.kind === "remove" ? "အော်ဒါမှ ပစ္စည်းဖယ်မလား။" : pending?.kind === "confirm" ? "အော်ဒါ အတည်ပြုပြီး Stock ကြိုဖယ်ထားမလား။" : pending?.kind === "cancel" ? "အော်ဒါ ပယ်ဖျက်မလား။" : pending?.kind === "reprice" ? "လက်ရှိ Costing ဈေးကို သုံးမလား။" : pending?.kind === "import" ? "ယခင် Browser မူကြမ်းကို Server အတွက် ယူမလား။" : "မသိမ်းရသေးသော ပြင်ဆင်မှုကို ပယ်ပြီး ဖွင့်မလား။"}</DialogTitle><DialogDescription>{pending?.kind === "delete" ? `Delete draft ${d?.orderNumber || ""}? This cannot be undone through the UI. The historical record will be retained.` : pending?.kind === "remove" ? "ဤမူကြမ်းမှသာ ဖယ်မည်။ Warehouse Stock မပြောင်းပါ။" : pending?.kind === "confirm" ? "Server တွင် စစ်ပြီး အော်ဒါထဲက Stock ကို ကြိုဖယ်ထားပါမည်။" : pending?.kind === "cancel" ? "အော်ဒါကို ပယ်ဖျက်ပြီး ကြိုဖယ်ထားသော Stock ကို ပြန်လွှတ်ပါမည်။" : pending?.kind === "open" ? "ပြင်ဆင်မှုများကို သိမ်းလိုပါက အရင်ပြန်သွားပြီး သိမ်းပါ။" : "ရောင်းဈေးနှင့် ပို့မည့်သူကို စစ်ပြီးမှ အတည်ပြုပါ။"}</DialogDescription></DialogHeader>
     {(pending?.kind==="reprice"||pending?.kind==="import") && <div className="max-h-64 space-y-2 overflow-y-auto text-sm"><p className="leading-7">အောက်ပါ လက်ရှိဈေးများကို သုံးပါမည်။{pending.kind==="import" && ` ပို့မည့်သူမှာ ${d?.buyerName} ဖြစ်ပါမည်။ မူလ Browser မှတ်တမ်းကို မဖျက်ပါ။`}</p>{(pending.kind==="import"?pending.draft.lines:d?.lines||[]).map(l=>{const q=products.find(p=>p.key===l.key)?.quote;return <div className="rounded-lg border p-2" key={l.key}><p>{l.name} · {l.batch}</p><p className="text-xs">{q?.unitPrice!==null&&q?.unitPrice!==undefined?orderMoney(orderPrice(q.unitPrice),q.currency):"ဈေးမရသေးပါ"} / {l.saleUnit}</p></div>;})}</div>}
-    <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPending(null)}>ပြန်သွားမည်</Button><Button onClick={() => { if (pending?.kind === "open") order.open(pending.draft); else if (pending?.kind === "remove" && d) order.patch({ lines: d.lines.filter(l => l.key !== pending.key) }); else if(pending?.kind === "import") order.importLocal(pending.draft); else if (pending && ["confirm","cancel","reprice"].includes(pending.kind)) void order.transition(pending.kind as "confirm"|"cancel"|"reprice"); setPending(null); }}>အတည်ပြုမည်</Button></div></DialogContent></Dialog></>;
+    <div className="flex flex-wrap justify-end gap-2"><Button disabled={order.saving} variant="outline" onClick={() => setPending(null)}>ပြန်သွားမည်</Button><Button disabled={order.saving||!!order.pending} onClick={() => { if(pending?.kind === "delete"){void order.deleteDraft().then(()=>setPending(null));return;} if (pending?.kind === "open") order.open(pending.draft); else if (pending?.kind === "remove" && d) order.patch({ lines: d.lines.filter(l => l.key !== pending.key) }); else if(pending?.kind === "import") order.importLocal(pending.draft); else if (pending && ["confirm","cancel","reprice"].includes(pending.kind)) void order.transition(pending.kind as "confirm"|"cancel"|"reprice"); setPending(null); }}>{pending?.kind === "delete" && order.saving ? "Deleting…" : "အတည်ပြုမည်"}</Button></div></DialogContent></Dialog></>;
 }
 
 function ProductImage({ p, large = false }: { p: Production; large?: boolean }) {

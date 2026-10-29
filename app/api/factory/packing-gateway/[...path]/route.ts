@@ -18,7 +18,7 @@ async function proxy(request: NextRequest, context: Context) {
     : resource === "customers" && path.length === 1 ? ["GET","POST"]
     : resource === "customers" && path.length === 2 && uuid(id) ? ["GET","PUT"]
     : resource === "orders" && path.length === 1 ? ["GET","POST"]
-    : resource === "orders" && path.length === 2 && uuid(id) ? ["GET","PUT"]
+    : resource === "orders" && path.length === 2 && uuid(id) ? ["GET","PUT","DELETE"]
     : resource === "orders" && path.length === 3 && uuid(id) && ["confirm","cancel","reprice"].includes(action) ? ["POST"] : [];
   if(!allowed.includes(method)) return fail("Packing endpoint မရှိပါ။",404);
   const writing = method !== "GET";
@@ -117,3 +117,5 @@ async function proxy(request: NextRequest, context: Context) {
 export const GET = proxy;
 export const POST = proxy;
 export const PUT = proxy;
+
+export const DELETE = proxy;
