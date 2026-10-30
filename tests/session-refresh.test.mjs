@@ -59,7 +59,7 @@ function refreshSetup(env, fetch) {
 }
 function refreshedResponse() {
   return new Response(JSON.stringify({ token: jwt(Date.now() / 1000 + 900) }), {
-    headers: { 'Set-Cookie': 'pos_refresh=rotated; HttpOnly; Max-Age=64800', 'X-Refresh-Contract': 'database-idempotency-v1' },
+    headers: { 'Set-Cookie': 'pos_refresh=rotated; HttpOnly; Max-Age=64800' },
   });
 }
 test('explicit shared-store policy still fails closed and recovers after repair', async () => {
@@ -462,67 +462,82 @@ test('timeout and malformed success are diagnosed and cached without replaying a
   }
 });
 
-const databaseEnv = { VERCEL: '1', NEXTAUTH_SECRET: 'test-only-stable-encryption-secret',
-  REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test' };
-
-test('production without Redis uses only the dedicated database-idempotent endpoint', async () => {
-  const calls = [];
-  const service = refreshSetup(databaseEnv, async (url, options) => {
-    calls.push({ url, options }); return refreshedResponse();
-  });
-  assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
-  assert.equal(calls[0].url, 'https://backend.test/api/auth/refresh/idempotent');
-  assert.equal(calls[0].options.headers.Origin, 'https://pos.test');
-  assert.match(calls[0].options.headers['X-Refresh-Request-ID'], /^[a-f0-9]{64}$/);
-  assert.equal(calls[0].options.redirect, 'manual');
-});
-
-test('independent workers and concurrent requests send identical private retry identifiers', async () => {
-  const ids = [];
-  const fetch = async (_url, options) => { ids.push(options.headers['X-Refresh-Request-ID']); return refreshedResponse(); };
-  const a = refreshSetup(databaseEnv, fetch), b = refreshSetup(databaseEnv, fetch);
-  const results = await Promise.all([a.refreshSpringSession('credential'), b.refreshSpringSession('credential'), a.refreshSpringSession('credential')]);
-  assert.equal(new Set(ids).size, 1);
-  assert.ok(results.every(result => result.refreshToken === 'rotated'));
-  await b.refreshSpringSession('another-credential');
-  assert.notEqual(ids[0], ids[3]);
-});
-
-test('database coordination recovers from lost responses, 503 and malformed success without changing the retry identifier', async () => {
-  for (const kind of ['timeout', '503', 'invalid']) {
-    const ids = []; let fail = true;
-    const service = refreshSetup(databaseEnv, async (_url, options) => {
-      ids.push(options.headers['X-Refresh-Request-ID']);
-      if (!fail) return refreshedResponse();
-      if (kind === 'timeout') throw Object.assign(new Error(), { name: 'TimeoutError' });
-      return kind === '503' ? new Response(null, { status: 503 }) : Response.json({});
-    });
-    await assert.rejects(service.refreshSpringSession('credential'), error => error.safeToRetry);
-    fail = false;
-    assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
-    assert.equal(ids[0], ids[1]);
+test('production without Redis fails before any backend request, including stale backend mode', async () => {
+  for (const extra of [{}, { SESSION_REFRESH_COORDINATION: 'backend-idempotency' }, { NODE_ENV: 'production', VERCEL: '' }]) {
+    const env = { VERCEL: '1', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test', ...extra };
+    const service = refreshSetup(env, async () => assert.fail('must not dispatch uncoordinated refresh'));
+    await assert.rejects(service.refreshSpringSession('credential'), error =>
+      error.reason === 'MISSING_CONFIGURATION' && error.safeToRetry &&
+      error.configuration === 'SESSION_REDIS_REST_URL_OR_TOKEN');
   }
 });
 
-test('a stale cookie is rechecked at the backend and definitive revocation is never served from frontend cache', async () => {
-  let revoked = false, posts = 0;
-  const service = refreshSetup(databaseEnv, async () => {
-    posts++;
-    return revoked ? new Response(null, { status: 401, headers: { 'X-Refresh-Contract': 'database-idempotency-v1' } }) : refreshedResponse();
+test('Redis uses the legacy endpoint without a contract header even with stale backend mode', async () => {
+  const state = redisHarness();
+  state.env.SESSION_REFRESH_COORDINATION = 'backend-idempotency';
+  const service = refreshSetup(state.env, async (url, options) => {
+    if (url !== 'https://redis.test') {
+      assert.equal(url, 'https://backend.test/api/auth/refresh');
+      assert.equal(options.headers['X-Refresh-Request-ID'], undefined);
+      assert.equal(options.headers.Origin, 'https://pos.test');
+      assert.equal(options.headers.Cookie, 'pos_refresh=credential');
+      assert.equal(options.redirect, 'manual');
+    }
+    return state.request(url, options);
   });
-  await service.refreshSpringSession('stale-credential');
-  revoked = true;
-  await assert.rejects(service.refreshSpringSession('stale-credential'), error => error.status === 401 && !error.safeToRetry);
-  assert.equal(posts, 2);
+  assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+  assert.equal(state.posts, 1);
 });
 
-test('old backend failure never falls back to the single-use refresh endpoint; missing server secret sends nothing', async () => {
-  const calls = [];
-  const service = refreshSetup(databaseEnv, async url => { calls.push(url); return new Response(null, { status: 401 }); });
-  await assert.rejects(service.refreshSpringSession('credential'), error => error.status === 503);
-  assert.deepEqual(calls, ['https://backend.test/api/auth/refresh/idempotent']);
-  const unconfigured = refreshSetup({ ...databaseEnv, NEXTAUTH_SECRET: '' }, async () => { assert.fail('must not dispatch'); });
-  await assert.rejects(unconfigured.refreshSpringSession('credential'), error => error.configuration === 'NEXTAUTH_SECRET');
+test('independent workers share Redis results and post a single legacy rotation', async () => {
+  const state = redisHarness();
+  const a = refreshSetup(state.env, state.request);
+  const b = refreshSetup(state.env, state.request);
+  const results = await Promise.all([a.refreshSpringSession('credential'), b.refreshSpringSession('credential'), a.refreshSpringSession('credential')]);
+  assert.ok(results.every(result => result.refreshToken === 'rotated'));
+  assert.equal(state.posts, 1);
+});
+
+test('Redis resolves complete trimmed SESSION or UPSTASH pairs without mixing credentials', async () => {
+  for (const variant of ['upstash', 'session-priority', 'partial-session', 'blank-session']) {
+    const state = redisHarness();
+    const token = state.env.SESSION_REDIS_REST_TOKEN;
+    state.env.UPSTASH_REDIS_REST_URL = '  https://redis.test  ';
+    state.env.UPSTASH_REDIS_REST_TOKEN = `  ${token}  `;
+    if (variant === 'upstash') {
+      delete state.env.SESSION_REDIS_REST_URL; delete state.env.SESSION_REDIS_REST_TOKEN;
+    } else if (variant === 'partial-session') {
+      state.env.SESSION_REDIS_REST_URL = 'https://unused.test'; delete state.env.SESSION_REDIS_REST_TOKEN;
+    } else if (variant === 'blank-session') {
+      state.env.SESSION_REDIS_REST_URL = '  '; state.env.SESSION_REDIS_REST_TOKEN = '  ';
+    } else {
+      state.env.UPSTASH_REDIS_REST_URL = 'https://unused.test';
+      state.env.UPSTASH_REDIS_REST_TOKEN = 'unused';
+      state.env.SESSION_REDIS_REST_URL = '  https://redis.test  ';
+      state.env.SESSION_REDIS_REST_TOKEN = `  ${token}  `;
+    }
+    const service = refreshSetup(state.env, async (url, options) => {
+      if (url !== 'https://backend.test/api/auth/refresh') {
+        assert.equal(url, 'https://redis.test');
+        assert.equal(options.headers.Authorization, `Bearer ${token}`);
+      }
+      return state.request(url, options);
+    });
+    assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+    assert.equal(state.posts, 1);
+  }
+});
+
+test('incomplete mixed pairs and invalid Upstash URLs never receive credentials or claims', async () => {
+  for (const extra of [
+    { SESSION_REDIS_REST_URL: 'https://redis.test', UPSTASH_REDIS_REST_TOKEN: 'token' },
+    { UPSTASH_REDIS_REST_URL: 'http://redis.test', UPSTASH_REDIS_REST_TOKEN: 'token' },
+    { UPSTASH_REDIS_REST_URL: 'https://user:password@redis.test', UPSTASH_REDIS_REST_TOKEN: 'token' },
+  ]) {
+    const service = refreshSetup({ VERCEL: '1', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test', ...extra },
+      async () => assert.fail('must reject before any request'));
+    await assert.rejects(service.refreshSpringSession('credential'), error => error.reason === 'MISSING_CONFIGURATION' && error.safeToRetry);
+  }
 });
 
 test('cleanup cannot delete another worker result; old pending records are never stolen', async () => {

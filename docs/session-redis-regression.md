@@ -1,3 +1,20 @@
+# Current deployment: Redis with the existing backend refresh endpoint
+
+The frontend now always uses `POST /api/auth/refresh` with shared Redis coordination in production. It does not call `/api/auth/refresh/idempotent` or require `X-Refresh-Contract`. No backend change or migration is required for this path. `SESSION_REFRESH_COORDINATION=backend-idempotency` no longer selects an endpoint and can be removed from Vercel.
+
+Configure one complete server-only pair in the Vercel Production environment:
+
+- `SESSION_REDIS_REST_URL` and `SESSION_REDIS_REST_TOKEN`, or
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+
+A complete SESSION pair takes precedence. Values are trimmed; credentials are never mixed between pairs. Use an HTTPS REST endpoint and a writable token. Missing/invalid configuration fails before upstream rotation; production never falls back to process-local-only coordination. Redeploy after setting variables. Keep the existing `APP_FRONTEND_ORIGIN`, backend URL and stable `NEXTAUTH_SECRET` settings.
+
+Refresh rotation coordination, identity checks, cookie bridging and temporary-failure recovery are preserved. An uncertain refresh outcome is not replayed. An already stranded or revoked session may require a new sign-in; do not clear Redis replay records to force retries. Existing access-token and session lifetimes are unchanged by this frontend fix.
+
+Validation uses mocked network responses, including independent workers sharing a Redis fixture. Production/browser renewal still needs verification after deployment. The historical database-backed implementation below is retained as background only and is NOT the deployment path for this frontend version.
+
+---
+
 # Redis regression and database-backed renewal
 
 ## Introducing change and cause
