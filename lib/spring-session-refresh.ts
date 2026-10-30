@@ -1,6 +1,6 @@
 ﻿import "server-only";
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { sessionIdentity, SessionIdentityError } from "@/lib/session-identity";
 
@@ -18,7 +18,7 @@ type FailureDetails = {
 
   originalReason?: string;
 
-  configuration?: "APP_FRONTEND_ORIGIN" | "REMOTE_API_BASE_URL" | "SESSION_REDIS_REST_URL_OR_TOKEN" | "SESSION_REDIS_REST_URL";
+  configuration?: "APP_FRONTEND_ORIGIN" | "REMOTE_API_BASE_URL" | "SESSION_REDIS_REST_URL_OR_TOKEN" | "SESSION_REDIS_REST_URL" | "NEXTAUTH_SECRET";
 
 };
 
@@ -208,6 +208,27 @@ export async function refreshSpringSession(raw: string): Promise<RefreshedSessio
 
   try {
 
+    if (backendCoordination()) {
+      const config = refreshConfig();
+      if (!process.env.NEXTAUTH_SECRET)
+        throw new SessionRefreshError(503, "Session encryption secret is required.", "MISSING_CONFIGURATION",
+          { safeToRetry: true, configuration: "NEXTAUTH_SECRET" });
+      // Stable across workers and cold starts, but unavailable to a thief holding
+      // only the refresh cookie. Keep it server-side like the refresh credential.
+      const requestId = createHmac("sha256", process.env.NEXTAUTH_SECRET)
+        .update("pos-refresh-request-v1:").update(raw).digest("hex");
+      try {
+        // No frontend result cache: even old aliases must check live revocation.
+        return await performRefresh(raw, { ...config, endpoint: config.endpoint + "/idempotent" }, requestId);
+      } catch (error) {
+        const info = failure(error);
+        // The dedicated backend endpoint persists retries in its database
+        // transaction. Lost responses and 5xx can safely retry the SAME identifier.
+        throw new SessionRefreshError(info.status, info.message, info.reason,
+          { ...info, safeToRetry: info.status !== 401 });
+      }
+    }
+
     // A failed Redis cleanup must not strand a credential known not to have been
 
     // consumed. Retry the owned, atomic cleanup, never an uncertain upstream POST.
@@ -280,6 +301,11 @@ export async function refreshSpringSession(raw: string): Promise<RefreshedSessio
 
 type RefreshConfig = { origin: string; endpoint: string; shared: boolean };
 
+function backendCoordination(): boolean {
+  return process.env.SESSION_REFRESH_COORDINATION === "backend-idempotency" ||
+    Boolean(process.env.VERCEL && !process.env.SESSION_REDIS_REST_URL && !process.env.SESSION_REDIS_REST_TOKEN);
+}
+
 function refreshConfig(): RefreshConfig {
 
   let origin: string;
@@ -322,7 +348,7 @@ function refreshConfig(): RefreshConfig {
 
   const shared = Boolean(process.env.SESSION_REDIS_REST_URL && process.env.SESSION_REDIS_REST_TOKEN);
 
-  if (!shared && (process.env.VERCEL || process.env.SESSION_REQUIRE_SHARED_STORE === "true"))
+  if (!shared && !backendCoordination() && (process.env.VERCEL || process.env.SESSION_REQUIRE_SHARED_STORE === "true"))
 
     throw new SessionRefreshError(503, "Configure shared session storage before using this deployment.", "MISSING_CONFIGURATION", { safeToRetry: true, configuration: "SESSION_REDIS_REST_URL_OR_TOKEN" });
 
@@ -366,7 +392,7 @@ function connectionNotEstablished(error: unknown): boolean {
 
 }
 
-async function performRefresh(raw: string, config: RefreshConfig): Promise<RefreshedSession> {
+async function performRefresh(raw: string, config: RefreshConfig, requestId?: string): Promise<RefreshedSession> {
 
   let response: Response;
 
@@ -374,7 +400,8 @@ async function performRefresh(raw: string, config: RefreshConfig): Promise<Refre
 
     response = await fetch(config.endpoint, {
 
-      method: "POST", headers: { Origin: config.origin, Cookie: `pos_refresh=${encodeURIComponent(raw)}`, Accept: "application/json" },
+      method: "POST", headers: { Origin: config.origin, Cookie: `pos_refresh=${encodeURIComponent(raw)}`, Accept: "application/json",
+        ...(requestId ? { "X-Refresh-Request-ID": requestId } : {}) },
 
       cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(8000),
 
@@ -395,6 +422,10 @@ async function performRefresh(raw: string, config: RefreshConfig): Promise<Refre
     });
 
   }
+
+  if (requestId && response.headers.get("X-Refresh-Contract") !== "database-idempotency-v1")
+    throw new SessionRefreshError(503, "Backend session renewal update is unavailable.", "BACKEND_REFRESH_CONTRACT_UNAVAILABLE",
+      { upstreamStatus: response.status, safeToRetry: true });
 
   if (!response.ok) {
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 
 function load(file, imports = {}, globals = {}) {
   const exports = {};
@@ -55,15 +55,15 @@ test('sign-in redirects valid access sessions to an allowed route, never itself 
   }
 });
 function refreshSetup(env, fetch) {
-  return load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, randomUUID } }, { process: { env }, fetch });
+  return load('lib/spring-session-refresh.ts', { 'node:crypto': { createHash, createHmac, randomUUID } }, { process: { env }, fetch });
 }
 function refreshedResponse() {
   return new Response(JSON.stringify({ token: jwt(Date.now() / 1000 + 900) }), {
-    headers: { 'Set-Cookie': 'pos_refresh=rotated; HttpOnly; Max-Age=64800' },
+    headers: { 'Set-Cookie': 'pos_refresh=rotated; HttpOnly; Max-Age=64800', 'X-Refresh-Contract': 'database-idempotency-v1' },
   });
 }
-test('missing Redis configuration is retryable after repair and still fails closed on Vercel', async () => {
-  const env = { VERCEL: '1', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test' };
+test('explicit shared-store policy still fails closed and recovers after repair', async () => {
+  const env = { SESSION_REQUIRE_SHARED_STORE: 'true', REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test' };
   let posts = 0;
   const service = refreshSetup(env, async url => {
     if (url === 'https://redis.test') return Response.json({ result: 'OK' });
@@ -458,8 +458,71 @@ test('timeout and malformed success are diagnosed and cached without replaying a
     assert.equal(posts, 1);
     assert.ok(!JSON.stringify(logs).includes('DO-NOT-LOG-THIS'));
     assert.ok(!JSON.stringify(logs).includes('PRIVATE-CREDENTIAL'));
-    assert.equal(logs[0][1].upstreamStatus, kind === 'timeout' ? null : kind === 'http503' ? 503 : 200);
+    assert.equal(logs.find(([label]) => label === '[Session refresh]')[1].upstreamStatus, kind === 'timeout' ? null : kind === 'http503' ? 503 : 200);
   }
+});
+
+const databaseEnv = { VERCEL: '1', NEXTAUTH_SECRET: 'test-only-stable-encryption-secret',
+  REMOTE_API_BASE_URL: 'https://backend.test', APP_FRONTEND_ORIGIN: 'https://pos.test' };
+
+test('production without Redis uses only the dedicated database-idempotent endpoint', async () => {
+  const calls = [];
+  const service = refreshSetup(databaseEnv, async (url, options) => {
+    calls.push({ url, options }); return refreshedResponse();
+  });
+  assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+  assert.equal(calls[0].url, 'https://backend.test/api/auth/refresh/idempotent');
+  assert.equal(calls[0].options.headers.Origin, 'https://pos.test');
+  assert.match(calls[0].options.headers['X-Refresh-Request-ID'], /^[a-f0-9]{64}$/);
+  assert.equal(calls[0].options.redirect, 'manual');
+});
+
+test('independent workers and concurrent requests send identical private retry identifiers', async () => {
+  const ids = [];
+  const fetch = async (_url, options) => { ids.push(options.headers['X-Refresh-Request-ID']); return refreshedResponse(); };
+  const a = refreshSetup(databaseEnv, fetch), b = refreshSetup(databaseEnv, fetch);
+  const results = await Promise.all([a.refreshSpringSession('credential'), b.refreshSpringSession('credential'), a.refreshSpringSession('credential')]);
+  assert.equal(new Set(ids).size, 1);
+  assert.ok(results.every(result => result.refreshToken === 'rotated'));
+  await b.refreshSpringSession('another-credential');
+  assert.notEqual(ids[0], ids[3]);
+});
+
+test('database coordination recovers from lost responses, 503 and malformed success without changing the retry identifier', async () => {
+  for (const kind of ['timeout', '503', 'invalid']) {
+    const ids = []; let fail = true;
+    const service = refreshSetup(databaseEnv, async (_url, options) => {
+      ids.push(options.headers['X-Refresh-Request-ID']);
+      if (!fail) return refreshedResponse();
+      if (kind === 'timeout') throw Object.assign(new Error(), { name: 'TimeoutError' });
+      return kind === '503' ? new Response(null, { status: 503 }) : Response.json({});
+    });
+    await assert.rejects(service.refreshSpringSession('credential'), error => error.safeToRetry);
+    fail = false;
+    assert.equal((await service.refreshSpringSession('credential')).refreshToken, 'rotated');
+    assert.equal(ids[0], ids[1]);
+  }
+});
+
+test('a stale cookie is rechecked at the backend and definitive revocation is never served from frontend cache', async () => {
+  let revoked = false, posts = 0;
+  const service = refreshSetup(databaseEnv, async () => {
+    posts++;
+    return revoked ? new Response(null, { status: 401, headers: { 'X-Refresh-Contract': 'database-idempotency-v1' } }) : refreshedResponse();
+  });
+  await service.refreshSpringSession('stale-credential');
+  revoked = true;
+  await assert.rejects(service.refreshSpringSession('stale-credential'), error => error.status === 401 && !error.safeToRetry);
+  assert.equal(posts, 2);
+});
+
+test('old backend failure never falls back to the single-use refresh endpoint; missing server secret sends nothing', async () => {
+  const calls = [];
+  const service = refreshSetup(databaseEnv, async url => { calls.push(url); return new Response(null, { status: 401 }); });
+  await assert.rejects(service.refreshSpringSession('credential'), error => error.status === 503);
+  assert.deepEqual(calls, ['https://backend.test/api/auth/refresh/idempotent']);
+  const unconfigured = refreshSetup({ ...databaseEnv, NEXTAUTH_SECRET: '' }, async () => { assert.fail('must not dispatch'); });
+  await assert.rejects(unconfigured.refreshSpringSession('credential'), error => error.configuration === 'NEXTAUTH_SECRET');
 });
 
 test('cleanup cannot delete another worker result; old pending records are never stolen', async () => {

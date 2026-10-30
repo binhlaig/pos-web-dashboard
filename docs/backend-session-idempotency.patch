@@ -1,0 +1,252 @@
+diff --git a/src/main/java/com/binhlaig/pos/auth/AuthController.java b/src/main/java/com/binhlaig/pos/auth/AuthController.java
+--- a/src/main/java/com/binhlaig/pos/auth/AuthController.java
++++ b/src/main/java/com/binhlaig/pos/auth/AuthController.java
+@@ -142,11 +142,21 @@ public class AuthController {
+         return result.response();
+     }
+ 
++    // Separate endpoint prevents an old worker from consuming retryable rotations.
++    @PostMapping("/refresh/idempotent")
++    public AuthResponse refreshIdempotent(jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
++        response.setHeader("X-Refresh-Contract", "database-idempotency-v1");
++        String requestId = request.getHeader("X-Refresh-Request-ID");
++        if (requestId == null || !requestId.matches("[a-f0-9]{64}"))
++            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Refresh request identifier required");
++        return refresh(request, response);
++    }
++
+     @PostMapping("/refresh")
+     public AuthResponse refresh(jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
+         cookies.requireOrigin(request);
+         try {
+-            var result = service.refresh(cookies.read(request), metadataResolver.resolve(request));
++            var result = service.refresh(cookies.read(request), metadataResolver.resolve(request), request.getHeader("X-Refresh-Request-ID"));
+             cookies.write(response, result.refreshToken(), result.sessionExpiresAt());
+             return result.response();
+         } catch (com.binhlaig.pos.auth.session.SessionService.InvalidRefresh ex) {
+diff --git a/src/main/java/com/binhlaig/pos/auth/AuthService.java b/src/main/java/com/binhlaig/pos/auth/AuthService.java
+--- a/src/main/java/com/binhlaig/pos/auth/AuthService.java
++++ b/src/main/java/com/binhlaig/pos/auth/AuthService.java
+@@ -328,7 +328,12 @@ public class AuthService {
+ 
+     @Transactional(noRollbackFor = com.binhlaig.pos.auth.session.SessionService.RefreshReplay.class)
+     public LoginResult refresh(String rawToken, ClientMetadata metadata) {
+-        var issued = sessions.refresh(rawToken, metadata);
++        return refresh(rawToken, metadata, null);
++    }
++
++    @Transactional(noRollbackFor = com.binhlaig.pos.auth.session.SessionService.RefreshReplay.class)
++    public LoginResult refresh(String rawToken, ClientMetadata metadata, String requestId) {
++        var issued = sessions.refresh(rawToken, metadata, requestId);
+         var session = issued.session();
+         AuthResponse response;
+         if ("USER".equals(session.accountType())) {
+diff --git a/src/main/java/com/binhlaig/pos/auth/session/SessionService.java b/src/main/java/com/binhlaig/pos/auth/session/SessionService.java
+--- a/src/main/java/com/binhlaig/pos/auth/session/SessionService.java
++++ b/src/main/java/com/binhlaig/pos/auth/session/SessionService.java
+@@ -32,6 +32,30 @@ public class SessionService {
+     private final ReverseGeocodingService geocoding;
+     @Value("${app.session.refresh-ttl-seconds:64800}")
+     private long ttlSeconds;
++    @Value("${app.jwt.secret}")
++    private String retryEncryptionSecret;
++
++    // Domain-separated AES-GCM key; ciphertext is bound to its device session.
++    private String cryptCredential(String value, UUID sid, boolean encrypt) {
++        try {
++            byte[] key = MessageDigest.getInstance("SHA-256").digest(
++                    ("pos-refresh-retry-v1:" + retryEncryptionSecret).getBytes(StandardCharsets.UTF_8));
++            var cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
++            byte[] bytes = encrypt ? new byte[12] : Base64.getDecoder().decode(value);
++            if (encrypt) RANDOM.nextBytes(bytes);
++            byte[] iv = Arrays.copyOf(bytes, 12);
++            cipher.init(encrypt ? javax.crypto.Cipher.ENCRYPT_MODE : javax.crypto.Cipher.DECRYPT_MODE,
++                    new javax.crypto.spec.SecretKeySpec(key, "AES"), new javax.crypto.spec.GCMParameterSpec(128, iv));
++            cipher.updateAAD(sid.toString().getBytes(StandardCharsets.UTF_8));
++            if (!encrypt) return new String(cipher.doFinal(Arrays.copyOfRange(bytes, 12, bytes.length)), StandardCharsets.UTF_8);
++            byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
++            byte[] result = Arrays.copyOf(iv, iv.length + encrypted.length);
++            System.arraycopy(encrypted, 0, result, iv.length, encrypted.length);
++            return Base64.getEncoder().encodeToString(result);
++        } catch (java.security.GeneralSecurityException | IllegalArgumentException ex) {
++            throw new IllegalStateException("Refresh retry credential unavailable");
++        }
++    }
+     private static final SecureRandom RANDOM = new SecureRandom();
+ 
+     // Internal only: never serialize this result or log bearer credentials.
+@@ -104,6 +128,14 @@ public class SessionService {
+ 
+     @Transactional(noRollbackFor = RefreshReplay.class)
+     public Issued refresh(String raw, ClientMetadata metadata) {
++        return refresh(raw, metadata, null);
++    }
++
++    @Transactional(noRollbackFor = RefreshReplay.class)
++    public Issued refresh(String raw, ClientMetadata metadata, String requestId) {
++        if (requestId != null && !requestId.matches("[a-f0-9]{64}"))
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid refresh request identifier");
++        String retryHash = requestId == null ? null : hash(requestId);
+         if (raw == null || raw.length() > 256 || raw.isBlank()) throw new InvalidRefresh();
+         String hash = hash(raw);
+         var snapshot = store.byHash(hash).or(() -> store.consumed(hash)).orElseThrow(InvalidRefresh::new);
+@@ -114,18 +146,26 @@ public class SessionService {
+         lockAccount(account);
+         store.lockShop(snapshot.shopId());
+         var session = store.find(snapshot.id()).orElseThrow(InvalidRefresh::new);
+-        if (!session.hash().equals(hash)) {
+-            // This exception must NOT roll back replay revocation.
++        if (!session.active()) throw new InvalidRefresh();
++        boolean retry = !session.hash().equals(hash);
++        if (retry && (retryHash == null || !store.sameRefreshRequest(hash, retryHash))) {
++            // A bearer credential without the original server-held retry identifier is still replay.
+             store.revoke(session.id(), "REFRESH_REPLAY");
+             throw new RefreshReplay();
+         }
+-        if (!session.active()) throw new InvalidRefresh();
+         if (account instanceof User u && (!Objects.equals(u.getShopId(), session.shopId()) || u.getRole() == null)) throw new InvalidRefresh();
+         if (account instanceof Staff s && (!Objects.equals(s.getShopId(), session.shopId()) || "inactive".equalsIgnoreCase(s.getStatus() == null ? "" : s.getStatus().trim()))) throw new InvalidRefresh();
+         try { plans.assertShopCanUsePos(session.shopId()); }
+         catch (IllegalArgumentException | ResponseStatusException ex) { throw new InvalidRefresh(); }
++        if (retry) {
++            // Return the CURRENT successor even for an old server cookie. Do not rotate
++            // again, extend absolute expiry, or bypass live account/shop/revocation checks.
++            String current = cryptCredential(store.retryCredential(session.id()), session.id(), false);
++            if (!hash(current).equals(session.hash())) throw new IllegalStateException("Invalid retry state");
++            return new Issued(session, current);
++        }
+         String next = randomToken();
+-        store.rotate(session, hash(next), metadata);
++        store.rotate(session, hash(next), metadata, retryHash, cryptCredential(next, session.id(), true));
+         return new Issued(store.find(session.id()).orElseThrow(InvalidRefresh::new), next);
+     }
+ 
+diff --git a/src/main/java/com/binhlaig/pos/auth/session/SessionStore.java b/src/main/java/com/binhlaig/pos/auth/session/SessionStore.java
+--- a/src/main/java/com/binhlaig/pos/auth/session/SessionStore.java
++++ b/src/main/java/com/binhlaig/pos/auth/session/SessionStore.java
+@@ -62,8 +62,15 @@ public class SessionStore {
+                 s.createdAt(), s.expiresAt(), s.lastSeenAt(), s.ipAddress(), s.countryCode(), s.region(), s.city(), s.userAgent(), s.latitude(), s.longitude(), s.locationAccuracy(), s.country(),
+                 s.district(), s.locationSource(), s.locationUpdatedAt(), s.networkRegion(), s.networkCity());
+     }
+-    public void rotate(Session s, String nextHash, ClientMetadata metadata) {
+-        jdbc.update("insert into consumed_refresh_tokens(token_hash,session_id,consumed_at) values (?,?,?)", s.hash(), s.id(), OffsetDateTime.now(java.time.ZoneOffset.UTC));
++    public boolean sameRefreshRequest(String tokenHash, String requestHash) {
++        return Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from consumed_refresh_tokens where token_hash=? and request_hash=?)", Boolean.class, tokenHash, requestHash));
++    }
++    public String retryCredential(UUID sid) {
++        return jdbc.queryForObject("select retry_credential from login_sessions where id=?", String.class, sid);
++    }
++    public void rotate(Session s, String nextHash, ClientMetadata metadata, String requestHash, String encryptedCredential) {
++        jdbc.update("insert into consumed_refresh_tokens(token_hash,session_id,consumed_at,request_hash) values (?,?,?,?)", s.hash(), s.id(), OffsetDateTime.now(java.time.ZoneOffset.UTC), requestHash);
++        jdbc.update("update login_sessions set retry_credential=? where id=?", encryptedCredential, s.id());
+         jdbc.update("update login_sessions set refresh_token_hash=?, last_seen_at=?, ip_address=coalesce(?,ip_address), country_code=coalesce(?,country_code), network_region=coalesce(?,network_region), network_city=coalesce(?,network_city), user_agent=coalesce(?,user_agent) where id=?",
+                 nextHash, OffsetDateTime.now(java.time.ZoneOffset.UTC), metadata.ipAddress(), metadata.countryCode(), metadata.region(), metadata.city(), metadata.userAgent(), s.id());
+         if (!"GPS".equals(s.locationSource()) && !"NONE".equals(SessionService.networkSource(metadata))) {
+diff --git a/src/main/java/com/binhlaig/pos/config/SecurityConfig.java b/src/main/java/com/binhlaig/pos/config/SecurityConfig.java
+--- a/src/main/java/com/binhlaig/pos/config/SecurityConfig.java
++++ b/src/main/java/com/binhlaig/pos/config/SecurityConfig.java
+@@ -218,6 +218,7 @@ public class SecurityConfig {
+                         .requestMatchers(HttpMethod.POST,
+                                 "/api/auth/login",
+                                 "/api/auth/refresh",
++                                "/api/auth/refresh/idempotent",
+                                 "/api/auth/staff/login",
+                                 "/api/auth/forgot-password",
+                                 "/api/auth/reset-password",
+diff --git a/src/main/resources/db/migration/V56__refresh_request_idempotency.sql b/src/main/resources/db/migration/V56__refresh_request_idempotency.sql
+new file mode 100644
+--- /dev/null
++++ b/src/main/resources/db/migration/V56__refresh_request_idempotency.sql
+@@ -0,0 +1,3 @@
++-- Retry credentials are encrypted with the backend JWT secret, never stored in plaintext.
++ALTER TABLE login_sessions ADD COLUMN retry_credential TEXT;
++ALTER TABLE consumed_refresh_tokens ADD COLUMN request_hash VARCHAR(64);
+diff --git a/src/test/java/com/binhlaig/pos/auth/session/SessionIntegrationTest.java b/src/test/java/com/binhlaig/pos/auth/session/SessionIntegrationTest.java
+--- a/src/test/java/com/binhlaig/pos/auth/session/SessionIntegrationTest.java
++++ b/src/test/java/com/binhlaig/pos/auth/session/SessionIntegrationTest.java
+@@ -115,6 +115,10 @@ class SessionIntegrationTest {
+             assertThat(jdbc.queryForObject("select created_by_user_id from " + table + " where created_by_username='legacy-owner'",Long.class)).isEqualTo(777L);
+             assertThat(jdbc.queryForObject("select count(*) from " + table + " where created_by_staff_id is not null",Long.class)).isZero();
+         }
++        try (var connection = dataSource.getConnection()) {
++            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
++                    new org.springframework.core.io.ClassPathResource("db/migration/V56__refresh_request_idempotency.sql"));
++        } catch (java.sql.SQLException ex) { throw new IllegalStateException(ex); }
+         jdbc.execute("alter table shops alter column created_at set default now()");
+         jdbc.execute("alter table subscription_plans alter column created_at set default now()");
+         jdbc.execute("alter table password_reset_tokens alter column created_at set default now()");
+@@ -405,6 +409,74 @@ class SessionIntegrationTest {
+         assertAccess(jwt.generateAdminToken(id,"root","SUPER_ADMIN"), "/api/admin/session-test", 200);
+     }
+ 
++    @Test void idempotentEndpointPreservesOriginCookiesExpiryAndRollbackRecovery() throws Exception {
++        var initial = login(DEVICE);
++        String request = "d".repeat(64);
++        var cookie = new Cookie(SessionCookies.NAME, initial.refreshToken());
++        mvc.perform(post("/api/auth/refresh/idempotent").cookie(cookie).header("Origin", "https://evil.example").header("X-Refresh-Request-ID", request))
++                .andExpect(status().isForbidden());
++        mvc.perform(post("/api/auth/refresh/idempotent").cookie(cookie).header("Origin", "http://localhost:3000"))
++                .andExpect(status().isBadRequest());
++        // A failure before transaction commit leaves the original credential usable.
++        assertThatThrownBy(() -> new TransactionTemplate(transactions).execute(status -> {
++            sessions.refresh(initial.refreshToken(), ClientMetadata.EMPTY, request);
++            throw new IllegalStateException("simulated response construction failure");
++        })).isInstanceOf(IllegalStateException.class);
++        var result = mvc.perform(post("/api/auth/refresh/idempotent").cookie(cookie).header("Origin", "http://localhost:3000").header("X-Refresh-Request-ID", request))
++                .andExpect(status().isOk()).andExpect(jsonPath("$.refreshToken").doesNotExist()).andReturn();
++        var rotatedCookie = result.getResponse().getCookie(SessionCookies.NAME);
++        assertThat(rotatedCookie).isNotNull();
++        assertThat(rotatedCookie.isHttpOnly()).isTrue();
++        assertThat(rotatedCookie.getPath()).isEqualTo("/api/auth");
++        String access = new com.fasterxml.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsString()).get("token").asText();
++        // Decode payload for lifetime assertions only; authorization is exercised above.
++        var payload = new com.fasterxml.jackson.databind.ObjectMapper().readTree(Base64.getUrlDecoder().decode(access.split("\\.")[1]));
++        assertThat(payload.get("exp").asLong() - payload.get("iat").asLong()).isEqualTo(900);
++        mvc.perform(post("/api/auth/refresh/idempotent").cookie(cookie).header("Origin", "http://localhost:3000").header("X-Refresh-Request-ID", request))
++                .andExpect(status().isOk()).andExpect(cookie().value(SessionCookies.NAME, rotatedCookie.getValue()));
++        jdbc.update("update login_sessions set expires_at=? where id=?", OffsetDateTime.now().minusSeconds(1), UUID.fromString(jwt.extractSessionId(access)));
++        mvc.perform(post("/api/auth/refresh/idempotent").cookie(cookie).header("Origin", "http://localhost:3000").header("X-Refresh-Request-ID", request))
++                .andExpect(status().isUnauthorized());
++    }
++
++    @Test void idempotentRefreshSurvivesLostResponsesConcurrencyAndStaleCookies() throws Exception {
++        var initial = login(DEVICE);
++        String request = "a".repeat(64);
++        var pool = Executors.newFixedThreadPool(4);
++        try {
++            var start = new CountDownLatch(1);
++            var futures = new ArrayList<Future<AuthService.LoginResult>>();
++            for (int i = 0; i < 4; i++) futures.add(pool.submit(() -> {
++                start.await(); return auth.refresh(initial.refreshToken(), ClientMetadata.EMPTY, request);
++            }));
++            start.countDown();
++            var first = futures.getFirst().get(20, TimeUnit.SECONDS);
++            for (var future : futures) assertThat(future.get(20, TimeUnit.SECONDS).refreshToken()).isEqualTo(first.refreshToken());
++            assertThat(first.sessionExpiresAt()).isCloseTo(initial.sessionExpiresAt(), org.assertj.core.api.Assertions.within(1, java.time.temporal.ChronoUnit.MICROS));
++            assertAccess(first.response().getToken(), "/api/owner/session-test", 200);
++            var next = auth.refresh(first.refreshToken(), ClientMetadata.EMPTY, "b".repeat(64));
++            var stale = auth.refresh(initial.refreshToken(), ClientMetadata.EMPTY, request);
++            assertThat(stale.refreshToken()).isEqualTo(next.refreshToken());
++            assertThat(store.find(UUID.fromString(jwt.extractSessionId(stale.response().getToken()))).orElseThrow().active()).isTrue();
++            assertThat(jdbc.queryForObject("select retry_credential from login_sessions where id=?", String.class,
++                    UUID.fromString(jwt.extractSessionId(stale.response().getToken())))).doesNotContain(next.refreshToken());
++            sessions.revokeDevice(stale.response().getToken(), 10L, DEVICE);
++            assertThatThrownBy(() -> auth.refresh(initial.refreshToken(), ClientMetadata.EMPTY, request)).isInstanceOf(SessionService.InvalidRefresh.class);
++            assertAccess(stale.response().getToken(), "/api/owner/session-test", 401);
++        } finally { pool.shutdownNow(); }
++    }
++
++    @Test void retryIdentifierDoesNotPermitReplayOrCrossAccountRecovery() throws Exception {
++        var initial = staffLogin(DEVICE);
++        var rotated = auth.refresh(initial.refreshToken(), ClientMetadata.EMPTY, "a".repeat(64));
++        var retry = auth.refresh(initial.refreshToken(), ClientMetadata.EMPTY, "a".repeat(64));
++        assertThat(jwt.extractTokenType(retry.response().getToken())).isEqualTo("STAFF");
++        assertThat(jwt.extractAccountId(retry.response().getToken())).isEqualTo(employee.getId());
++        assertAccess(retry.response().getToken(), "/api/owner/session-test", 403);
++        assertThatThrownBy(() -> auth.refresh(initial.refreshToken(), ClientMetadata.EMPTY, "b".repeat(64))).isInstanceOf(SessionService.RefreshReplay.class);
++        assertThatThrownBy(() -> auth.refresh(rotated.refreshToken(), ClientMetadata.EMPTY, "c".repeat(64))).isInstanceOf(SessionService.InvalidRefresh.class);
++    }
++
+     @Test void concurrentRefreshReuseRevokesEvenTheWinningRotation() throws Exception {
+         var initial = login(DEVICE);
+         var start = new CountDownLatch(1);
