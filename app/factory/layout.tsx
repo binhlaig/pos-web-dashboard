@@ -9,6 +9,7 @@ import SyncUser from "@/components/auth/SyncUser";
 import AuthTokenGuard from "@/components/auth/AuthTokenGuard";
 import AuthTokenSync from "@/components/AuthTokenSync";
 import { FactoryShell } from "@/components/factory/FactoryShell";
+import { BusinessAccessGate } from "@/components/factory/BusinessAccessGate";
 
 
 function DashboardLoading() {
@@ -38,9 +39,11 @@ export default function ProtectedLayout({
         <AuthTokenSync />
 
         <AuthTokenGuard>
-          <FactoryShell>
-            {children}
-          </FactoryShell>
+          <BusinessAccessGate>
+            <FactoryShell>
+              {children}
+            </FactoryShell>
+          </BusinessAccessGate>
         </AuthTokenGuard>
       </main>
     </Suspense>

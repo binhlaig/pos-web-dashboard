@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { businessEntryPath } from "@/lib/business-routing";
 
 const PUBLIC_PATHS = new Set([
   "/Sign_in",
@@ -25,7 +26,7 @@ function isPublicPath(pathname: string) {
 }
 
 function isProtectedPath(pathname: string) {
-  return pathname === "/dashboard" || pathname.startsWith("/dashboard/")
+  return pathname === "/entry" || pathname === "/dashboard" || pathname.startsWith("/dashboard/")
     || pathname === "/factory" || pathname.startsWith("/factory/");
 }
 
@@ -49,11 +50,6 @@ function isTokenInvalid(token: any) {
   );
 }
 
-function isSafeNextPath(next: string | null) {
-  return !!next && next.startsWith("/") && !next.startsWith("//") &&
-    !/[\\\x00-\x20\x7f]/.test(next);
-}
-
 function redirectToSignIn(req: NextRequest) {
   const url = req.nextUrl.clone();
 
@@ -70,18 +66,9 @@ function redirectToSignIn(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-function redirectToDashboardOrNext(req: NextRequest) {
-  const nextParam = req.nextUrl.searchParams.get("next");
-  let target = "/dashboard";
-  if (isSafeNextPath(nextParam)) {
-    const candidate = new URL(nextParam!, req.url);
-    if (
-      candidate.origin === new URL(req.url).origin &&
-      candidate.pathname !== "/Sign_in" && candidate.pathname !== "/sign-in"
-    ) target = `${candidate.pathname}${candidate.search}${candidate.hash}`;
-  }
-
-  return NextResponse.redirect(new URL(target, req.url));
+function redirectToEntry(req: NextRequest) {
+  const callback = req.nextUrl.searchParams.get("next") || req.nextUrl.searchParams.get("callbackUrl");
+  return NextResponse.redirect(new URL(businessEntryPath(callback), req.url));
 }
 
 export async function middleware(req: NextRequest) {
@@ -104,14 +91,13 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/Sign_in", req.url));
     }
 
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return redirectToEntry(req);
   }
 
-  // Sign_in page
-  // Token မှန်နေရင် /Sign_in မှာမနေစေဘဲ dashboard သို့မဟုတ် next ကိုပို့မယ်
+  // Resolve restored sessions through the backend, including recoverable access expiry.
   if (pathname === "/Sign_in" || pathname === "/sign-in") {
-    if (!invalid && !isExpired(token?.accessTokenExpires) && !token?.error) {
-      return redirectToDashboardOrNext(req);
+    if (!invalid) {
+      return redirectToEntry(req);
     }
 
     return NextResponse.next();

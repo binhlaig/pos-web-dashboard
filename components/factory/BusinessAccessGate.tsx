@@ -5,9 +5,9 @@ import { signOut, useSession } from "next-auth/react";
 import { clearPosSession } from "@/lib/auth-session";
 import { clearAuthTokens } from "@/lib/auth";
 import { loadBusinessAccess, type BusinessAccess } from "@/lib/business-access";
-import { destinationForBusinessType } from "@/lib/business-routing";
+import { destinationForBusinessType, homeForBusinessType } from "@/lib/business-routing";
 
-export function BusinessAccessGate({ children, entry = false }: { children?: ReactNode; entry?: boolean }) {
+export function BusinessAccessGate({ children, entry = false, area = "factory" }: { children?: ReactNode; entry?: boolean; area?: "factory" | "dashboard" }) {
   const { status, data: session, update } = useSession();
   const router = useRouter();
   const params = useSearchParams();
@@ -40,19 +40,20 @@ export function BusinessAccessGate({ children, entry = false }: { children?: Rea
         return;
       }
       setAccess(result);
-      if (entry && result.kind === "ready") {
-        const destination = destinationForBusinessType(result.businessType, callback);
+      if (result.kind === "ready" && (entry || (area === "dashboard" && result.businessType === "FACTORY"))) {
+        const destination = destinationForBusinessType(result.businessType, entry ? callback : null);
         if (destination) router.replace(destination);
       }
     }
     void check();
     return () => { active = false; controller.abort(); };
-  }, [status, identity, attempt, router, entry, callback, update]);
+  }, [status, identity, attempt, router, entry, callback, update, area]);
   function retry() { setAccess(null); setAttempt(value => value + 1); }
   if (status === "loading" || checkedIdentity !== identity || !access || (entry && access.kind === "ready")) {
     return <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground" role="status">Checking business access…</div>;
   }
-  if (access.kind === "ready" && access.businessType === "FACTORY") return <>{children}</>;
+  if (access.kind === "ready" && homeForBusinessType(access.businessType) === `/${area}`) return <>{children}</>;
+  if (access.kind === "ready" && area === "dashboard") return <div role="status">Checking business access…</div>;
   const isError = access.kind === "error";
   const unknown = access.kind === "unknown";
   return <section className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">

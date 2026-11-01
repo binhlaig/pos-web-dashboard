@@ -18,9 +18,11 @@ function load(file, imports = {}, globals = {}) {
 const claims = { sid: 'session', type: 'USER', accountId: 7, shopId: 3, sub: '7', shopCode: 'SHOP', role: 'ADMIN' };
 const jwt = (exp, sid = 'session', overrides = {}) => `header.${Buffer.from(JSON.stringify({ ...claims, exp, sid, ...overrides })).toString('base64url')}.signature`;
 const identity = load('lib/session-identity.ts');
+const routing = load('lib/business-routing.ts');
 const expired = { accessToken: jwt(1), accessTokenExpires: 1, exp: Date.now() / 1000 + 64800 };
 function middleware(token) {
   return load('middleware.ts', {
+    '@/lib/business-routing': routing,
     'next-auth/jwt': { getToken: async () => token },
     'next/server': { NextResponse: { next: () => ({ status: 200 }), redirect: url => ({ status: 307, url: String(url) }) } },
   }).middleware;
@@ -50,7 +52,7 @@ test('sign-in redirects valid access sessions to an allowed route, never itself 
   for (const next of ['/dashboard', '/Sign_in?next=/dashboard', '/sign-in', '/a/../Sign_in', '/\\evil.test']) {
     const result = await run(request(`/Sign_in?next=${encodeURIComponent(next)}`));
     assert.equal(new URL(result.url).origin, 'https://pos.test');
-    assert.equal(new URL(result.url).pathname, '/dashboard');
+    assert.equal(new URL(result.url).pathname, '/entry');
     assert.equal((await run(request(result.url))).status, 200);
   }
 });
@@ -243,10 +245,13 @@ test('temporary refresh failure on factory access returns recoverable 503, never
   }
 });
 
-test('expired access cookie permits sign-in page so server-side rejection cannot redirect-loop', async () => {
-  for (const error of [undefined, 'RefreshTemporarilyUnavailable', 'AccessTokenExpired']) {
-    assert.equal((await middleware({ ...expired, error })(request('/Sign_in?next=/factory/receiving'))).status, 200);
+test('expired access goes through entry for refresh; definitively rejected cookie permits sign-in', async () => {
+  for (const error of [undefined, 'RefreshTemporarilyUnavailable']) {
+    const result = await middleware({ ...expired, error })(request('/Sign_in?next=/factory/receiving'));
+    assert.equal(new URL(result.url).pathname, '/entry');
+    assert.equal(new URL(result.url).searchParams.get('next'), '/factory/receiving');
   }
+  assert.equal((await middleware({ ...expired, error: 'AccessTokenExpired' })(request('/Sign_in'))).status, 200);
 });
 
 test('cookie bridge forwards rotation only to its own response; encrypted NextAuth cookie retains rotation', async () => {

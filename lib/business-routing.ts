@@ -26,7 +26,9 @@ export function destinationForBusinessType(type: unknown, callback?: string | nu
 // The entry route resolves the account against the backend before choosing a home.
 export function businessEntryPath(callback?: string | null) {
   const safe = safeInternalPath(callback);
-  return safe ? `/entry?next=${encodeURIComponent(safe)}` : "/entry";
+  const pathname = safe ? new URL(safe, "https://pos.internal").pathname : "";
+  return safe && (isWithin(pathname, "/factory") || isWithin(pathname, "/dashboard"))
+    ? `/entry?next=${encodeURIComponent(safe)}` : "/entry";
 }
 export const factoryNavigation = [
   { title: "Overview", href: "/factory" },
