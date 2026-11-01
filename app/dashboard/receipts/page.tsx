@@ -408,6 +408,8 @@
 
 
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
 import { formatShopDateTime, formatShopDate, formatShopTime, getShopTimezone, parseTimestamp } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
 import { formatHistoricalMoney } from "@/lib/currency";
@@ -790,7 +792,7 @@ export default function ReceiptsPage() {
             <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-white/[0.04] dark:text-slate-400"><tr><th className="px-5 py-3">Receipt</th><th className="px-4 py-3">Date & Time</th><th className="px-4 py-3">Staff</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Total</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
               {visible.map((receipt, index) => <tr key={receipt.id ?? receiptNo(receipt) ?? index} className="text-xs hover:bg-slate-50 dark:hover:bg-white/[0.04]"><td className="px-5 py-4 font-semibold text-blue-600">{receiptNo(receipt)}</td><td className="px-4 py-4 text-slate-600 dark:text-slate-300"><div>{formatShopDate(receipt.createdAt ?? receipt.created_at, getShopTimezone(), undefined, undefined)}</div><div className="mt-0.5 text-[10px] text-slate-400">{formatShopTime(receipt.createdAt ?? receipt.created_at, getShopTimezone(), { hour: "2-digit", minute: "2-digit" }, [])}</div></td><td className="px-4 py-4 text-slate-700 dark:text-slate-200"><div>{receipt.staffName ?? receipt.staff_name ?? "—"}</div><div className="mt-0.5 text-[10px] text-slate-400">ID: {receipt.staffId ?? receipt.staff_id ?? "—"}</div></td><td className="px-4 py-4"><PaymentBadge payment={method(receipt)} /></td><td className="px-4 py-4"><span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">{receipt.status ?? "PAID"}</span></td><td className="px-4 py-4 text-right text-sm font-bold text-slate-950 dark:text-white">{formatHistoricalMoney(value(receipt), receipt)}</td><td className="px-5 py-4"><div className="flex justify-end gap-2"><button type="button" onClick={() => setSelected(receipt)} title="View receipt" className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300"><Eye size={15} /></button><button type="button" onClick={() => printReceipt(receipt)} title="Reprint receipt" className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700"><Printer size={15} /></button></div></td></tr>)}
-              {loading && <tr><td colSpan={7} className="py-14 text-center text-sm text-slate-400"><Loader2 className="mx-auto mb-2 animate-spin" size={24} />Loading receipts...</td></tr>}
+              {loading && <tr><td colSpan={7} className="py-14 text-center text-sm text-slate-400"><LoadingScreen variant="section" title="Loading receipts..." /></td></tr>}
               {!loading && !error && visible.length === 0 && <tr><td colSpan={7} className="py-14 text-center text-sm text-slate-400"><ReceiptText className="mx-auto mb-2" size={28} />{mode === "DATE" && !range ? "Choose a date range and press Search." : mode === "BARCODE" && !barcode ? "Scan a receipt barcode or enter its number." : "No receipts found for this search."}</td></tr>}
             </tbody>
           </table>

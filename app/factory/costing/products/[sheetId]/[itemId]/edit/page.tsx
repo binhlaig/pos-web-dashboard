@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -1209,8 +1211,7 @@ export default function CostingProductEditPage() {
       {busy ? (
         <Card>
           <CardContent className="flex min-h-64 items-center justify-center gap-3 pt-0 text-sm text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
-            <p role="status">ပစ္စည်းအချက်အလက် ရယူနေပါသည်…</p>
+            <LoadingScreen variant="section" title="ပစ္စည်းအချက်အလက် ရယူနေပါသည်…" />
           </CardContent>
         </Card>
       ) : error || !sheet || !item ? (

@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -1040,12 +1043,7 @@ export default function InventoryPage() {
                           colSpan={7}
                           className={cn("py-16 text-center", t.textMuted)}
                         >
-                          <div className="flex flex-col items-center gap-3">
-                            <Loader2 className="h-8 w-8 animate-spin opacity-60" />
-                            <div className="text-sm font-semibold">
-                              Loading products from API…
-                            </div>
-                          </div>
+                          <div className="flex flex-col items-center gap-3"><LoadingScreen variant="section" title="Loading products from API…" /></div>
                         </td>
                       </tr>
                     ) : filtered.length > 0 ? (

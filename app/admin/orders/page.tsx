@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 // "use client";
 import { formatShopDateTime } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
@@ -915,10 +918,7 @@ export default function OrdersPage() {
                     {loading && (
                       <tr>
                         <td colSpan={9} className={cn("py-16 text-center", t.textMuted)}>
-                          <div className="flex flex-col items-center gap-3">
-                            <RefreshCw className="h-10 w-10 animate-spin opacity-40" />
-                            <div className="text-sm font-semibold">Loading orders from API...</div>
-                          </div>
+                          <div className="flex flex-col items-center gap-3"><LoadingScreen variant="section" title="Loading orders from API..." /></div>
                         </td>
                       </tr>
                     )}

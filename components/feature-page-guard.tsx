@@ -1,7 +1,9 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import * as React from "react";
-import { AlertCircle, LockKeyhole, RefreshCw } from "lucide-react";
+import { AlertCircle, LockKeyhole } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { BackendApiError, redirectToLogin } from "@/lib/backend-api";
@@ -97,11 +99,7 @@ export function FeaturePageGuard({ featureKey, children }: FeaturePageGuardProps
 
   if (loading) {
     return (
-      <GuardShell
-        icon={<RefreshCw className="h-5 w-5 animate-spin" />}
-        title="Checking feature access"
-        message="Please wait while we load your shop settings."
-      />
+      <LoadingScreen variant="section" title="Checking feature access" description="Please wait while we load your shop settings." />
     );
   }
 

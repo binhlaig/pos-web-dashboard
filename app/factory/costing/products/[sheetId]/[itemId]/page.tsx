@@ -1,4 +1,6 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
 import { CostingBarcode } from "@/components/factory/costing-barcode";
 
 import * as React from "react";
@@ -769,8 +771,7 @@ export default function CostingProductDetailPage() {
       {busy ? (
         <Card className="rounded-2xl shadow-none">
           <CardContent className="flex min-h-64 items-center justify-center gap-3 text-sm text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
-            <p role="status">ပစ္စည်းအချက်အလက် ရယူနေပါသည်…</p>
+            <LoadingScreen variant="section" title="ပစ္စည်းအချက်အလက် ရယူနေပါသည်…" />
           </CardContent>
         </Card>
       ) : error || !sheet || !item ? (

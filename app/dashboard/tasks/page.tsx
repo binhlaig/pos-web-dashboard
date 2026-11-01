@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { formatShopDate, getShopTimezone } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
 
@@ -2015,10 +2017,7 @@ export default function TasksPage() {
               border: "1px solid var(--border)",
               marginBottom: 14,
             }}
-          >
-            <Loader2 className="animate-spin" size={16} />
-            Checking session...
-          </div>
+          ><LoadingScreen variant="inline" title="Checking session..." /></div>
         )}
 
         {(tasksLoading || staffLoading) && (
@@ -2036,10 +2035,7 @@ export default function TasksPage() {
               border: "1px solid var(--border)",
               marginBottom: 14,
             }}
-          >
-            <Loader2 className="animate-spin" size={16} />
-            Loading data...
-          </div>
+          ><LoadingScreen variant="inline" title="Loading data..." /></div>
         )}
 
         {pageError && (
@@ -2407,9 +2403,7 @@ export default function TasksPage() {
                       fontWeight: 700,
                       color: "var(--muted)",
                     }}
-                  >
-                    Loading staff...
-                  </div>
+                  ><LoadingScreen variant="section" title="Loading staff..." /></div>
                 ) : filteredStaff.length === 0 ? (
                   <div
                     style={{

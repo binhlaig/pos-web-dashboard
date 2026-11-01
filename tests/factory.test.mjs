@@ -9,7 +9,7 @@ function load(relative, imports = {}, globals = {}) {
   const source = fs.readFileSync(new URL(relative, import.meta.url), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
-  vm.runInNewContext(code, { exports, require: name => imports[name], URL, Response, AbortSignal, process: {env:{}}, ...globals });
+  vm.runInNewContext(code, { exports, require: name => name === '@/components/loading-screen' ? { LoadingScreen: 'LoadingScreen' } : imports[name], URL, Response, AbortSignal, process: {env:{}}, ...globals });
   return exports;
 }
 const routing = load('../lib/business-routing.ts');

@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { useZxing } from "react-zxing";
@@ -942,12 +945,8 @@ function Workspace({
       )}
       {busy && (
         <p
-          role="status"
           className="flex items-center gap-2 text-xs text-muted-foreground"
-        >
-          <Loader2 className="size-4 animate-spin" />
-          Warehouse လက်ကျန် ရယူနေသည်…
-        </p>
+        ><LoadingScreen variant="inline" title="Warehouse လက်ကျန် ရယူနေသည်…" /></p>
       )}
       {error && (
         <div

@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -1342,12 +1345,8 @@ function StockWorkspace() {
         <div className="min-w-0 space-y-5">
           {busy && !current && (
             <div
-              role="status"
               className="flex items-center gap-2 rounded-xl border bg-card p-6 text-sm text-muted-foreground"
-            >
-              <Loader2 className="size-4 animate-spin" />
-              စတော့စာရင်း ရယူနေသည်…
-            </div>
+            ><LoadingScreen variant="section" title="စတော့စာရင်း ရယူနေသည်…" /></div>
           )}
           {!busy && !error && current && !balances.length && (
             <div className="rounded-2xl border border-dashed bg-card p-10 text-center">

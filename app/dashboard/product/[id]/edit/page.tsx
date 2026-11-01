@@ -1,5 +1,8 @@
 
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -1028,11 +1031,7 @@ export default function ProductEditPage() {
           {/* ── loading skeleton ── */}
           {fetching && !fetchError && (
             <div className={cn("flex items-center justify-center rounded-[24px] border p-16", t.card)}>
-              <div className="flex flex-col items-center gap-4">
-                {theme === "dark" && <LanternMark size={46} glow />}
-                <Loader2 className={cn("h-8 w-8 animate-spin", t.textMuted)} />
-                <div className={cn("text-[13px]", t.textMuted)}>Loading product data...</div>
-              </div>
+              <div className="flex flex-col items-center gap-4"><LoadingScreen variant="section" title="Loading product data..." /></div>
             </div>
           )}
 

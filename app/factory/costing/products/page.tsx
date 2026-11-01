@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import {
   CostingBarcode,
   CostingBarcodeSearch,
@@ -530,12 +533,8 @@ export default function CostingProductsPage() {
       <div aria-busy={busy} className="space-y-5">
         {busy ? (
           <div
-            role="status"
             className="flex min-h-52 items-center justify-center gap-3 rounded-2xl border border-dashed border-border text-sm text-muted-foreground"
-          >
-            <Loader2 className="size-5 animate-spin" />
-            ပစ္စည်းစာရင်း ရယူနေပါသည်…
-          </div>
+          ><LoadingScreen variant="section" title="ပစ္စည်းစာရင်း ရယူနေပါသည်…" /></div>
         ) : error ? (
           <div
             role="alert"

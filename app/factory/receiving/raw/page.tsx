@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -373,7 +375,7 @@ function ReceivingWorkspace() {
   }
 
   return <main lang="my" className="mx-auto max-w-[1480px] space-y-5 p-3 text-slate-900 dark:text-slate-100 sm:p-5" style={{ fontFamily: '"Noto Sans Myanmar", "Myanmar Text", sans-serif' }}>
-    {sourceLoading && <div role="status" className="rounded-xl border border-border bg-card p-4 text-sm"><Loader2 className="mr-2 inline size-4 animate-spin"/>Costing Reference ဖတ်နေပါသည်...</div>}
+    {sourceLoading && <div className="rounded-xl border border-border bg-card p-4 text-sm"><LoadingScreen variant="section" title="Costing Reference ဖတ်နေပါသည်..." /></div>}
     {sourceError && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30">{sourceError} <Link className="ml-2 underline" href="/factory/costing/products">Costing Products သို့</Link></div>}
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div>

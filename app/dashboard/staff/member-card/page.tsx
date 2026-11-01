@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -32,7 +35,7 @@ function getStaffPageToken(session: any) {
 
 
 export default function StaffMemberPrintPage() {
-  return <React.Suspense fallback={<p className="p-6">Loading…</p>}><MemberCardPageContent /></React.Suspense>;
+  return <React.Suspense fallback={<p className="p-6"><LoadingScreen variant="inline" title="Loading…" /></p>}><MemberCardPageContent /></React.Suspense>;
 }
 function MemberCardPageContent() {
   const params = useSearchParams();
@@ -76,7 +79,7 @@ function MemberCardPageContent() {
   }, [id, session, status]);
   return <main>
     <button type="button" onClick={() => router.push("/dashboard/staff")} className="m-4 rounded-xl border px-4 py-2">← Staff Page</button>
-    {loading ? <p className="p-6">Loading staff…</p> : error ? <p role="alert" className="p-6 text-red-500">{error}</p> : member && <StaffMemberCardDialog member={member} onClose={() => router.push("/dashboard/staff")} />}
+    {loading ? <p className="p-6"><LoadingScreen variant="inline" title="Loading staff…" /></p> : error ? <p role="alert" className="p-6 text-red-500">{error}</p> : member && <StaffMemberCardDialog member={member} onClose={() => router.push("/dashboard/staff")} />}
   </main>;
 }
 

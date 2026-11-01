@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { shopDateFormatter, formatShopTime, getShopTimezone, shopDateKey, shopCalendarDate, parseTimestamp, shopLocalInput, shopLocalInputToInstant } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
 
@@ -681,9 +683,7 @@ function AllStaffDialog({
         {/* ── Body — scrollable ── */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           {loading ? (
-            <div className="flex h-64 items-center justify-center text-sm text-slate-500 dark:text-[#bca98f]">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading staff…
-            </div>
+            <div className="flex h-64 items-center justify-center text-sm text-slate-500 dark:text-[#bca98f]"><LoadingScreen variant="section" title="Loading staff…" /></div>
           ) : error ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
               {error}
@@ -1909,9 +1909,7 @@ export default function TimecardPro() {
                 </div>
 
                 {loadingShifts && staffDialogShifts.length === 0 ? (
-                  <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 py-5 text-sm text-slate-500 dark:border-white/10 dark:text-white/60">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading records…
-                  </div>
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 py-5 text-sm text-slate-500 dark:border-white/10 dark:text-white/60"><LoadingScreen variant="section" title="Loading records…" /></div>
                 ) : staffDialogShifts.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-200 py-5 text-center text-sm text-slate-500 dark:border-white/10 dark:text-white/60">
                     No timecard records yet

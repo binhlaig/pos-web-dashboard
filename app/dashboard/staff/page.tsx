@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { formatShopDate } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
 // "use client";
@@ -4768,15 +4771,7 @@ export default function StaffPage() {
               <div
                 className="rounded-[26px] p-14 text-center"
                 style={glassCard(night)}
-              >
-                <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-600" />
-                <div
-                  className="mt-4 text-sm font-bold"
-                  style={{ color: night ? "#cbd5e1" : "#475569" }}
-                >
-                  Loading staff from API...
-                </div>
-              </div>
+              ><LoadingScreen variant="section" title="Loading staff from API..." /></div>
             ) : paginatedStaff.length === 0 ? (
               <div
                 className="rounded-[26px] p-14 text-center"

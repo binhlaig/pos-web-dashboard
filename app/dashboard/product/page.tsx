@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import * as React from "react";
@@ -1473,8 +1476,7 @@ function ProductsPageContent() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center text-slate-900 dark:text-white">
         <div className="text-center">
-          <Package2 className="mx-auto mb-4 h-10 w-10 animate-pulse text-blue-600" />
-          <div className="text-sm font-bold">Loading session...</div>
+          <div className="text-sm font-bold"><LoadingScreen variant="section" title="Loading session..." /></div>
         </div>
       </div>
     );
@@ -1752,13 +1754,7 @@ function ProductsPageContent() {
         ) : null}
         {!firstLoaded || loading ? (
           <div className="p-10 text-center">
-            <Package2
-              className={cn(
-                "mx-auto mb-4 h-12 w-12 animate-pulse",
-                t.textMuted,
-              )}
-            />
-            <div className={cn("font-semibold", t.text)}>Loading products...</div>
+            <div className={cn("font-semibold", t.text)}><LoadingScreen variant="section" title="Loading products..." /></div>
           </div>
         ) : products.length === 0 ? (
           <div className="p-10 text-center">

@@ -1,4 +1,4 @@
-
+import { LoadingScreen } from "@/components/loading-screen";
 
 import {
   Suspense,
@@ -13,17 +13,7 @@ import { BusinessAccessGate } from "@/components/factory/BusinessAccessGate";
 
 
 function DashboardLoading() {
-  return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-50 dark:bg-slate-950">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-9 w-9 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600 dark:border-slate-700 dark:border-t-blue-400" />
-
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Loading factory dashboard...
-        </p>
-      </div>
-    </main>
-  );
+  return <LoadingScreen variant="page" title="Loading factory dashboard..." />;
 }
 
 export default function ProtectedLayout({

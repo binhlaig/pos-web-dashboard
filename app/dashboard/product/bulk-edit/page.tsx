@@ -3409,6 +3409,8 @@
 
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   createProductEditor,
@@ -6035,9 +6037,7 @@ export default function ProductBulkEditPage() {
             </div>
 
             {rowsLoading && (
-              <p role="status" className={cn("mb-4 text-sm", t.text)}>
-                Loading selected products...
-              </p>
+              <p className={cn("mb-4 text-sm", t.text)}><LoadingScreen variant="inline" title="Loading selected products..." /></p>
             )}
             {loadError && (
               <p role="alert" className="mb-4 text-sm text-rose-500">

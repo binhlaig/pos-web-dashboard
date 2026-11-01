@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { formatShopDate, formatShopTime, getShopTimezone, shopCalendarDate } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
 
@@ -739,7 +741,7 @@ const DashboardPage = () => {
                   </tr>
                 ))}
                 {loading && (
-                  <tr><td colSpan={2} className="px-4 py-8 text-center text-xs text-slate-400">Loading products...</td></tr>
+                  <tr><td colSpan={2} className="px-4 py-8 text-center text-xs text-slate-400"><LoadingScreen variant="section" title="Loading products..." /></td></tr>
                 )}
                 {!loading && lowStockItems.length === 0 && (
                   <tr><td colSpan={2} className="px-4 py-8 text-center text-xs text-slate-400">All products have enough stock</td></tr>

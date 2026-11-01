@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { ShopTimezoneSettings } from "@/components/shop-timezone-settings";
 import { formatShopDateTime, getShopTimezone } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
@@ -1479,9 +1481,7 @@ function DevicesPanel({
               </div>
 
               {loading ? (
-                <div className="rounded-2xl border p-5 text-sm">
-                  Loading devices…
-                </div>
+                <div className="rounded-2xl border p-5 text-sm"><LoadingScreen variant="section" title="Loading devices…" /></div>
               ) : null}
 
               {error ? (

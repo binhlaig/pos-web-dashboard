@@ -1,6 +1,6 @@
 "use client";
 
-
+import { LoadingScreen } from "@/components/loading-screen";
 
 // "use client";
 import { shopDateFormatter, shopCalendarDate } from "@/lib/date-time";
@@ -2786,12 +2786,7 @@ export default function AnalyticsPage() {
           </div>
 
           {loading ? (
-            <Card theme={theme} className="p-10 text-center">
-              <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
-              <div className={cn("mt-4 text-sm font-bold", t.textMuted)}>
-                Loading analytics from receipts API...
-              </div>
-            </Card>
+            <Card theme={theme} className="p-10 text-center"><LoadingScreen variant="section" title="Loading analytics from receipts API..." /></Card>
           ) : (
             <>
               <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">

@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -50,10 +53,10 @@ export function BusinessAccessGate({ children, entry = false, area = "factory" }
   }, [status, identity, attempt, router, entry, callback, update, area]);
   function retry() { setAccess(null); setAttempt(value => value + 1); }
   if (status === "loading" || checkedIdentity !== identity || !access || (entry && access.kind === "ready")) {
-    return <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground" role="status">Checking business access…</div>;
+    return <LoadingScreen title="Checking business access…" />;
   }
   if (access.kind === "ready" && homeForBusinessType(access.businessType) === `/${area}`) return <>{children}</>;
-  if (access.kind === "ready" && area === "dashboard") return <div role="status">Checking business access…</div>;
+  if (access.kind === "ready" && area === "dashboard") return <LoadingScreen title="Checking business access…" />;
   const isError = access.kind === "error";
   const unknown = access.kind === "unknown";
   return <section className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">

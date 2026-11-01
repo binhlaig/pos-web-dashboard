@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -57,9 +59,7 @@ export default function AuthTokenGuard({ children }: { children: ReactNode }) {
   }
   if (!ready) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-background px-4 text-sm text-muted-foreground">
-        Checking your login session...
-      </div>
+      <LoadingScreen title="Checking your login session..." />
     );
   }
 

@@ -1,5 +1,8 @@
 
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { useCurrency } from "@/components/currency-provider";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -2747,10 +2750,7 @@ export default function ProductCreatePage() {
   if (status === "loading") {
     return (
       <div className="flex min-h-[60vh] items-center justify-center text-slate-900 dark:text-white">
-        <div className="text-center">
-          <Loader2 className="mx-auto mb-4 h-9 w-9 animate-spin text-blue-600" />
-          <div className="text-sm font-bold">Checking session...</div>
-        </div>
+        <div className="text-center"><LoadingScreen variant="section" title="Checking session..." /></div>
       </div>
     );
   }

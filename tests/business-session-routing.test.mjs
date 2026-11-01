@@ -9,7 +9,7 @@ function load(file, imports = {}, globals = {}) {
   const exports = {};
   const source = fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: name => imports[name], URL, URLSearchParams, Response, AbortController, fetch, window: { location: { pathname: '/dashboard/products', search: '?tab=1' } }, process: { env: {} }, ...globals });
+  vm.runInNewContext(code, { exports, require: name => name === '@/components/loading-screen' ? { LoadingScreen: 'LoadingScreen' } : imports[name], URL, URLSearchParams, Response, AbortController, fetch, window: { location: { pathname: '/dashboard/products', search: '?tab=1' } }, process: { env: {} }, ...globals });
   return exports;
 }
 const routing = load('lib/business-routing.ts');

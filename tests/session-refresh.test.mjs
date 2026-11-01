@@ -10,7 +10,7 @@ function load(file, imports = {}, globals = {}) {
   const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
-  } }).outputText, { exports, require: name => name === '@/lib/session-identity' ? identity : imports[name],
+  } }).outputText, { exports, require: name => name === '@/components/loading-screen' ? { LoadingScreen: 'LoadingScreen' } : name === '@/lib/session-identity' ? identity : imports[name],
     process: { env: {} }, Buffer, Response, Headers, URL, AbortSignal,
     setTimeout, atob, console: { log() {}, error() {} }, ...globals });
   return exports;

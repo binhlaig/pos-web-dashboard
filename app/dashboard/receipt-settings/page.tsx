@@ -1,4 +1,7 @@
 "use client";
+
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { formatCurrencyAmount, normalizeCurrency } from "@/lib/currency";
 import { getCurrencyIdentity, publishCurrencySettings } from "@/components/currency-provider";
 
@@ -446,10 +449,7 @@ function ReceiptSettingsPageContent() {
 
         {loading ? (
           <div className="flex min-h-[400px] items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#293750]">
-            <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Loading settings...
-            </div>
+            <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400"><LoadingScreen variant="section" title="Loading settings..." /></div>
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">

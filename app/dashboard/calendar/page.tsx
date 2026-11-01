@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
@@ -312,7 +314,7 @@ export default function PosCalendarPage() {
     const blob = new Blob([JSON.stringify({ version: 1, shop, timezone, entries }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `pos-calendar-${today}.json`; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  if (status === "loading" || !today) return <div className="py-20 text-center text-sm text-slate-500">Loading calendar…</div>;
+  if (status === "loading" || !today) return <div className="py-20 text-center text-sm text-slate-500"><LoadingScreen variant="section" title="Loading calendar…" /></div>;
   if (status !== "authenticated") return <div className={`${PANEL} p-8 text-center text-slate-600 dark:text-slate-300`}>Sign in to open your POS calendar.</div>;
   if (!storageKey) return <div role="alert" className={`${PANEL} p-6 text-sm text-slate-600 dark:text-slate-300`}>Calendar cannot identify the current shop from this login. Sign out and sign in again. If this continues, your NextAuth session must include shopId / shopCode or the backend accessToken.</div>;
   const pending = !ready || saving;
@@ -323,7 +325,7 @@ export default function PosCalendarPage() {
       <div className="flex gap-2"><button type="button" disabled={pending} onClick={backup} className={BUTTON}><Download size={15} />Export loaded entries</button><button type="button" disabled={pending} onClick={() => open(blank(selected || today))} className={PRIMARY}><Plus size={16} />Add entry</button></div>
     </header>
     <p className="mb-2 text-xs text-slate-500">Loaded range: {range.from} to {range.to}. Counts and exports cover this range only. Upcoming covers 90 days; overdue covers the past year; agenda covers the selected month.</p>
-    {!ready && <p role="status">Loading calendar entries...</p>}
+    {!ready && <p><LoadingScreen variant="inline" title="Loading calendar entries..." /></p>}
     {error && <button type="button" className={BUTTON} onClick={()=>setRefresh(v=>v+1)}>Retry loading entries</button>}
     {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">{error}</p>}
     {message && <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">{message}</p>}
@@ -357,7 +359,7 @@ export default function PosCalendarPage() {
                     <div className="flex items-start justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800"><div><h3 className="text-sm font-semibold">{formatDay(day, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</h3><p className="mt-1 text-[10px] leading-4 text-slate-500">POS sales · {timezone}</p></div><button type="button" title="Refresh sales" aria-label="Refresh sales" onClick={() => setSalesRefresh(value => value + 1)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><RefreshCw size={13} className={salesSummary.loading ? "animate-spin" : ""} /></button></div>
                     <div className="grid sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
                     <div className="min-w-0 bg-slate-50/40 dark:bg-slate-900/20">
-                    {salesSummary.loading ? <p role="status" className="px-4 py-8 text-center text-xs text-slate-500">Loading daily sales…</p> : salesSummary.error ? <p role="alert" className="px-4 py-5 text-xs leading-5 text-amber-700 dark:text-amber-300">{salesSummary.error}</p> : <DaySalesSummary summary={salesSummary.days[day] ?? { total: 0, count: 0, payments: {}, invalidCount: 0, legacyCount: 0 }} undatedCount={salesSummary.undatedCount} money={money} />}
+                    {salesSummary.loading ? <p className="px-4 py-8 text-center text-xs text-slate-500"><LoadingScreen variant="inline" title="Loading daily sales…" /></p> : salesSummary.error ? <p role="alert" className="px-4 py-5 text-xs leading-5 text-amber-700 dark:text-amber-300">{salesSummary.error}</p> : <DaySalesSummary summary={salesSummary.days[day] ?? { total: 0, count: 0, payments: {}, invalidCount: 0, legacyCount: 0 }} undatedCount={salesSummary.undatedCount} money={money} />}
                     <div className="border-t border-slate-100 px-4 py-2 text-[10px] text-slate-400 dark:border-slate-800">Paid / completed POS receipts</div>
                     </div>
                     <DayCalendarRecords day={day} entries={entries} loading={!ready || loaded.scope !== scope || loaded.range !== rangeKey} error={error} />
@@ -501,7 +503,7 @@ function DayCalendarRecords({ day, entries, loading, error }: { day: string; ent
       <h4 className="flex items-center gap-1.5 text-xs font-semibold"><StickyNote size={13} className="text-blue-500" />Calendar records</h4>
       {!loading && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{records.length}</span>}
     </div>
-    {loading ? <p role="status" className="text-[11px] text-slate-500">Loading calendar records…</p> : <>
+    {loading ? <p className="text-[11px] text-slate-500"><LoadingScreen variant="inline" title="Loading calendar records…" /></p> : <>
       {error && <p role="alert" className="mb-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">{error}</p>}
       {!records.length && !error && <p className="text-[11px] text-slate-500">No calendar entries for this day.</p>}
       <div className="max-h-80 space-y-2 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]" tabIndex={records.length ? 0 : undefined} aria-label="Daily entry list">{records.map(entry => {

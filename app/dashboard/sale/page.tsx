@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingScreen } from "@/components/loading-screen";
+
 import { formatShopTime, getShopTimezone } from "@/lib/date-time";
 import { useShopTimezone } from "@/components/shop-timezone-provider";
 
@@ -1559,10 +1561,7 @@ export default function SalesKanbanPage() {
                   <div
                     className="flex h-56 items-center justify-center gap-3 text-sm"
                     style={{ color: theme.softText }}
-                  >
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Loading sales data...
-                  </div>
+                  ><LoadingScreen variant="section" title="Loading sales data..." /></div>
                 ) : filteredSales.length === 0 ? (
                   <div className="flex h-56 flex-col items-center justify-center gap-3 text-center">
                     <div
