@@ -2013,6 +2013,58 @@ function TypedCostingText({ text, onDone }: { text: string; onDone?: () => void 
   }, [text]);
   return <><span className="sr-only">{text}</span><span aria-hidden="true" className="whitespace-pre-wrap break-words leading-8">{costingPointText(parts.slice(0, count).join(""))}{count < parts.length && <span className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-blue-500 align-middle" />}</span></>;
 }
+// Restore only this chat's keyboard-induced page pan, after the viewport settles.
+function useCostingChatKeyboard(composer: { readonly current: HTMLInputElement | null }) {
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    let before: { x: number; y: number; height: number } | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const height = () => viewport?.height ?? window.innerHeight;
+    const zoomed = () => viewport != null && Math.abs(viewport.scale - 1) > 0.05;
+    const remember = (event: Event) => {
+      if (navigator.maxTouchPoints < 1 || event.target !== composer.current || before || zoomed()) return;
+      before = { x: window.scrollX, y: window.scrollY, height: height() };
+    };
+    const settle = () => {
+      clearTimeout(timer);
+      if (!before || zoomed() || height() < before.height - 80) return;
+      // The keyboard-hide button can leave the input focused: resize matters too.
+      timer = setTimeout(() => {
+        if (!before || zoomed() || height() < before.height - 80) return;
+        const focused = document.activeElement;
+        if (focused !== composer.current && focused instanceof HTMLElement &&
+          (focused.matches("input, textarea, select") || focused.isContentEditable)) {
+          before = null; return;
+        }
+        const position = before;
+        before = null;
+        window.scrollTo({ left: position.x, top: position.y, behavior: "instant" });
+      }, 350);
+    };
+    const onBlur = (event: FocusEvent) => {
+      if (event.target === composer.current) settle();
+    };
+    const onOrientation = () => { clearTimeout(timer); before = null; };
+    // Capture the position before Safari pans the page to reveal the field.
+    document.addEventListener("pointerdown", remember, true);
+    document.addEventListener("focusin", remember, true);
+    document.addEventListener("focusout", onBlur, true);
+    viewport?.addEventListener("resize", settle);
+    viewport?.addEventListener("scroll", settle);
+    window.addEventListener("resize", settle);
+    window.addEventListener("orientationchange", onOrientation);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", remember, true);
+      document.removeEventListener("focusin", remember, true);
+      document.removeEventListener("focusout", onBlur, true);
+      viewport?.removeEventListener("resize", settle);
+      viewport?.removeEventListener("scroll", settle);
+      window.removeEventListener("resize", settle);
+      window.removeEventListener("orientationchange", onOrientation);
+    };
+  }, [composer]);
+}
 function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculation,
   onImageBusy, onSave, onFinalize, actionDisabled, finalizeDisabled, title, onTitle, initialStep, onProgress, onAdd, chatStarted, onStartChat }: CostingWorkspaceProps) {
   const [step, setStep] = useState(initialStep);
@@ -2042,8 +2094,9 @@ function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculat
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState("");
   const [typing, setTyping] = useState(true);
-  const end = useRef<HTMLDivElement>(null);
+  const transcript = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLInputElement>(null);
+  useCostingChatKeyboard(composer);
   const uid = useId();
   const units = quantityUnits(inputs);
   const result = serverCalculation ? serverResult(serverCalculation) : calculatePacking(inputs);
@@ -2103,7 +2156,10 @@ function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculat
     // The composer changes only when the active question changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, current?.key]);
-  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [step, typing]);
+  useEffect(() => {
+    const messages = transcript.current;
+    if (messages) messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+  }, [step, typing]);
   function submit(raw = answer) {
     if (!current || typing || readOnly || actionDisabled) return;
     const value = raw.trim();
@@ -2134,13 +2190,12 @@ function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculat
   </section>;
   return <section className="flex min-h-[65vh] w-full min-w-0 flex-col">
     <div className="flex items-center justify-between border-b py-3 text-xs text-muted-foreground"><span className="flex items-center gap-2"><Sparkles className="size-4 text-blue-600" /> Costing Assistant</span><span>{Math.min(step + 1, steps.length)} / {steps.length}</span></div>
-    <div className="max-h-[62vh] flex-1 space-y-8 overflow-y-auto overscroll-contain px-1 py-6 sm:px-4">
+    <div ref={transcript} className="min-h-0 max-h-[62vh] flex-1 space-y-8 overflow-y-auto overscroll-contain px-1 py-6 sm:px-4">
       {!finished && steps.slice(0, step).map((item, index) => <div key={item.key} className="space-y-3"><div className="flex items-start gap-2"><p className="min-w-0 flex-1 whitespace-pre-wrap text-sm leading-8">{item.question}</p>{questionVoice(item.key)}</div><div className="ml-auto w-fit max-w-[90%] rounded-2xl bg-muted px-4 py-2"><p className="break-words text-sm leading-8">{item.photo ? (valueOf(item) ? "ဓာတ်ပုံ ထည့်ထားပါသည်။" : "ဓာတ်ပုံ မထည့်သေးပါ။") : item.options?.find(option => option.value === valueOf(item))?.label || valueOf(item)}</p><button type="button" disabled={readOnly || actionDisabled} onClick={() => { setTyping(true); setStep(index); }} className="text-[10px] text-muted-foreground underline underline-offset-4 disabled:opacity-50">အဖြေပြင်ရန်</button></div></div>)}
-      <div className="flex items-start gap-3"><Sparkles className="mt-2 size-4 shrink-0 text-blue-600" /><div className="min-w-0 flex-1 text-sm" key={current?.key || "summary"}><TypedCostingText text={finished ? summary : current.question} onDone={() => { setTyping(false); composer.current?.focus(); }} /></div>{!finished && questionVoice(current.key)}</div>
+      <div className="flex items-start gap-3"><Sparkles className="mt-2 size-4 shrink-0 text-blue-600" /><div className="min-w-0 flex-1 text-sm" key={current?.key || "summary"}><TypedCostingText text={finished ? summary : current.question} onDone={() => { setTyping(false); if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) composer.current?.focus({ preventScroll: true }); }} /></div>{!finished && questionVoice(current.key)}</div>
       {finished && <div className="flex flex-wrap gap-3 pl-7">{(["originalImage", "packedImage"] as const).map(key => inputs[key] ? <figure key={key}><img src={inputs[key]} alt={key === "originalImage" ? "မူလပစ္စည်းပုံ" : "ထုပ်ပိုးပြီးပုံ"} className="size-24 rounded-xl object-cover" /><figcaption className="mt-1 text-[10px] text-muted-foreground">{key === "originalImage" ? "မူလပစ္စည်းပုံ" : "ထုပ်ပိုးပြီးပုံ"}</figcaption></figure> : null)}</div>}
-      <div ref={end} />
     </div>
-    <div className="sticky bottom-0 border-t bg-background py-4">
+    <div className="shrink-0 border-t bg-background py-4">
       {!finished && !typing && current.preview && <div className="mb-4 space-y-3">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">{[15,20,25].map(target => {
           const trial = calculatePacking({ ...inputs, mode: "margin", targetPercent: String(target) });
@@ -2158,7 +2213,7 @@ function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculat
         <label htmlFor={`${uid}-answer`} className="text-xs text-muted-foreground">လိုချင်သော အမြတ် % ကို စမ်းစစ်ရန်</label>
       </div>}
       {!finished && !typing && <>
-        {current.photo ? <div className="mx-auto max-w-xs space-y-2"><ProductImageUpload title={current.key === "originalImage" ? "မူလပစ္စည်းပုံ" : "ထုပ်ပိုးပြီးပုံ"} hint="မလိုသေးရင် ကျော်နိုင်ပါတယ်" value={inputs[current.key as "originalImage" | "packedImage"]} onChange={value => setInputs(previous => ({ ...previous, [current.key]: value }))} onBusyChange={onImageBusy} /><Button type="button" disabled={readOnly || actionDisabled} onClick={() => { setTyping(true); setStep(index => index + 1); }} className="w-full">{valueOf(current) ? "ဆက်ရန်" : "ဓာတ်ပုံမထည့်ဘဲ ဆက်ရန်"}</Button></div> : current.options ? <div className="space-y-3"><div className="flex flex-wrap gap-2">{current.options.map(option => <Button key={option.value} type="button" variant="outline" disabled={readOnly || actionDisabled} aria-pressed={answer === option.value} onClick={() => setAnswer(option.value)} className={`min-h-11 whitespace-normal rounded-full px-4 text-xs leading-6 ${answer === option.value ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300" : ""}`}>{option.label}</Button>)}</div><Button type="button" disabled={readOnly || actionDisabled || !answer} onClick={() => submit()}>ပို့ရန် <Send className="size-4" /></Button></div> : <form onSubmit={event => { event.preventDefault(); submit(); }} className="flex items-center gap-2 rounded-2xl border bg-muted/30 p-2"><Input ref={composer} id={`${uid}-answer`} aria-label={current.question} type={current.text ? "text" : "number"} min={current.text ? undefined : 0} step="any" value={answer} onChange={event => setAnswer(event.target.value)} disabled={readOnly || actionDisabled} placeholder={current.key === "title" ? "စာရင်းအမည် ရေးပါ…" : "အဖြေကို ဒီမှာဖြည့်ပါ…"} className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0" /><Button type="submit" aria-label="အဖြေပို့မည်" disabled={readOnly || actionDisabled || !answer.trim()} className={`${current.preview ? "h-11 px-4" : "size-11"} shrink-0 rounded-xl bg-blue-600 text-white`}><Send className="size-4" />{current.preview && "ပို့ရန်"}</Button></form>}
+        {current.photo ? <div className="mx-auto max-w-xs space-y-2"><ProductImageUpload title={current.key === "originalImage" ? "မူလပစ္စည်းပုံ" : "ထုပ်ပိုးပြီးပုံ"} hint="မလိုသေးရင် ကျော်နိုင်ပါတယ်" value={inputs[current.key as "originalImage" | "packedImage"]} onChange={value => setInputs(previous => ({ ...previous, [current.key]: value }))} onBusyChange={onImageBusy} /><Button type="button" disabled={readOnly || actionDisabled} onClick={() => { setTyping(true); setStep(index => index + 1); }} className="w-full">{valueOf(current) ? "ဆက်ရန်" : "ဓာတ်ပုံမထည့်ဘဲ ဆက်ရန်"}</Button></div> : current.options ? <div className="space-y-3"><div className="flex flex-wrap gap-2">{current.options.map(option => <Button key={option.value} type="button" variant="outline" disabled={readOnly || actionDisabled} aria-pressed={answer === option.value} onClick={() => setAnswer(option.value)} className={`min-h-11 whitespace-normal rounded-full px-4 text-xs leading-6 ${answer === option.value ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300" : ""}`}>{option.label}</Button>)}</div><Button type="button" disabled={readOnly || actionDisabled || !answer} onClick={() => submit()}>ပို့ရန် <Send className="size-4" /></Button></div> : <form onSubmit={event => { event.preventDefault(); submit(); }} className="flex items-center gap-2 rounded-2xl border bg-muted/30 p-2"><Input ref={composer} id={`${uid}-answer`} aria-label={current.question} type={current.text ? "text" : "number"} min={current.text ? undefined : 0} step="any" value={answer} onChange={event => setAnswer(event.target.value)} disabled={readOnly || actionDisabled} placeholder={current.key === "title" ? "စာရင်းအမည် ရေးပါ…" : "အဖြေကို ဒီမှာဖြည့်ပါ…"} className="h-12 border-0 bg-transparent text-base shadow-none focus-visible:ring-0 md:text-base" /><Button type="submit" aria-label="အဖြေပို့မည်" disabled={readOnly || actionDisabled || !answer.trim()} className={`${current.preview ? "h-11 px-4" : "size-11"} shrink-0 rounded-xl bg-blue-600 text-white`}><Send className="size-4" />{current.preview && "ပို့ရန်"}</Button></form>}
       </>}
       {typing && <p role="status" className="py-3 text-xs text-muted-foreground">စာရေးနေပါသည်…</p>}
       {finished && !typing && <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={readOnly || actionDisabled || !!result.error} onClick={onAdd}><Plus className="size-4" /> ပစ္စည်းထပ်ဖြည့်ရန်</Button><Button type="button" variant="ghost" disabled={readOnly || actionDisabled} onClick={() => { setTyping(true); setStep(1); }}>ဤပစ္စည်း ပြန်ပြင်ရန်</Button><Button type="button" disabled={readOnly || actionDisabled || !!result.error} onClick={onSave}><Save className="size-4" /> သိမ်းမည်</Button><Button type="button" variant="outline" disabled={readOnly || finalizeDisabled || !!result.error} onClick={onFinalize}><CheckCircle2 className="size-4" /> အတည်ပြုရန်</Button></div>}
