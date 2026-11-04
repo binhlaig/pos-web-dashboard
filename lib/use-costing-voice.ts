@@ -27,7 +27,7 @@ export function useCostingVoice(questionKey: string | number) {
     audio.onended = () => { if (player.current === audio) stop(); };
     audio.onerror = () => { if (player.current === audio) { stop(); toast.error("အသံဖိုင်ကို ဖွင့်မရပါ။ ပြန်စမ်းပါ။"); } };
     void audio.play().catch(() => {
-      if (active.current !== text) return;
+      if (player.current !== audio) return;
       stop(); toast.error("အသံဖွင့်ရန် voice ခလုတ်ကို ထပ်နှိပ်ပါ။");
     });
   };
@@ -38,20 +38,42 @@ export function useCostingVoice(questionKey: string | number) {
     stop(); active.current = text; setSpeakingQuestion(text);
     const cached = cache.current.get(text);
     if (cached) { play(cached, text); return; }
-    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
-      const voice = window.speechSynthesis.getVoices().find(item => /^my(?:-|$)/i.test(item.lang));
-      if (voice) {
-        const utterance = new SpeechSynthesisUtterance(text); native.current = utterance;
-        utterance.voice = voice; utterance.lang = voice.lang; utterance.rate = 0.9;
-        utterance.onend = () => { if (native.current === utterance) stop(); };
-        utterance.onerror = () => { if (native.current === utterance) { stop(); toast.error("စက်အသံဖတ်ပြမရပါ။ ထပ်စမ်းပါ။"); } };
-        window.speechSynthesis.speak(utterance); return;
-      }
-    }
-    // No installed Burmese voice: ask the authenticated server TTS service.
     const controller = new AbortController(); pending.current = controller;
     const timer = setTimeout(() => controller.abort(), 25000);
+    const useAudio = (blob: Blob) => {
+      if (!blob.size || !blob.type.startsWith("audio/")) throw new Error("အသံဖိုင် မမှန်ပါ။");
+      if (cache.current.size >= 8) {
+        const first = cache.current.keys().next().value!;
+        URL.revokeObjectURL(cache.current.get(first)!); cache.current.delete(first);
+      }
+      const url = URL.createObjectURL(blob); cache.current.set(text, url); pending.current = null;
+      play(url, text);
+    };
     try {
+      // Place downloaded question WAV files in public/audio/costing/<questionId>.wav.
+      // Only a missing file falls back to the existing device / Google voice flow.
+      const saved = await fetch(`/audio/costing/${encodeURIComponent(questionId)}.wav`, {
+        credentials: "same-origin", signal: controller.signal,
+      });
+      if (pending.current !== controller) return;
+      if (saved.ok) {
+        const blob = await saved.blob();
+        if (pending.current !== controller || controller.signal.aborted) return;
+        useAudio(blob); return;
+      }
+      if (saved.status !== 404) throw new Error("သိမ်းထားသော အသံဖိုင်ကို ရယူမရပါ။ ပြန်စမ်းပါ။");
+      if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
+        const voice = window.speechSynthesis.getVoices().find(item => /^my(?:-|$)/i.test(item.lang));
+        if (voice) {
+          const utterance = new SpeechSynthesisUtterance(text); native.current = utterance;
+          utterance.voice = voice; utterance.lang = voice.lang; utterance.rate = 0.9;
+          utterance.onend = () => { if (native.current === utterance) stop(); };
+          utterance.onerror = () => { if (native.current === utterance) { stop(); toast.error("စက်အသံဖတ်ပြမရပါ။ ထပ်စမ်းပါ။"); } };
+          pending.current = null;
+          window.speechSynthesis.speak(utterance); return;
+        }
+      }
+      // No saved file or installed Burmese voice: use the authenticated server.
       const response = await fetch("/api/factory/costing-voice", {
         method: "POST", credentials: "same-origin", signal: controller.signal,
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ questionId }),
@@ -61,16 +83,13 @@ export function useCostingVoice(questionKey: string | number) {
         throw new Error(error.message || "အသံရယူမရပါ။");
       }
       const blob = await response.blob();
-      if (active.current !== text || controller.signal.aborted) return;
-      if (!blob.size || !blob.type.startsWith("audio/")) throw new Error("အသံဖိုင် မမှန်ပါ။");
-      if (cache.current.size >= 8) { const first = cache.current.keys().next().value!; URL.revokeObjectURL(cache.current.get(first)!); cache.current.delete(first); }
-      const url = URL.createObjectURL(blob); cache.current.set(text, url); pending.current = null;
-      play(url, text);
+      if (pending.current !== controller || controller.signal.aborted) return;
+      useAudio(blob);
     } catch (error) {
-      if (active.current !== text) return;
+      if (pending.current !== controller) return;
       const timedOut = controller.signal.aborted;
       stop(); toast.error(timedOut ? "အသံရယူချိန် ကြာနေပါသည်။ ပြန်နှိပ်ပြီး စမ်းပါ။" : error instanceof Error ? error.message : "အသံဖတ်ပြမရပါ။");
     } finally { clearTimeout(timer); }
   }
-  return { speakingQuestion, readQuestion };
+  return { speakingQuestion, readQuestion, stopSpeech: stop };
 }

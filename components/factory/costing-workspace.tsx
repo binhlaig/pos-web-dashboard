@@ -1968,6 +1968,8 @@ function FactoryCostingPage({ children }: { children: ReactNode }) {
 }
 type CostingWorkspaceProps = Parameters<typeof ProductCalculator>[0] & {
   chatMode: boolean;
+  chatStarted: boolean;
+  onStartChat: () => void;
   initialStep: number;
   onProgress: (step: number, completed: boolean) => void;
   onAdd: () => void;
@@ -2012,8 +2014,22 @@ function TypedCostingText({ text, onDone }: { text: string; onDone?: () => void 
   return <><span className="sr-only">{text}</span><span aria-hidden="true" className="whitespace-pre-wrap break-words leading-8">{costingPointText(parts.slice(0, count).join(""))}{count < parts.length && <span className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-blue-500 align-middle" />}</span></>;
 }
 function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculation,
-  onImageBusy, onSave, onFinalize, actionDisabled, finalizeDisabled, title, onTitle, initialStep, onProgress, onAdd }: CostingWorkspaceProps) {
+  onImageBusy, onSave, onFinalize, actionDisabled, finalizeDisabled, title, onTitle, initialStep, onProgress, onAdd, chatStarted, onStartChat }: CostingWorkspaceProps) {
   const [step, setStep] = useState(initialStep);
+  const [welcomeReady, setWelcomeReady] = useState(false);
+  const [welcomeMuted, setWelcomeMuted] = useState(false);
+  const welcomeVoice = useCostingVoice("welcome");
+  const welcomeAutoplayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const welcomeVoiceRef = useRef(welcomeVoice);
+  welcomeVoiceRef.current = welcomeVoice;
+  useEffect(() => {
+    if (chatStarted || welcomeMuted) { welcomeVoiceRef.current.stopSpeech(); return; }
+    // Defer until mount effects finish; Strict Mode's initial cleanup cancels the first timer.
+    const timer = setTimeout(() => { void welcomeVoiceRef.current.readQuestion("welcome"); }, 150);
+    welcomeAutoplayTimer.current = timer;
+    return () => { clearTimeout(timer); welcomeVoiceRef.current.stopSpeech(); };
+  }, [chatStarted, welcomeMuted]);
+
   const { speakingQuestion, readQuestion } = useCostingVoice(step);
   const questionVoice = (questionId: string) => {
     const text = costingVoiceQuestion(questionId);
@@ -2034,7 +2050,7 @@ function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculat
   const money = (value: number) => sheetMoney(currencyCode, value);
   type ChatStep = { key: keyof Inputs | "title" | "extras"; preview?: boolean; question: string; options?: {value: string; label: string}[]; photo?: boolean; text?: boolean };
   const steps: ChatStep[] = [
-    { key: "title", question: "မင်္ဂလာပါ။ ကုန်ကျစရိတ်စာရင်းကို တစ်ဆင့်ချင်း ဖြည့်ကြရအောင်။\nဒီစာရင်းအတွက် စာရင်းအမည်ကို အရင်ရေးပေးပါ။", text: true },
+    { key: "title", question: "ဒီစာရင်းအတွက် စာရင်းအမည်ကို အရင်ရေးပေးပါ။", text: true },
     { key: "product", question: "ဘယ်ပစ္စည်းအတွက် ကုန်ကျစရိတ်တွက်မလဲ။ ပစ္စည်းအမည်ကို ရေးပေးပါ။", text: true },
     { key: "productType", question: "ဒီပစ္စည်းရဲ့ အမျိုးအစားနဲ့ တွက်ချက်မယ့် ယူနစ်ကို ရွေးပေးပါ။", options: costingTypeChoices },
     { key: "originalImage", question: "မူလဝယ်ယူလာတဲ့ ပစ္စည်းဓာတ်ပုံ ထည့်ချင်ပါသလား။ မလိုသေးရင် ကျော်နိုင်ပါတယ်။", photo: true },
@@ -2109,6 +2125,13 @@ function CostingChat({ inputs, setInputs, readOnly, currencyCode, serverCalculat
     }
     setTyping(true); setStep(index => index + 1);
   }
+  if (!chatStarted) return <section aria-label="Costing Assistant မိတ်ဆက်" className="flex min-h-[65vh] w-full min-w-0 flex-col justify-center px-2 py-8 sm:px-6">
+    <div className="mb-5 flex items-center gap-3"><span className="grid size-12 place-items-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400"><Sparkles className="size-6" /></span><h2 className="text-sm font-semibold">Binhlaig Costing Assistant</h2></div>
+    <div className="max-w-2xl text-sm leading-8"><TypedCostingText text={"မင်္ဂလာပါရှင့်။ ကျွန်မက Binhlaig Costing Assistant ပါ။\n\nသင့်ပစ္စည်းတွေရဲ့ ကုန်ကျစရိတ်၊ ရောင်းဈေးနဲ့ အမြတ်ကို လွယ်လွယ်ကူကူ တွက်နိုင်အောင် ကျွန်မက တစ်ဆင့်ချင်း ကူညီပေးပါမယ်။\n\nစာရင်းအမည်ကနေစပြီး ပစ္စည်းအမည်၊ ဝယ်ယူပမာဏနဲ့ စရိတ်တွေကို တစ်ခုချင်း မေးပေးပါမယ်ရှင့်။ ဖြည့်ပြီးသားအဖြေတွေကိုလည်း ပြန်ပြင်နိုင်ပါတယ်။\n\nနောက်ဆုံးမှာ တွက်ချက်ရလဒ်ကို စစ်ဆေးပြီး စာရင်းသိမ်းနိုင်သလို ပစ္စည်းအသစ်တွေလည်း ထပ်ဖြည့်နိုင်ပါတယ်။\n\nအဆင်သင့်ဖြစ်ရင် အောက်က ‘အခု Chat စမည်’ ခလုတ်ကို နှိပ်ပြီး စလိုက်ကြရအောင်ရှင့်။"} onDone={() => setWelcomeReady(true)} /></div>
+    <div className="mt-6 flex flex-wrap items-center gap-3"><Button type="button" variant="outline" aria-pressed={welcomeMuted} onClick={() => { welcomeVoice.stopSpeech(); setWelcomeMuted(value => !value); }} className="min-h-11 rounded-xl">{welcomeMuted ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}{welcomeMuted ? "မိတ်ဆက်အသံ ဖွင့်ရန်" : "မိတ်ဆက်အသံ ပိတ်ရန်"}</Button>
+      {!welcomeMuted && !welcomeVoice.speakingQuestion && <Button type="button" variant="ghost" onClick={() => { if (welcomeAutoplayTimer.current) clearTimeout(welcomeAutoplayTimer.current); void welcomeVoice.readQuestion("welcome"); }} className="min-h-11 rounded-xl"><Volume2 className="size-4" /> မိတ်ဆက်အသံ နားထောင်ရန်</Button>}
+      <Button type="button" disabled={!welcomeReady} onClick={() => { welcomeVoice.stopSpeech(); onStartChat(); }} className="min-h-11 rounded-xl bg-blue-600 px-5 text-white"><MessageSquare className="size-4" /> အခု Chat စမည်</Button></div>
+  </section>;
   return <section className="flex min-h-[65vh] w-full min-w-0 flex-col">
     <div className="flex items-center justify-between border-b py-3 text-xs text-muted-foreground"><span className="flex items-center gap-2"><Sparkles className="size-4 text-blue-600" /> Costing Assistant</span><span>{Math.min(step + 1, steps.length)} / {steps.length}</span></div>
     <div className="max-h-[62vh] flex-1 space-y-8 overflow-y-auto overscroll-contain px-1 py-6 sm:px-4">
@@ -2179,6 +2202,7 @@ function ConnectedCostingPage({ children }: { children: ReactNode }) {
     [],
   );
 
+  const [chatStarted, setChatStarted] = useState(false);
   const [chatProgress, setChatProgress] = useState<Record<string, number>>({});
   const [chatCompleted, setChatCompleted] = useState<Record<string, boolean>>({});
   const [items, setItems] = useState<ProductEntry[]>([
@@ -3080,6 +3104,8 @@ function ConnectedCostingPage({ children }: { children: ReactNode }) {
       <div className="order-1 min-w-0">
       {active ? (
         <CostingWorkspace
+          chatStarted={chatStarted}
+          onStartChat={() => setChatStarted(true)}
           initialStep={chatProgress[active.id] ?? (authoritative && !rows.find(row => row.id === active.id)?.calculation.error ? 1000 : (items.length > 1 ? 1 : 0))}
           onProgress={(position, complete) => { setChatProgress(previous => ({ ...previous, [active.id]: position })); setChatCompleted(previous => ({ ...previous, [active.id]: complete })); }}
           onAdd={() => void addProduct()}
